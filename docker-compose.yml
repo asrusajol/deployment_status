@@ -16,7 +16,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: ${POSTGRES_DB:-deploy_tracker}
     ports:
-      - "5432:5432"
+      # Host-side port only — Postgres always listens on 5432 *inside* the container;
+      # POSTGRES_PORT picks which host port that's published to. Override this in .env
+      # when 5432 is already taken on the host (e.g. another Postgres instance) — the
+      # app's DATABASE_URL below reads the same var, so the two can never drift apart.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +40,8 @@ services:
     # uses — no IP to hardcode, works the same in dev and on a real server. Trade-off:
     # no network isolation, and no `ports:` mapping (the container binds host ports
     # directly), and it can't reach `db` by service name anymore — hence `localhost`
-    # below instead of `db`, since Postgres still publishes to the host's 5432.
+    # below instead of `db`, since Postgres only publishes to the host at
+    # POSTGRES_PORT (see the `db` service above), not necessarily 5432.
     network_mode: host
     # Passes every real setting (TASK_API_*, SESSION_SECRET_KEY, etc.) from the
     # project-root .env into the container at runtime — this is how they reach the app
@@ -48,8 +53,11 @@ services:
       # Explicit `environment:` wins over the same key from `env_file:` above — this is
       # deliberately NOT just .env's own DATABASE_URL (that one's for running the app
       # directly with `uvicorn --reload` outside Docker), but built from the same
-      # Postgres vars as the `db` service above, so they can never drift out of sync.
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-deploy_tracker}:${POSTGRES_PASSWORD:-changeme}@localhost:5432/${POSTGRES_DB:-deploy_tracker}
+      # Postgres vars as the `db` service above (including POSTGRES_PORT — a real
+      # deployment hit exactly this: 5432 was already taken on the host, db published to
+      # 5442 instead, but this line was still hardcoded to 5432 and the app couldn't
+      # connect), so they can never drift out of sync.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-deploy_tracker}:${POSTGRES_PASSWORD:-changeme}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-deploy_tracker}
     # Host networking means this binds directly to a host port (no remapping) — pick
     # one that's free on the host. Override with `APP_PORT=1234 docker compose up` if
     # 8010 is already taken by something else.

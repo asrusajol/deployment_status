@@ -191,6 +191,14 @@ Then edit `.env` and set, at minimum:
   needed for this — it's the only thing that differs between environments.
 - **`TASK_API_DEPLOYABLE_HALL_ID`** / **`TASK_API_DEPLOYABLE_MACHINE_GROUP_ID`** — only if
   this deployment is for a different team than the defaults (hall 5 / MG-00013).
+- **`POSTGRES_PORT`** — only if 5432 is already taken on this host (common on a shared DB
+  server). Change *only* this value, not the `db` service's `ports:` line directly — the
+  app's `DATABASE_URL` is built from the same variable (`docker-compose.yml`), so the two
+  can't drift apart. (This exact mismatch — `db` published to a non-default port while
+  the app was still hardcoded to connect to 5432 — has actually happened and looks like a
+  connection-refused crash loop on the `app` container with `db` itself perfectly healthy;
+  if you see that, check `docker compose config` and confirm `DATABASE_URL`'s port matches
+  what `db` actually publishes.)
 
 `.env` is gitignored and — as of this cleanup — also excluded from the Docker build
 context (`.dockerignore`), so it's never baked into an image layer; `docker-compose.yml`
