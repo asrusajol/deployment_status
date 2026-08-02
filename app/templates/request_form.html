@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block title %}New Deployment Request — Deployment Tracker{% endblock %}
+{% block content %}
+  <h1>New Deployment Request</h1>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <div class="tabs">
+    <button type="button" class="tab-button" data-tab="standard">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="4" cy="3" r="2" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="4" cy="13" r="2" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="12" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M4 5v6M4 8h6.2M10.2 8L8.5 6.3M10.2 8L8.5 9.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Standard Deployment
+    </button>
+    <button type="button" class="tab-button" data-tab="db_dump_restore">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <ellipse cx="8" cy="3.2" rx="5.2" ry="1.8" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M2.8 3.2v9.6c0 1 2.33 1.8 5.2 1.8s5.2-.8 5.2-1.8V3.2" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M2.8 8c0 1 2.33 1.8 5.2 1.8S13.2 9 13.2 8" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+      Database Dump &amp; Restore
+    </button>
+    <button type="button" class="tab-button" data-tab="test_local">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M2.5 2.5h11v8.2h-11z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M5 6l1.8 1.8L5 9.6M8 9.6h2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5.5 13.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Test.local Deployment
+    </button>
+  </div>
+
+  <section id="tab-standard" class="tab-panel">
+  <form method="post" action="/requests" class="form form-wide">
+    <div class="field field-full">
+      <label for="deployable_task_search">Task ID</label>
+      <input
+        type="text"
+        id="deployable_task_search"
+        list="deployable_tasks_list"
+        autocomplete="off"
+        placeholder="Type to search currently-planned tasks…"
+      >
+      <datalist id="deployable_tasks_list">
+        {% for task in deployable_tasks %}
+          <option
+            data-id="{{ task.id }}"
+            data-client-name="{{ task.client_name or '' }}"
+            data-target="{{ task.target }}"
+            value="{{ task.task_id }} — {{ task.item_name or "?" }} ({{ task.client_name or "internal" }}, {{ task.target | capitalize }})"
+          ></option>
+        {% endfor %}
+      </datalist>
+      <p class="hint">Add one or more orders — multiple orders for the <strong>same client</strong> can be
+        deployed together as a single request.</p>
+      <ul id="selected_tasks" class="selected-tasks"></ul>
+      <p id="task_select_error" class="error-inline" hidden></p>
+      <!-- The real submitted value — a comma-separated list of DeployableTask ids, built
+           entirely by the script below as tasks are added/removed; never typed directly.
+           A typo or a made-up task can't be submitted even though the visible search box
+           is free text. Server-side re-checks every id against deployable_tasks too —
+           the datalist/JS here is a convenience, not the actual constraint. -->
+      <input type="hidden" id="deployable_task_ids" name="deployable_task_ids">
+      {% if not deployable_tasks %}
+        <p class="hint">No currently-planned deploy tasks found — run <code>deployable-tasks</code> to sync from the CRM.</p>
+      {% endif %}
+    </div>
+
+    <div class="form-row">
+      <div class="field">
+        <label for="client_id">Client</label>
+        <select id="client_id" name="client_id" required>
+          <option value="" disabled selected>Select a client…</option>
+          {% for client in clients %}
+            <option value="{{ client.id }}">{{ client.name }}</option>
+          {% endfor %}
+          <option value="{{ new_client_value }}">+ Add new client (type name below)</option>
+        </select>
+        <input type="text" name="new_client_name" placeholder="New client name — only used if “+ Add new client” is selected above">
+        <p class="hint">Pre-fills from the selected Task ID above, but you can change it.</p>
+      </div>
+
+      <div class="field">
+        <label for="environment">System</label>
+        <select id="environment" name="environment" required>
+          <option value="" disabled selected>Select a system…</option>
+          {% for env in environments %}
+            <option value="{{ env.value }}">{{ env.value | capitalize }}</option>
+          {% endfor %}
+        </select>
+        <p class="hint">Pre-fills from the selected Task ID above, but you can change it.</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
+        <label for="git_branch">Git branch</label>
+        <input type="text" id="git_branch" name="git_branch" required placeholder="e.g. release/v12">
+      </div>
+
+      <div class="field">
+        <label for="commit_hash">Commit hash</label>
+        <input type="text" id="commit_hash" name="commit_hash" required placeholder="e.g. a1b2c3d">
+      </div>
+
+      <div class="field">
+        <label for="version">Version</label>
+        <input type="text" id="version" name="version" required placeholder="e.g. V12">
+      </div>
+    </div>
+
+    <div class="field field-full">
+      <label for="changes_description">Changes <span class="optional">(optional)</span></label>
+      <textarea id="changes_description" name="changes_description" rows="4" placeholder="What's being deployed"></textarea>
+    </div>
+
+    <div class="field field-full">
+      <label>Requested by</label>
+      <p class="static-field">{{ current_user.name }} (logged in)</p>
+    </div>
+
+    <button type="submit">Submit Request</button>
+  </form>
+  </section>
+
+  <section id="tab-db_dump_restore" class="tab-panel" hidden>
+    <form method="post" action="/requests/db-dump-restore" class="form">
+      <div class="field">
+        <label for="dump_source">Dump Source</label>
+        <input type="text" id="dump_source" name="dump_source" required placeholder="e.g. crm-live DB / server path">
+      </div>
+
+      <div class="field">
+        <label for="db_dump_restore_version">Application Version</label>
+        <input type="text" id="db_dump_restore_version" name="version" required placeholder="e.g. V10, V12">
+      </div>
+
+      <div class="field">
+        <label for="restore_source">Restore Source <span class="optional">(leave blank if sharing with requestor)</span></label>
+        <input type="text" id="restore_source" name="restore_source" placeholder="e.g. crm-staging DB / server path">
+      </div>
+
+      <div class="field">
+        <label>
+          <input type="checkbox" id="share_with_requestor" name="share_with_requestor">
+          Share the dump with the requestor instead of restoring it
+        </label>
+      </div>
+
+      <div class="field">
+        <label>Requested by</label>
+        <p class="static-field">{{ current_user.name }} (logged in)</p>
+      </div>
+
+      <p class="hint">No team-lead approval required for this request type — it goes straight to the deploy team's queue.</p>
+
+      <button type="submit">Submit Request</button>
+    </form>
+  </section>
+
+  <section id="tab-test_local" class="tab-panel" hidden>
+    <form method="post" action="/requests/test-local" class="form">
+      <div class="field">
+        <label for="test_local_server">Server Name</label>
+        <input
+          type="text"
+          id="test_local_server"
+          name="server"
+          list="test_local_servers_list"
+          required
+          placeholder="e.g. crm.test.local"
+        >
+        <datalist id="test_local_servers_list">
+          {% for host in test_local_server_suggestions %}
+            <option value="{{ host }}"></option>
+          {% endfor %}
+        </datalist>
+        <p class="hint">Any *.test.local host — pick a suggestion or type a different one.</p>
+      </div>
+
+      <div class="field">
+        <label for="test_local_git_branch">Branch Name</label>
+        <input type="text" id="test_local_git_branch" name="git_branch" required placeholder="e.g. feature/my-branch">
+      </div>
+
+      <div class="field">
+        <label for="test_local_changes_description">Additional Instruction <span class="optional">(optional)</span></label>
+        <textarea id="test_local_changes_description" name="changes_description" rows="4" placeholder="Anything the deploy team should know"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Requested by</label>
+        <p class="static-field">{{ current_user.name }} (logged in)</p>
+      </div>
+
+      <p class="hint">No team-lead approval required for this request type — it goes straight to the deploy team's queue.</p>
+
+      <button type="submit">Submit Request</button>
+    </form>
+  </section>
+
+  <script>
+    (function () {
+      var tabButtons = document.querySelectorAll(".tab-button");
+      var tabPanels = document.querySelectorAll(".tab-panel");
+
+      function activateTab(tabName) {
+        tabButtons.forEach(function (button) {
+          button.classList.toggle("active", button.getAttribute("data-tab") === tabName);
+        });
+        tabPanels.forEach(function (panel) {
+          panel.hidden = panel.id !== "tab-" + tabName;
+        });
+      }
+
+      tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          activateTab(button.getAttribute("data-tab"));
+        });
+      });
+
+      activateTab("{{ active_tab }}");
+    })();
+  </script>
+
+  <script>
+    (function () {
+      var searchInput = document.getElementById("deployable_task_search");
+      var hiddenTaskIds = document.getElementById("deployable_task_ids");
+      var clientSelect = document.getElementById("client_id");
+      var newClientInput = document.querySelector('input[name="new_client_name"]');
+      var environmentSelect = document.getElementById("environment");
+      var taskOptions = document.querySelectorAll("#deployable_tasks_list option");
+      var selectedTasksList = document.getElementById("selected_tasks");
+      var errorEl = document.getElementById("task_select_error");
+
+      // {id, clientName, target, label} per task added, in the order they were added —
+      // the first task added drives the Client/System auto-fill (see applyClientAndSystem
+      // below); every task after that must share its clientName, or addTask() rejects it.
+      var selectedTasks = [];
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+      }
+
+      function clearError() {
+        errorEl.hidden = true;
+      }
+
+      // Convenience auto-fill, not a hard link: adding the first Task ID pre-fills Client
+      // and System from that deployable task's own data, but both stay fully editable
+      // afterwards (the requester's own selection always wins at submit time).
+      function applyClientAndSystem(task) {
+        if (task.target) {
+          environmentSelect.value = task.target;
+        }
+
+        if (task.clientName) {
+          var matched = false;
+          for (var i = 0; i < clientSelect.options.length; i++) {
+            if (clientSelect.options[i].text === task.clientName) {
+              clientSelect.selectedIndex = i;
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) {
+            clientSelect.value = "{{ new_client_value }}";
+            newClientInput.value = task.clientName;
+          } else {
+            newClientInput.value = "";
+          }
+        } else {
+          // This task has no client (an internal task) — clear out whatever a
+          // previously-selected task might have filled in, instead of leaving it stale.
+          clientSelect.selectedIndex = 0;
+          newClientInput.value = "";
+        }
+      }
+
+      function renderSelectedTasks() {
+        selectedTasksList.innerHTML = "";
+        selectedTasks.forEach(function (task, index) {
+          var item = document.createElement("li");
+          item.textContent = task.label + " ";
+          var removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "link-button";
+          removeButton.textContent = "Remove";
+          removeButton.addEventListener("click", function () {
+            selectedTasks.splice(index, 1);
+            renderSelectedTasks();
+          });
+          item.appendChild(removeButton);
+          selectedTasksList.appendChild(item);
+        });
+        hiddenTaskIds.value = selectedTasks.map(function (task) { return task.id; }).join(",");
+      }
+
+      function addTask(option) {
+        var id = option.getAttribute("data-id");
+        if (selectedTasks.some(function (task) { return task.id === id; })) {
+          showError("That Task ID is already added.");
+          return;
+        }
+
+        var task = {
+          id: id,
+          clientName: option.getAttribute("data-client-name") || "",
+          target: option.getAttribute("data-target") || "",
+          label: option.value,
+        };
+
+        // The whole point of this feature: multiple orders can be deployed together,
+        // but only if they're all for the same client AND the same system (test/live) —
+        // a request has exactly one System field, so mixing a Test order with a Live one
+        // would silently deploy one of them to the wrong system (see create_request()'s
+        // server-side backstop of this same rule in app/routers/dashboard.py).
+        if (selectedTasks.length > 0 && selectedTasks[0].clientName !== task.clientName) {
+          showError(
+            "All selected Task IDs must belong to the same client — remove the other "
+            + "task(s) first, or pick one for "
+            + (selectedTasks[0].clientName || "this internal task's client") + "."
+          );
+          return;
+        }
+        if (selectedTasks.length > 0 && selectedTasks[0].target !== task.target) {
+          showError(
+            "All selected Task IDs must be for the same system — this request is already "
+            + "using " + selectedTasks[0].target + ", remove the other task(s) first to switch."
+          );
+          return;
+        }
+
+        clearError();
+        selectedTasks.push(task);
+        if (selectedTasks.length === 1) {
+          applyClientAndSystem(task);
+        }
+        renderSelectedTasks();
+        searchInput.value = "";
+      }
+
+      searchInput.addEventListener("input", function () {
+        var typed = searchInput.value;
+        var match = null;
+        taskOptions.forEach(function (opt) {
+          if (opt.value === typed) match = opt;
+        });
+        if (match) {
+          addTask(match);
+        }
+      });
+
+      document.querySelector(".form-wide").addEventListener("submit", function (event) {
+        if (selectedTasks.length === 0) {
+          event.preventDefault();
+          showError("Select at least one Task ID before submitting.");
+          searchInput.focus();
+        }
+      });
+    })();
+  </script>
+{% endblock %}

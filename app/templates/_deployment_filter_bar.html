@@ -1,0 +1,30 @@
+<form method="get" action="{{ filter_action }}" class="filter-bar">
+  <div class="filter-field">
+    <label for="client_id">Client</label>
+    <select name="client_id" id="client_id">
+      <option value="">All clients</option>
+      {% for c in filter_clients %}
+        <option value="{{ c.id }}" {% if selected_client_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-field">
+    <label for="environment">System</label>
+    <select name="environment" id="environment">
+      <option value="">All systems</option>
+      {% for env in filter_environments %}
+        <option value="{{ env.value }}" {% if selected_environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-field">
+    <label for="task_id">Task ID</label>
+    <input type="text" name="task_id" id="task_id" value="{{ selected_task_id }}" placeholder="Search Task ID">
+  </div>
+  <button type="submit" class="button-primary">Filter</button>
+  <a href="{{ filter_action }}" class="button-secondary">Reset</a>
+  <a
+    href="{{ export_action }}?client_id={{ selected_client_id or '' }}&environment={{ selected_environment.value if selected_environment else '' }}&task_id={{ selected_task_id | urlencode }}"
+    class="button-secondary"
+  >Export to Excel</a>
+</form>

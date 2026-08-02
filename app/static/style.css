@@ -1,0 +1,727 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ---------------------------------------------------------------------------
+   Design system: "Ops Console" — this is an internal deployment/release
+   tracker, driven all day by developers, team leads, and DevOps engineers on
+   desktop. Status IS the content here (pending/approved/deployed, test/live),
+   so color is a signal language, not decoration — each hue below means one
+   specific thing and is used nowhere else. Dark surface reduces eye strain
+   for a tool that stays open in a pinned tab all day, and gives the signal
+   colors the contrast they need to read as "lights," not tints.
+--------------------------------------------------------------------------- */
+
+:root {
+  --ink: #0d1113;
+  --panel: #151a1d;
+  --panel-raised: #1b2226;
+  --panel-hover: #202a2f;
+  --hairline: #262f34;
+  --hairline-strong: #344046;
+  --paper: #e8ecee;
+  --fog: #8b98a0;
+  --fog-dim: #5b6870;
+
+  /* Signal system — each color is load-bearing, not aesthetic. */
+  --amber: #e8a33d;
+  --amber-dim: rgba(232, 163, 61, 0.16);
+  --teal: #3fc7b8;
+  --teal-dim: rgba(63, 199, 184, 0.16);
+  --green: #4cc98a;
+  --green-dim: rgba(76, 201, 138, 0.16);
+  --red: #e2584a;
+  --red-dim: rgba(226, 88, 74, 0.16);
+  --violet: #9c90f0;
+  --violet-dim: rgba(156, 144, 240, 0.16);
+  --slate-chip: #6c7a83;
+  --slate-chip-dim: rgba(108, 122, 131, 0.18);
+  --blue: #5b9fe0;
+  --blue-dim: rgba(91, 159, 224, 0.16);
+  --rose: #e0789f;
+  --rose-dim: rgba(224, 120, 159, 0.16);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+::selection { background: var(--teal-dim); color: var(--paper); }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--paper);
+  background: var(--ink);
+  /* Faint fixed grid — a control-panel texture, not a pattern to notice consciously. */
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: var(--panel); }
+::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 6px; border: 2px solid var(--panel); }
+::-webkit-scrollbar-thumb:hover { background: var(--fog-dim); }
+* { scrollbar-color: var(--hairline-strong) var(--panel); scrollbar-width: thin; }
+
+/* --- Topbar / brand ------------------------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.85rem 1.75rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.brand-mark { display: inline-flex; flex: none; }
+.brand-mark svg { display: block; }
+
+.brand-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fog-dim);
+  border-left: 1px solid var(--hairline-strong);
+  padding-left: 0.65rem;
+  margin-left: 0.15rem;
+}
+
+.topbar nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.4rem;
+}
+
+.topbar nav a {
+  position: relative;
+  margin-left: 0;
+  color: var(--fog);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  padding: 0.3rem 0;
+  transition: color 0.15s ease;
+}
+
+.topbar nav a:not(.button-link)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 100%;
+  bottom: -1px;
+  height: 2px;
+  background: var(--teal);
+  transition: right 0.18s ease;
+}
+
+.topbar nav a:not(.button-link):hover { color: var(--paper); }
+.topbar nav a:not(.button-link):hover::after { right: 0; }
+
+.button-link {
+  background: var(--teal);
+  color: var(--ink) !important;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600 !important;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.button-link:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+/* --- Page shell ------------------------------------------------------------ */
+
+.page {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 2.25rem 1.75rem 4rem;
+}
+
+h1 {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.65rem;
+  letter-spacing: -0.01em;
+  color: var(--paper);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin: 0 0 0.4rem;
+}
+
+.subtitle { color: var(--fog); margin-top: 0; margin-bottom: 1.75rem; font-size: 0.92rem; }
+.subtitle a { color: var(--teal); text-decoration: none; }
+.subtitle a:hover { text-decoration: underline; }
+
+/* --- Tables ---------------------------------------------------------------- */
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.table-scroll .status-table {
+  border: none;
+  border-radius: 0;
+}
+
+.status-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.status-table th, .status-table td {
+  padding: 0.75rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.87rem;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.status-table tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+.status-table tbody tr:hover {
+  background: var(--panel-raised);
+}
+
+.deployment-table {
+  table-layout: fixed;
+}
+
+.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 9%; }  /* Client */
+.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 6%; }  /* System */
+.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 7%; }  /* Task ID */
+.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 9%; }  /* Branch */
+.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 7%; }  /* Commit */
+.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 7%; }  /* Version */
+.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 13%; } /* Changes */
+.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 8%; }  /* Requested By */
+.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 8%; }  /* Approved By */
+.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 8%; } /* Deployed By */
+.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
+.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
+
+.changes-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  max-width: 220px;
+}
+
+.changes-preview {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-changes {
+  flex: none;
+  font-size: 0.82rem;
+}
+
+.changes-modal {
+  width: min(560px, 90vw);
+  background: var(--panel);
+  color: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.changes-modal::backdrop {
+  background: rgba(3, 5, 6, 0.6);
+}
+
+.changes-modal h2 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+.changes-modal-body {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--fog);
+}
+
+.status-table th {
+  background: var(--panel-raised);
+  color: var(--fog-dim);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.status-table tbody tr:last-child td { border-bottom: none; }
+
+code {
+  font-family: var(--font-mono);
+  background: var(--panel-raised);
+  color: var(--paper);
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* --- Badges / status chips -------------------------------------------------- */
+
+.badge {
+  display: inline-block;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Environment: test/live are the client-facing systems a standard request
+   targets — amber/violet, deliberately distinct from the teal/green workflow
+   states below so "which system" and "what stage" never read as the same
+   signal. */
+.badge-test { background: var(--amber-dim); color: var(--amber); }
+.badge-live { background: var(--violet-dim); color: var(--violet); }
+/* test.local boxes aren't a client system at all — a neutral slate chip
+   marks them as internal infrastructure, not environment data. */
+.badge-testlocal { background: var(--slate-chip-dim); color: var(--slate-chip); font-family: var(--font-mono); }
+
+/* Request type: which of the three "New Deployment Request" tabs a row came
+   from — blue/rose/slate, distinct from both the environment badges above and
+   the teal/green/amber/red workflow-status colors so "what kind of request"
+   never reads as "what stage it's at". test.local reuses slate-chip since it's
+   the same "internal infrastructure" signal as the System-column badge above. */
+.badge-type-standard { background: var(--blue-dim); color: var(--blue); }
+.badge-type-db_dump_restore { background: var(--rose-dim); color: var(--rose); }
+.badge-type-test_local { background: var(--slate-chip-dim); color: var(--slate-chip); }
+
+.status {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-pending_approval, .status-submitted, .status-pending_intake { color: var(--amber); }
+.status-approved, .status-claimed, .status-in_progress { color: var(--teal); }
+.status-completed { color: var(--green); }
+.status-rejected, .status-failed { color: var(--red); }
+.status-rolled_back { color: var(--fog); }
+
+/* --- Pipeline Rail ----------------------------------------------------------
+   The signature element: a literal rendering of the request's own state
+   machine (Submitted -> Approved -> Deployed, project_plan.md Section 4),
+   not a decorative sequence — order carries real information here. Colors
+   mirror the signal system above (amber = waiting, teal = in flight, green =
+   shipped, red = stopped). */
+
+.rail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-right: 0.65rem;
+  vertical-align: middle;
+}
+
+.rail-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--hairline-strong);
+}
+
+.rail-line {
+  width: 12px;
+  height: 2px;
+  flex: none;
+  background: var(--hairline-strong);
+}
+
+.rail-dot-amber, .rail-line-amber { background: var(--amber); }
+.rail-dot-teal, .rail-line-teal { background: var(--teal); }
+.rail-dot-green, .rail-line-green { background: var(--green); }
+.rail-dot-red, .rail-line-red { background: var(--red); }
+
+.rail-dot-amber.is-pulsing { box-shadow: 0 0 0 4px var(--amber-dim); }
+.rail-dot-teal.is-pulsing { box-shadow: 0 0 0 4px var(--teal-dim); }
+
+.is-pulsing { animation: railPulse 1.8s ease-in-out infinite; }
+
+@keyframes railPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-pulsing { animation: none; }
+}
+
+/* --- Empty / error states ---------------------------------------------------- */
+
+.empty-state {
+  color: var(--fog);
+  background: var(--panel);
+  border: 1px dashed var(--hairline-strong);
+  padding: 1.75rem;
+  border-radius: var(--radius);
+}
+
+.error {
+  color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid rgba(226, 88, 74, 0.35);
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+}
+
+.error-inline {
+  color: var(--red);
+  font-size: 0.82rem;
+  margin: 0.3rem 0 0;
+}
+
+.selected-tasks {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.selected-tasks li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--panel-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.selected-tasks li .link-button {
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+/* --- Forms ------------------------------------------------------------------ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 480px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.form label {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--paper);
+}
+
+.form label:first-child { margin-top: 0; }
+
+.optional { font-weight: 400; color: var(--fog-dim); }
+
+.form input, .form select, .form textarea {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  background: var(--panel-raised);
+  color: var(--paper);
+  transition: border-color 0.12s ease;
+}
+
+.form input::placeholder, .form textarea::placeholder { color: var(--fog-dim); }
+
+.form input:focus, .form select:focus, .form textarea:focus {
+  border-color: var(--teal);
+}
+
+.form button {
+  margin-top: 1.25rem;
+  padding: 0.65rem 1.1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--teal);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.form button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+/* Wide variant for forms with many fields (e.g. New Request) — groups related fields
+   into rows on desktop. Rows wrap onto their own line once a field drops below its
+   minimum width, so the same markup reflows to one column per row on narrow/mobile
+   viewports without a media query. */
+.form-wide {
+  max-width: 900px;
+  gap: 1.25rem;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 1.5rem;
+}
+
+/* Base field layout — applies to every form, not just .form-wide ones, so a plain
+   .form (Database Dump & Restore / Test.local tabs) gets the same full-width inputs
+   as the wide standard-deployment form instead of shrinking to the browser default
+   input size. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  margin-top: 0;
+}
+
+.form-row .field {
+  flex: 1 1 220px;
+}
+
+.actions { display: flex; flex-direction: column; gap: 0.4rem; }
+.inline-form { display: flex; gap: 0.35rem; align-items: center; }
+.inline-form select {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+  border-radius: 5px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-raised);
+  color: var(--paper);
+}
+
+.inline-form button {
+  border: none;
+  border-radius: 5px;
+  padding: 0.32rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--teal);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.inline-form button:hover { filter: brightness(1.1); }
+.inline-form button.approve, .inline-form button.deploy { background: var(--green); }
+/* Teal, not green — matches the "in flight" signal color (rail/status), since starting a
+   deployment isn't a completion the way approving/marking-deployed are. */
+.inline-form button.start { background: var(--teal); }
+.inline-form button.reject { background: transparent; color: var(--red); border: 1px solid rgba(226, 88, 74, 0.45); }
+.inline-form button.reject:hover { background: var(--red-dim); }
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.filter-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.filter-field label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fog-dim);
+}
+.filter-field input, .filter-field select {
+  padding: 0.42rem 0.55rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+  min-width: 160px;
+  background: var(--panel-raised);
+  color: var(--paper);
+}
+
+.filter-bar .button-secondary {
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline-strong);
+  background: transparent;
+  color: var(--paper);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.filter-bar .button-secondary:hover { border-color: var(--teal); color: var(--teal); }
+
+.filter-bar .button-primary {
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--teal);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: filter 0.15s ease;
+}
+
+.filter-bar .button-primary:hover { filter: brightness(1.08); }
+
+/* --- Tabs (New Request form) -------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tab-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.65rem 0.9rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fog);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-button svg { flex: none; opacity: 0.75; transition: opacity 0.15s ease; }
+.tab-button:hover { color: var(--paper); }
+.tab-button:hover svg { opacity: 1; }
+.tab-button.active { color: var(--paper); border-bottom-color: var(--teal); }
+.tab-button.active svg { opacity: 1; }
+
+.muted { color: var(--fog); }
+.hint { font-size: 0.8rem; color: var(--fog-dim); margin: 0.15rem 0 0; }
+.static-field { margin: 0; padding: 0.5rem 0.6rem; font-size: 0.9rem; color: var(--paper); font-family: var(--font-mono); }
+
+/* Nav (logged-in state) */
+.nav-user { color: var(--paper); font-weight: 600; font-size: 0.85rem; font-family: var(--font-mono); }
+
+.logout-form { display: inline; }
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fog);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover { color: var(--paper); }
+
+/* --- Login page --------------------------------------------------------------- */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--ink);
+  background-image:
+    radial-gradient(560px 360px at 18% 12%, rgba(63, 199, 184, 0.09), transparent 60%),
+    radial-gradient(520px 340px at 82% 88%, rgba(232, 163, 61, 0.07), transparent 60%);
+}
+
+.auth-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  justify-content: center;
+  margin-bottom: 1.75rem;
+}
+
+.auth-form { width: 100%; max-width: 380px; }
+.auth-form h1 {
+  font-size: 1.15rem;
+  margin: 0 0 1.25rem;
+  text-align: center;
+  color: var(--fog);
+  font-family: var(--font-body);
+  font-weight: 500;
+}

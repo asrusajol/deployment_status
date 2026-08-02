@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Deployment Tracker{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1113'/%3E%3Crect x='4' y='19' width='7' height='9' rx='1.5' fill='%23E8A33D'/%3E%3Crect x='13' y='11' width='7' height='17' rx='1.5' fill='%233FC7B8'/%3E%3Crect x='22' y='3' width='7' height='25' rx='1.5' fill='%234CC98A'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/dashboard">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="12" width="5" height="7" rx="1" fill="#E8A33D"/>
+          <rect x="7.5" y="6.5" width="5" height="12.5" rx="1" fill="#3FC7B8"/>
+          <rect x="14" y="1" width="5" height="18" rx="1" fill="#4CC98A"/>
+        </svg>
+      </span>
+      <span class="brand-word">Deployment Tracker</span>
+      <span class="brand-tag">Ops Console</span>
+    </a>
+    {% if current_user %}
+    <nav>
+      {% if not current_user.must_change_password %}
+        <a href="/dashboard">Dashboard</a>
+        <a href="/dashboard/history">History</a>
+        <a href="/requests">Requests</a>
+        {% if current_user.role.value == "admin" %}
+          <a href="/admin/users">Admin</a>
+        {% endif %}
+        <a href="/requests/new" class="button-link">+ New Request</a>
+      {% endif %}
+      <span class="nav-user">{{ current_user.name }}</span>
+      <a href="/change-password">Change Password</a>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit" class="link-button">Log out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <dialog id="changes-modal" class="changes-modal">
+    <h2>Changes</h2>
+    <p id="changes-modal-body" class="changes-modal-body"></p>
+    <button type="button" class="button-secondary" id="changes-modal-close">Close</button>
+  </dialog>
+  <script>
+    (function () {
+      var dialog = document.getElementById("changes-modal");
+      var body = document.getElementById("changes-modal-body");
+
+      document.addEventListener("click", function (event) {
+        var trigger = event.target.closest(".view-changes");
+        if (trigger) {
+          body.textContent = trigger.getAttribute("data-changes") || "";
+          dialog.showModal();
+        }
+      });
+
+      document.getElementById("changes-modal-close").addEventListener("click", function () {
+        dialog.close();
+      });
+      // Clicking the backdrop (the ::backdrop pseudo-element registers as a click on the
+      // dialog itself, not its content) closes it too, matching native modal expectations.
+      dialog.addEventListener("click", function (event) {
+        if (event.target === dialog) dialog.close();
+      });
+    })();
+  </script>
+</body>
+</html>

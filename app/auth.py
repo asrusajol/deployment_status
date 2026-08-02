@@ -1,0 +1,108 @@
+"""Session-cookie login: password hashing, current-user resolution, and role guards.
+
+Deliberately simple for an internal tool — no OAuth/SSO, no JWT, no "remember me": a
+signed session cookie (Starlette's SessionMiddleware, wired in app/main.py) holding just
+`user_id`. Login access itself is opt-in per user, granted by an admin (app/routers/admin.py)
+or bootstrapped via `python -m app.cli create-admin` — most CRM-synced employees have no
+password set and simply can't log in.
+"""
+
+import bcrypt
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from app.config import Settings, get_settings
+from app.database import get_db
+from app.models.user import User, UserRole
+
+SESSION_USER_ID_KEY = "user_id"
+
+# Paths a logged-in-but-must-change-password user is still allowed to hit, so the forced
+# redirect in require_login() below doesn't loop them out of the one place they can
+# actually fix it (or log out and try a different account).
+PASSWORD_CHANGE_EXEMPT_PATHS = {"/change-password", "/logout"}
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+class NotAuthenticatedError(Exception):
+    """Raised by require_login() when there's no valid session, or the user must change
+    their password first — caught by the exception handler registered in app/main.py,
+    which redirects to `redirect_to` (a raised HTTPException can't itself carry a
+    redirect, so a plain exception + handler is how this app does it)."""
+
+    def __init__(self, redirect_to: str = "/login"):
+        self.redirect_to = redirect_to
+
+
+def require_login(request: Request, db: Session = Depends(get_db)) -> User:
+    user_id = request.session.get(SESSION_USER_ID_KEY)
+    if user_id is None:
+        raise NotAuthenticatedError("/login")
+
+    user = db.get(User, user_id)
+    if user is None or user.password_hash is None:
+        # Account was deleted, or login access was revoked, since the cookie was issued.
+        request.session.clear()
+        raise NotAuthenticatedError("/login")
+
+    if user.must_change_password and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS:
+        raise NotAuthenticatedError("/change-password")
+
+    return user
+
+
+def require_admin(current_user: User = Depends(require_login)) -> User:
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+def _is_deploy_team_member(user: User, settings: Settings) -> bool:
+    # The whole app is already scoped to this one team's deploy tasks (deployable-tasks
+    # only ever pulls hall/machine-group task_api_deployable_hall_id /
+    # task_api_deployable_machine_group_id — see task_source.py), so "belongs to the
+    # team" is exactly this same machine_group_id, reused rather than re-hardcoded.
+    return user.machine_group_id == settings.task_api_deployable_machine_group_id
+
+
+def can_approve_deployment_request(current_user: User, deployment_request) -> bool:
+    """Whether current_user may approve/reject this specific request: an admin, or a
+    team_lead who belongs to the *requester's own team* — not the deploy team
+    (MG-00013/"Team Rajib", see require_deploy_team_member below). Those are two
+    different axes on purpose: Team Rajib is who actually executes every deployment
+    regardless of who requested it, but each team's own lead is who signs off on their
+    own team's requests — a lead from an unrelated team has no business approving here.
+
+    Deliberately checked by role + shared machine_group_id, not by looking up
+    Team.leader_user_id: that field is only ever backfilled by sync_team_leads() at sync
+    time, and is left unset if that sync ran before the team itself existed locally (see
+    sync_team_leads()'s docstring) — a real gap, not hypothetical, confirmed by finding a
+    team lead correctly promoted to `team_lead` whose own Team.leader_user_id was still
+    NULL. Matching on machine_group_id directly is self-healing across re-syncs instead
+    of depending on that one field having been populated in the right order.
+    """
+    if current_user.role == UserRole.admin:
+        return True
+    if current_user.role != UserRole.team_lead:
+        return False
+    requester = deployment_request.requester
+    if requester is None or requester.machine_group_id is None:
+        return False
+    return current_user.machine_group_id == requester.machine_group_id
+
+
+def require_deploy_team_member(
+    current_user: User = Depends(require_login), settings: Settings = Depends(get_settings)
+) -> User:
+    """Only an admin, or a member of the deploy team (MG-00013 / "Team Rajib" today, via
+    `task_api_deployable_machine_group_id`), may mark a request deployed."""
+    if current_user.role == UserRole.admin or _is_deploy_team_member(current_user, settings):
+        return current_user
+    raise HTTPException(status_code=403, detail="Only a member of the deploy team (or an admin) can deploy")

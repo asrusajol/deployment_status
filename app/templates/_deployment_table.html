@@ -1,0 +1,51 @@
+{% if rows %}
+  <div class="table-scroll">
+  <table class="status-table deployment-table">
+    <thead>
+      <tr>
+        <th>Client</th>
+        <th>System</th>
+        <th>Task ID</th>
+        <th>Branch</th>
+        <th>Commit</th>
+        <th>Version</th>
+        <th>Changes</th>
+        <th>Requested By</th>
+        <th>Approved By</th>
+        <th>Deployed By</th>
+        <th>Requested At</th>
+        <th>Deployed At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.client_name }}</td>
+        <td><span class="badge badge-{{ row.environment }}">{{ row.environment | capitalize }}</span></td>
+        <td>{{ row.task_id or "—" }}</td>
+        <td><code>{{ row.git_branch or "—" }}</code></td>
+        <td><code>{{ row.commit_hash or "—" }}</code></td>
+        <td>{{ row.version or "—" }}</td>
+        <td>
+          {% if row.changes_description %}
+            <div class="changes-cell">
+              <span class="changes-preview">{{ row.changes_description }}</span>
+              <button type="button" class="link-button view-changes" data-changes="{{ row.changes_description }}">View</button>
+            </div>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ row.requested_by or "—" }}</td>
+        <td>{{ row.approved_by or "—" }}</td>
+        <td>{{ row.deployed_by or "—" }}</td>
+        <td>{{ row.requested_at.strftime("%Y-%m-%d %H:%M UTC") if row.requested_at else "—" }}</td>
+        <td>{{ row.deployed_at.strftime("%Y-%m-%d %H:%M UTC") if row.deployed_at else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% else %}
+  <p class="empty-state">{{ empty_message }}</p>
+{% endif %}

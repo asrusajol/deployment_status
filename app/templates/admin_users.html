@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Admin — Users — Deployment Tracker{% endblock %}
+{% block content %}
+  <h1>Users</h1>
+  <p class="subtitle">Grant/reset login access and manage roles. Every user here comes from the CRM sync — this page never creates a new person, only enables/changes access for one that already exists.</p>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <div class="table-scroll">
+  <table class="status-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Login Access</th>
+        <th>Grant / Reset Password</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.name }}</td>
+        <td>{{ u.username or "—" }}</td>
+        <td>
+          <form method="post" action="/admin/users/{{ u.id }}/set-role" class="inline-form">
+            <select name="role">
+              {% for r in roles %}
+                <option value="{{ r.value }}" {% if u.role == r %}selected{% endif %}>{{ r.value | capitalize }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Save</button>
+          </form>
+        </td>
+        <td>
+          {% if u.password_hash %}
+            {% if u.must_change_password %}
+              <span class="status status-pending_approval">Must change password</span>
+            {% else %}
+              <span class="status status-completed">Active</span>
+            {% endif %}
+          {% else %}
+            <span class="muted">No login access</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/admin/users/{{ u.id }}/set-password" class="inline-form">
+            {% if not u.username %}
+              <input type="text" name="username" placeholder="Set username" required style="width:8rem">
+            {% endif %}
+            <input type="password" name="new_password" placeholder="New password" required minlength="8" style="width:9rem">
+            <button type="submit">{{ "Reset" if u.password_hash else "Grant Access" }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endblock %}

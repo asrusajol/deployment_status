@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Requests — Deployment Tracker{% endblock %}
+{% block content %}
+  <p class="eyebrow">Queue</p>
+  <h1>Deployment Requests</h1>
+
+  {% if requests %}
+    <div class="table-scroll">
+    <table class="status-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Task ID</th>
+          <th>Client</th>
+          <th>System</th>
+          <th>Details</th>
+          <th>Changes</th>
+          <th>Requested By</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><span class="badge badge-type-{{ r.request_type.value }}">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span></td>
+          <td>{{ r.task_id or "—" }}</td>
+          <td>{{ r.client.name if r.client else "—" }}</td>
+          <td>
+            {% if r.environment %}
+              <span class="badge badge-{{ r.environment.value }}">{{ r.environment.value | capitalize }}</span>
+            {% elif r.request_type == RequestType.test_local and r.server %}
+              <span class="badge badge-testlocal">{{ r.server }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.request_type == RequestType.db_dump_restore %}
+              <code>{{ r.dump_source or "—" }}</code> →
+              {% if r.share_with_requestor %}
+                <em>share with requestor</em>
+              {% else %}
+                <code>{{ r.restore_source or "—" }}</code>
+              {% endif %}
+              <span class="badge">{{ r.version or "—" }}</span>
+            {% elif r.request_type == RequestType.test_local %}
+              <code>{{ r.git_branch or "—" }}</code>
+            {% else %}
+              <code>{{ r.git_branch or "—" }}</code> / <code>{{ r.commit_hash or "—" }}</code>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.changes_description %}
+              <div class="changes-cell">
+                <span class="changes-preview">{{ r.changes_description }}</span>
+                <button type="button" class="link-button view-changes" data-changes="{{ r.changes_description }}">View</button>
+              </div>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ r.requester.name if r.requester else "—" }}</td>
+          <td>
+            {% set rail = rail_stages[r.status] %}
+            <span class="rail" aria-hidden="true">
+              {% for i in range(4) %}
+                <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
+                {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
+              {% endfor %}
+            </span>
+            <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+          </td>
+          <td class="actions">
+            {% if r.status == RequestStatus.pending_approval %}
+              {% if can_approve_request(r) %}
+                <form method="post" action="/requests/{{ r.id }}/approve" class="inline-form">
+                  <button type="submit" class="approve">Approve</button>
+                </form>
+                <form method="post" action="/requests/{{ r.id }}/reject" class="inline-form">
+                  <button type="submit" class="reject">Reject</button>
+                </form>
+              {% else %}
+                <span class="muted">Awaiting the requester's team lead</span>
+              {% endif %}
+            {% elif r.status == RequestStatus.approved %}
+              {% if can_deploy %}
+                <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
+                  <button type="submit" class="start">Start Deployment</button>
+                </form>
+              {% else %}
+                <span class="muted">Awaiting a deploy team member</span>
+              {% endif %}
+            {% elif r.status == RequestStatus.in_progress %}
+              {% if can_deploy %}
+                <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
+                  <button type="submit" class="deploy">Mark Deployed</button>
+                </form>
+              {% else %}
+                <span class="muted">In progress — awaiting completion</span>
+              {% endif %}
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
+  {% endif %}
+
+  <script>
+    (function () {
+      // requests is ordered newest-first (created_at desc — see list_requests() in
+      // app/routers/dashboard.py), so the first row's id is the latest request's id.
+      // Autoincrement ids track creation order even with the newer request types, so
+      // this doesn't need a timestamp comparison.
+      var latestId = {{ requests[0].id if requests else 0 }};
+      var STORAGE_KEY = "deployment_tracker_last_seen_request_id";
+      var lastSeenId = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10);
+
+      // Only alert if we've seen this queue before (skip the very first visit in this
+      // browser, where everything would otherwise look "new") and something newer than
+      // last time actually showed up.
+      if (lastSeenId && latestId > lastSeenId) {
+        playNotificationSound();
+      }
+      localStorage.setItem(STORAGE_KEY, String(latestId));
+
+      function playNotificationSound() {
+        try {
+          var Ctx = window.AudioContext || window.webkitAudioContext;
+          var ctx = new Ctx();
+          var oscillator = ctx.createOscillator();
+          var gain = ctx.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = 880;
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          oscillator.connect(gain);
+          gain.connect(ctx.destination);
+          oscillator.start();
+          oscillator.stop(ctx.currentTime + 0.5);
+        } catch (e) {
+          // Browsers that block audio before any user interaction on the page, or lack
+          // Web Audio support entirely — fail silently, the refreshed queue is still there.
+        }
+      }
+
+      // Keeps this page's queue current without the user having to hit reload — a
+      // straightforward full-page reload rather than a partial fetch/patch, since this
+      // page is just a queue with buttons (no in-progress typing to lose).
+      setTimeout(function () {
+        window.location.reload();
+      }, 30000);
+    })();
+  </script>
+{% endblock %}

@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    # Restarts automatically (crash, or after a host/Docker reboot) but stays down if
+    # you explicitly `docker compose stop`/`down` it — this is why it was found exited
+    # after a machine restart: without this, Compose never restarts a stopped container
+    # on its own.
+    restart: unless-stopped
+    environment:
+      # ${VAR:-default} pulls from the project-root .env that `docker compose` itself
+      # auto-loads for substitution (separate from the app's own `env_file:` below) — the
+      # "changeme"/"deploy_tracker" fallbacks are for local dev convenience only. Every
+      # real deployment MUST set POSTGRES_PASSWORD in .env to something real; this is the
+      # single source of truth for it — see DATABASE_URL below, built from the same vars.
+      POSTGRES_USER: ${POSTGRES_USER:-deploy_tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-deploy_tracker}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deploy_tracker}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Host networking so the container resolves crm.test.local (and anything else the
+    # in-house CRM API needs) through whatever DNS server the host machine actually
+    # uses — no IP to hardcode, works the same in dev and on a real server. Trade-off:
+    # no network isolation, and no `ports:` mapping (the container binds host ports
+    # directly), and it can't reach `db` by service name anymore — hence `localhost`
+    # below instead of `db`, since Postgres still publishes to the host's 5432.
+    network_mode: host
+    # Passes every real setting (TASK_API_*, SESSION_SECRET_KEY, etc.) from the
+    # project-root .env into the container at runtime — this is how they reach the app
+    # now that .dockerignore keeps .env out of the image itself (previously baked in via
+    # `COPY . .`, which meant secrets got embedded permanently in image layers).
+    env_file:
+      - .env
+    environment:
+      # Explicit `environment:` wins over the same key from `env_file:` above — this is
+      # deliberately NOT just .env's own DATABASE_URL (that one's for running the app
+      # directly with `uvicorn --reload` outside Docker), but built from the same
+      # Postgres vars as the `db` service above, so they can never drift out of sync.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-deploy_tracker}:${POSTGRES_PASSWORD:-changeme}@localhost:5432/${POSTGRES_DB:-deploy_tracker}
+    # Host networking means this binds directly to a host port (no remapping) — pick
+    # one that's free on the host. Override with `APP_PORT=1234 docker compose up` if
+    # 8010 is already taken by something else.
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8010}"
+
+volumes:
+  db_data:

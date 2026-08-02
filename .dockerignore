@@ -1,0 +1,32 @@
+# Keeps the production image lean and — more importantly — keeps real secrets out of
+# image layers. Without this, `COPY . .` in the Dockerfile bakes .env (real DB/CRM/session
+# secrets), .git (652K, full history), and .venv (107M, redundant — pip installs its own
+# site-packages inside the image) straight into the image. Runtime config now reaches the
+# container via docker-compose's `env_file: .env` instead (see docker-compose.yml).
+
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.git/
+.gitignore
+.github/
+
+.env
+.env.*
+!.env.example
+
+.claude/
+.vscode/
+.idea/
+
+# Dev-only docs and test suite — not needed at runtime, only bloat the image.
+tests/
+README.md
+project_plan.md
