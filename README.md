@@ -206,17 +206,22 @@ passes it into the running container at deploy time instead (`env_file: .env`). 
 like any other production secret: readable only by whoever operates this server, never
 committed, never pasted into a ticket/chat.
 
-### 3. Put a reverse proxy in front of it, with TLS
+### 3. Put a reverse proxy in front of it
 
-The app itself only speaks plain HTTP on `APP_PORT` (`8010` by default) — it has no
-built-in TLS. Login credentials and session cookies cross the network in the clear
-without one. Put a reverse proxy in front (Caddy, nginx, Traefik — whatever this team
-already runs elsewhere) terminating HTTPS and forwarding to `127.0.0.1:${APP_PORT}`, and
-don't expose `${APP_PORT}` itself beyond localhost/the internal network. A minimal Caddy
-example:
+The app itself only speaks plain HTTP on `APP_PORT` (`8010` by default). Putting a
+reverse proxy in front — even without TLS, for a tool that's only ever reachable on the
+internal network, never the public internet — is still worth it for a stable hostname
+instead of `host:8010`, request logging, and not exposing `${APP_PORT}` itself beyond
+`localhost`. If this ever needs to be reachable from outside the internal network, add
+TLS termination at this same layer rather than in the app.
+
+A full nginx example is at
+[`deploy/nginx/deployment.test.local.conf`](deploy/nginx/deployment.test.local.conf) —
+copy it to `/etc/nginx/sites-available/`, adjust `server_name` and the upstream port,
+symlink it into `sites-enabled/`, and reload nginx. Equivalent minimal Caddy config:
 
 ```
-deploy-tracker.your-domain.internal {
+deployment.test.local {
   reverse_proxy 127.0.0.1:8010
 }
 ```

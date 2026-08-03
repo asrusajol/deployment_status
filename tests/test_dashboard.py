@@ -483,6 +483,56 @@ def test_new_request_form_encodes_empty_client_name_for_internal_tasks(web):
     assert 'data-client-name="Acme Corp"' in response.text
 
 
+def test_sync_deployable_tasks_now_requires_login(web):
+    client, _session = web
+    response = client.post("/requests/new/sync-deployable-tasks", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_sync_deployable_tasks_now_shows_success_notice(web, monkeypatch):
+    # Doesn't hit the real CRM — monkeypatches the sync function itself (this
+    # environment can't reach the CRM API anyway), just checks the button's redirect +
+    # flash-message wiring in app/routers/dashboard.py's sync_deployable_tasks_now().
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+
+    class FakeResult:
+        total = 5
+
+    monkeypatch.setattr("app.routers.dashboard.sync_deployable_tasks", lambda db, provider: FakeResult())
+
+    response = client.post("/requests/new/sync-deployable-tasks", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/requests/new?synced=5"
+    follow_up = client.get(response.headers["location"])
+    assert "Synced 5 deployable task(s) from the CRM." in follow_up.text
+
+
+def test_sync_deployable_tasks_now_shows_error_on_failure(web, monkeypatch):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+
+    def _raise(db, provider):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("app.routers.dashboard.sync_deployable_tasks", _raise)
+
+    response = client.post("/requests/new/sync-deployable-tasks", follow_redirects=False)
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert location.startswith("/requests/new?sync_error=")
+    follow_up = client.get(location)
+    assert "Could not sync from the CRM" in follow_up.text
+    assert "connection refused" in follow_up.text
+
+
 def test_create_request_uses_deployable_task_and_logged_in_user(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)

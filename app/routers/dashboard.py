@@ -21,6 +21,7 @@ Every route here requires login (require_login) — this whole router is the app
 
 from datetime import datetime, timezone
 from io import BytesIO
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -38,6 +39,8 @@ from app.models.deployment_request import DeploymentEnvironment, DeploymentReque
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
+from app.services.sync import sync_deployable_tasks
+from app.services.task_source import InHouseTaskSourceProvider
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -201,7 +204,11 @@ def export_dashboard_history_xlsx(
 
 
 def _request_form_context(
-    db: Session, current_user: User, error: str | None = None, active_tab: str = "standard"
+    db: Session,
+    current_user: User,
+    error: str | None = None,
+    active_tab: str = "standard",
+    notice: str | None = None,
 ) -> dict:
     return {
         "current_user": current_user,
@@ -220,6 +227,7 @@ def _request_form_context(
         "test_local_server_suggestions": TEST_LOCAL_SERVER_SUGGESTIONS,
         "active_tab": active_tab,
         "error": error,
+        "notice": notice,
     }
 
 
@@ -227,7 +235,35 @@ def _request_form_context(
 def new_request_form(
     request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_login)
 ):
-    return templates.TemplateResponse(request, "request_form.html", _request_form_context(db, current_user))
+    # "synced"/"sync_error" arrive as query params after a redirect from
+    # sync_deployable_tasks_now() below — a plain query-string flash message rather than a
+    # session-backed one, since there's nothing else on this page worth persisting further.
+    synced = request.query_params.get("synced")
+    notice = f"Synced {synced} deployable task(s) from the CRM." if synced is not None else None
+    error = request.query_params.get("sync_error")
+    return templates.TemplateResponse(
+        request, "request_form.html", _request_form_context(db, current_user, error=error, notice=notice)
+    )
+
+
+@router.post("/requests/new/sync-deployable-tasks")
+def sync_deployable_tasks_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+    settings: Settings = Depends(get_settings),
+):
+    """Manual trigger for the same sync the `deployable-tasks` CLI command already runs
+    on its own 5-minute cron schedule (README.md) — lets someone pull in an order they
+    *just* created in the CRM immediately, instead of waiting for the next scheduled run.
+    """
+    try:
+        result = sync_deployable_tasks(db, InHouseTaskSourceProvider(settings))
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/requests/new?sync_error={quote(f'Could not sync from the CRM: {exc}')}",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/requests/new?synced={result.total}", status_code=303)
 
 
 def _parse_deployable_task_ids(raw: str | None) -> list[int]:

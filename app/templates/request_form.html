@@ -6,6 +6,9 @@
   {% if error %}
     <p class="error">{{ error }}</p>
   {% endif %}
+  {% if notice %}
+    <p class="notice">{{ notice }}</p>
+  {% endif %}
 
   <div class="tabs">
     <button type="button" class="tab-button" data-tab="standard">
@@ -36,6 +39,19 @@
   </div>
 
   <section id="tab-standard" class="tab-panel">
+  <div class="field-label-row sync-tasks-bar">
+    <p class="hint">Currently-planned tasks sync from the CRM automatically every 5 minutes.</p>
+    <!-- Deliberately a sibling of, not nested inside, the request form below — HTML
+         doesn't allow nested <form> elements, and a nested one here would silently
+         submit the *outer* form instead (a real bug caught while building this: the
+         page's client-side "select at least one Task ID" validation fired on every
+         click of this button, because that's exactly what was happening). -->
+    <form method="post" action="/requests/new/sync-deployable-tasks" class="inline-form">
+      <button type="submit" title="Pull the latest currently-planned orders from the CRM right now, instead of waiting for the automatic 5-minute sync">
+        Sync Tasks Now
+      </button>
+    </form>
+  </div>
   <form method="post" action="/requests" class="form form-wide">
     <div class="field field-full">
       <label for="deployable_task_search">Task ID</label>
@@ -67,7 +83,7 @@
            the datalist/JS here is a convenience, not the actual constraint. -->
       <input type="hidden" id="deployable_task_ids" name="deployable_task_ids">
       {% if not deployable_tasks %}
-        <p class="hint">No currently-planned deploy tasks found — run <code>deployable-tasks</code> to sync from the CRM.</p>
+        <p class="hint">No currently-planned deploy tasks found — try "Sync Tasks Now" above.</p>
       {% endif %}
     </div>
 
