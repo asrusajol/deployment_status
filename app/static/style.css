@@ -635,7 +635,10 @@ code {
   color: var(--paper);
 }
 
-.filter-bar .button-secondary {
+/* Generic secondary/primary buttons — originally scoped to .filter-bar only, promoted
+   to standalone classes once the "Enable Desktop Notifications" button (request_list.html)
+   needed the same look outside a filter bar. */
+.button-secondary {
   padding: 0.42rem 0.85rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline-strong);
@@ -648,9 +651,9 @@ code {
   transition: border-color 0.12s ease, color 0.12s ease;
 }
 
-.filter-bar .button-secondary:hover { border-color: var(--teal); color: var(--teal); }
+.button-secondary:hover { border-color: var(--teal); color: var(--teal); }
 
-.filter-bar .button-primary {
+.button-primary {
   padding: 0.45rem 0.95rem;
   border-radius: var(--radius-sm);
   border: none;
@@ -662,7 +665,7 @@ code {
   transition: filter 0.15s ease;
 }
 
-.filter-bar .button-primary:hover { filter: brightness(1.08); }
+.button-primary:hover { filter: brightness(1.08); }
 
 /* --- Tabs (New Request form) -------------------------------------------------- */
 
@@ -698,6 +701,8 @@ code {
 .muted { color: var(--fog); }
 .hint { font-size: 0.8rem; color: var(--fog-dim); margin: 0.15rem 0 0; }
 .static-field { margin: 0; padding: 0.5rem 0.6rem; font-size: 0.9rem; color: var(--paper); font-family: var(--font-mono); }
+
+#enable-notifications-button, #notifications-enabled-notice { margin-bottom: 1.25rem; }
 
 /* Nav (logged-in state) */
 .nav-user { color: var(--paper); font-weight: 600; font-size: 0.85rem; font-family: var(--font-mono); }

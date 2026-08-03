@@ -115,6 +115,22 @@ forced to `/change-password` before you can do anything else (see below).
     always gated on membership in the one fixed deploy team regardless of who requested
     it. Only the deploy check reuses `TASK_API_DEPLOYABLE_MACHINE_GROUP_ID`; approval
     doesn't reference that setting at all.
+  - The page auto-refreshes every 30 seconds and, once you click **Enable Desktop
+    Notifications**, pops an OS-level notification (plus an audible beep either way) for
+    events relevant to *you*: a new request lands that you personally can approve, or a
+    request becomes ready to deploy and you're on the deploy team — either because an
+    existing one flipped from Pending Approval to Pending Deployment, or because it's a
+    **Database Dump & Restore** / **Test.local Deployment** request, which skip the
+    approval stage entirely and land straight in Pending Deployment (so the
+    pending-approval-to-approved transition never happens for them — the deploy team
+    would otherwise never hear about a brand new one). This works via the browser's own
+    Notification API — it fires as long as this tab is open somewhere, even
+    minimized/backgrounded, but **not** after the tab or browser is fully closed (that
+    needs real Web Push: a service worker, VAPID keys, and server-stored subscriptions,
+    none of which exist here — and Web Push itself requires HTTPS, which this deployment
+    deliberately doesn't have; see "Production deployment" below). Permission has to be
+    granted once per browser via that button —
+    browsers ignore permission requests that aren't tied to a click.
 - **`/admin/users`** (admin only) — grant or reset a user's login access (sets/rehashes
   their password, forces `must_change_password` on next login), and change a user's role.
   This is also the only way `devops`/`admin` roles get assigned today — CRM sync only

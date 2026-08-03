@@ -860,6 +860,24 @@ def test_requests_queue_shows_approve_reject_to_team_lead(web):
     assert 'action="/requests/1/reject"' in response.text
 
 
+def test_requests_queue_rows_carry_data_attributes_for_desktop_notifications(web):
+    # The client-side JS in request_list.html reads these attributes directly off each
+    # <tr> to detect two events across page reloads: a new request this user can
+    # approve, and a request moving pending_approval -> approved that this user can
+    # deploy — see the inline script's currentSnapshot/previousSnapshot diffing.
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert 'data-request-id="1"' in response.text
+    assert 'data-status="pending_approval"' in response.text
+    assert 'data-can-approve="true"' in response.text
+    assert 'data-task-id="PR-03045"' in response.text
+    assert 'data-client="CRM"' in response.text
+
+
 def test_requests_queue_hides_approve_reject_from_team_lead_of_a_different_team(web):
     client, session = web
     _seed_pending_request(session)
@@ -1202,6 +1220,29 @@ def test_create_db_dump_restore_request_with_restore_source_skips_approval(web):
     assert request.requested_by == 1
     # No approval required — lands straight in the deploy team's queue.
     assert request.status == RequestStatus.approved
+
+
+def test_requests_queue_row_for_db_dump_restore_carries_deploy_notification_data(web):
+    # Regression test: db_dump_restore (and test_local) requests skip the approval stage
+    # and land straight in `approved` — the notification JS's "new pending_approval"
+    # trigger never sees them arrive, and the "pending_approval -> approved" transition
+    # trigger never fires either, since they never pass through pending_approval at all.
+    # The only way the deploy team hears about a brand new one is a THIRD trigger keyed
+    # off data-request-type/data-dump-source, which this asserts are actually rendered.
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+    client.post(
+        "/requests/db-dump-restore",
+        data={"dump_source": "crm-live", "version": "V12", "restore_source": "crm-staging"},
+    )
+
+    response = client.get("/requests")
+
+    assert 'data-status="approved"' in response.text
+    assert 'data-request-type="db_dump_restore"' in response.text
+    assert 'data-dump-source="crm-live"' in response.text
 
 
 def test_create_db_dump_restore_request_with_share_with_requestor(web):

@@ -4,6 +4,17 @@
   <p class="eyebrow">Queue</p>
   <h1>Deployment Requests</h1>
 
+  <!-- Hidden until JS confirms the browser supports the Notification API and hasn't
+       already been asked (see the script below) — permission must be requested from a
+       user gesture (this button click), not on page load, or most browsers ignore it. -->
+  <button type="button" id="enable-notifications-button" class="button-secondary" hidden>
+    Enable Desktop Notifications
+  </button>
+  <p id="notifications-enabled-notice" class="hint" hidden>
+    Desktop notifications are on — you'll get a popup here (even minimized) when a
+    request needs your approval or is ready to deploy.
+  </p>
+
   {% if requests %}
     <div class="table-scroll">
     <table class="status-table">
@@ -22,7 +33,16 @@
       </thead>
       <tbody>
         {% for r in requests %}
-        <tr>
+        <tr
+          data-request-id="{{ r.id }}"
+          data-status="{{ r.status.value }}"
+          data-request-type="{{ r.request_type.value }}"
+          data-can-approve="{{ 'true' if can_approve_request(r) else 'false' }}"
+          data-task-id="{{ r.task_id or '' }}"
+          data-client="{{ r.client.name if r.client else '' }}"
+          data-dump-source="{{ r.dump_source or '' }}"
+          data-server="{{ r.server or '' }}"
+        >
           <td><span class="badge badge-type-{{ r.request_type.value }}">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span></td>
           <td>{{ r.task_id or "—" }}</td>
           <td>{{ r.client.name if r.client else "—" }}</td>
@@ -112,21 +132,84 @@
 
   <script>
     (function () {
-      // requests is ordered newest-first (created_at desc — see list_requests() in
-      // app/routers/dashboard.py), so the first row's id is the latest request's id.
-      // Autoincrement ids track creation order even with the newer request types, so
-      // this doesn't need a timestamp comparison.
-      var latestId = {{ requests[0].id if requests else 0 }};
-      var STORAGE_KEY = "deployment_tracker_last_seen_request_id";
-      var lastSeenId = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10);
+      var SNAPSHOT_KEY = "deployment_tracker_request_snapshot";
+      // canDeploy is the same for every row (deploy-team membership, not per-request —
+      // see list_requests() in app/routers/dashboard.py); can-approve varies per row,
+      // so it's read from each <tr>'s own data-can-approve attribute instead.
+      var canDeploy = {{ 'true' if can_deploy else 'false' }};
 
-      // Only alert if we've seen this queue before (skip the very first visit in this
-      // browser, where everything would otherwise look "new") and something newer than
-      // last time actually showed up.
-      if (lastSeenId && latestId > lastSeenId) {
-        playNotificationSound();
+      // Snapshot every row actually on the page right now: id -> {status, canApprove,
+      // taskId, client, ...}. Compared against last visit's snapshot below to find the
+      // events this page actually alerts on — not "anything changed," specifically
+      // "something changed that needs *this* logged-in user to act."
+      var currentSnapshot = {};
+      document.querySelectorAll("tr[data-request-id]").forEach(function (row) {
+        currentSnapshot[row.getAttribute("data-request-id")] = {
+          status: row.getAttribute("data-status"),
+          requestType: row.getAttribute("data-request-type"),
+          canApprove: row.getAttribute("data-can-approve") === "true",
+          taskId: row.getAttribute("data-task-id"),
+          client: row.getAttribute("data-client"),
+          dumpSource: row.getAttribute("data-dump-source"),
+          server: row.getAttribute("data-server"),
+        };
+      });
+
+      var previousSnapshot = null;
+      try {
+        previousSnapshot = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
+      } catch (e) {
+        previousSnapshot = null;
       }
-      localStorage.setItem(STORAGE_KEY, String(latestId));
+
+      // Skip the very first visit in this browser — there's no "previous" to diff
+      // against, so every row would otherwise look like a brand new event.
+      if (previousSnapshot) {
+        var events = [];
+        Object.keys(currentSnapshot).forEach(function (id) {
+          var now = currentSnapshot[id];
+          var before = previousSnapshot[id];
+          if (!before && now.status === "pending_approval" && now.canApprove) {
+            events.push({
+              title: "New deployment request awaiting your approval",
+              body: describeRequest(now),
+            });
+          } else if (before && before.status === "pending_approval" && now.status === "approved" && canDeploy) {
+            events.push({
+              title: "Deployment request ready to deploy",
+              body: describeRequest(now),
+            });
+          } else if (!before && now.status === "approved" && canDeploy) {
+            // Database Dump & Restore and Test.local requests skip the approval stage
+            // entirely by design (create_db_dump_restore_request/create_test_local_request
+            // in app/routers/dashboard.py land straight in `approved`) — they never pass
+            // through pending_approval, so the transition check above never fires for
+            // them. This is the only way the deploy team hears about a brand new one.
+            events.push({
+              title: "Deployment request ready to deploy",
+              body: describeRequest(now),
+            });
+          }
+        });
+        if (events.length > 0) {
+          playNotificationSound();
+          events.forEach(showDesktopNotification);
+        }
+      }
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(currentSnapshot));
+
+      function describeRequest(row) {
+        if (row.taskId) {
+          return row.taskId + (row.client ? " · " + row.client : "");
+        }
+        if (row.requestType === "db_dump_restore") {
+          return "Database Dump & Restore" + (row.dumpSource ? " · " + row.dumpSource : "");
+        }
+        if (row.requestType === "test_local") {
+          return "Test.local Deployment" + (row.server ? " · " + row.server : "");
+        }
+        return "Deployment request";
+      }
 
       function playNotificationSound() {
         try {
@@ -146,6 +229,49 @@
           // Browsers that block audio before any user interaction on the page, or lack
           // Web Audio support entirely — fail silently, the refreshed queue is still there.
         }
+      }
+
+      // Desktop/OS-level popups via the browser's own Notification API — works while
+      // this tab is open somewhere, even minimized/backgrounded, but NOT after the tab
+      // or browser is actually closed (that needs real Web Push: VAPID keys, a service
+      // worker, server-stored subscriptions — a much bigger build this app doesn't have).
+      function showDesktopNotification(event) {
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        try {
+          var notification = new Notification(event.title, {
+            body: event.body,
+            tag: event.title + event.body, // de-dupes identical popups across rapid reloads
+          });
+          notification.onclick = function () {
+            window.focus();
+            notification.close();
+          };
+        } catch (e) {
+          // Some browsers throw if notifications are disabled at the OS level even
+          // though `Notification.permission` reads "granted" — the beep still fired.
+        }
+      }
+
+      // --- Permission prompt --------------------------------------------------------
+      var enableButton = document.getElementById("enable-notifications-button");
+      var enabledNotice = document.getElementById("notifications-enabled-notice");
+
+      if ("Notification" in window) {
+        if (Notification.permission === "granted") {
+          enabledNotice.hidden = false;
+        } else if (Notification.permission === "default") {
+          // Must be requested from a user gesture (this click), not on page load, or
+          // most browsers silently ignore the request instead of showing the prompt.
+          enableButton.hidden = false;
+          enableButton.addEventListener("click", function () {
+            Notification.requestPermission().then(function (permission) {
+              enableButton.hidden = true;
+              if (permission === "granted") enabledNotice.hidden = false;
+            });
+          });
+        }
+        // permission === "denied": browser is blocking it at the OS/browser-settings
+        // level — nothing this page can do except keep the audible beep as a fallback.
       }
 
       // Keeps this page's queue current without the user having to hit reload — a
