@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from app.auth import hash_password, require_admin
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.static_version import STATIC_VERSION
 
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["static_version"] = STATIC_VERSION
 
 MIN_PASSWORD_LENGTH = 8
 

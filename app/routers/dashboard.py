@@ -41,9 +41,11 @@ from app.services.dashboard import clients_with_deployments, current_deployment_
 from app.services.export import rows_to_xlsx
 from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
+from app.static_version import STATIC_VERSION
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["static_version"] = STATIC_VERSION
 
 # Shown instead of the raw enum value everywhere the status is displayed to a person.
 STATUS_LABELS = {
