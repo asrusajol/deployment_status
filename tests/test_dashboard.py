@@ -1,3 +1,5 @@
+import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -82,6 +84,19 @@ def _add_deployable_task(
     )
     session.add(task)
     return task
+
+
+def _active_requests_data(response_text):
+    # Pulls out list_requests()'s active_requests_json data island (request_list.html) —
+    # the desktop-notification script's actual data source, independent of whichever
+    # page of the table happens to be rendered. See app/routers/dashboard.py.
+    match = re.search(
+        r'<script type="application/json" id="active-requests-data">(.*?)</script>',
+        response_text,
+        re.DOTALL,
+    )
+    assert match, "active-requests-data script tag not found in response"
+    return json.loads(match.group(1))
 
 
 # --- current_deployment_status() unit tests -------------------------------------------
@@ -865,22 +880,25 @@ def test_requests_queue_shows_approve_reject_to_team_lead(web):
     assert 'action="/requests/1/reject"' in response.text
 
 
-def test_requests_queue_rows_carry_data_attributes_for_desktop_notifications(web):
-    # The client-side JS in request_list.html reads these attributes directly off each
-    # <tr> to detect two events across page reloads: a new request this user can
-    # approve, and a request moving pending_approval -> approved that this user can
-    # deploy — see the inline script's currentSnapshot/previousSnapshot diffing.
+def test_requests_queue_active_requests_data_feeds_desktop_notifications(web):
+    # The client-side JS in request_list.html reads this JSON data island (not the
+    # table rows — see list_requests()'s active_requests_json, which is deliberately
+    # pagination-independent) to detect two events across page reloads: a new request
+    # this user can approve, and a request moving pending_approval -> approved that this
+    # user can deploy.
     client, session = web
     _seed_pending_request(session)
     login_as(client, "lead")
 
     response = client.get("/requests")
 
-    assert 'data-request-id="1"' in response.text
-    assert 'data-status="pending_approval"' in response.text
-    assert 'data-can-approve="true"' in response.text
-    assert 'data-task-id="PR-03045"' in response.text
-    assert 'data-client="CRM"' in response.text
+    active = _active_requests_data(response.text)
+    assert len(active) == 1
+    assert active[0]["id"] == 1
+    assert active[0]["status"] == "pending_approval"
+    assert active[0]["canApprove"] is True
+    assert active[0]["taskId"] == "PR-03045"
+    assert active[0]["client"] == "CRM"
 
 
 def test_requests_queue_shows_module_name_and_version_columns(web):
@@ -894,6 +912,88 @@ def test_requests_queue_shows_module_name_and_version_columns(web):
     assert "<th>Version</th>" in response.text
     assert "<td>Interface</td>" in response.text
     assert "<td>V12</td>" in response.text
+
+
+def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
+    # A long branch name used to force the whole table into horizontal scroll — the cell
+    # is now truncated with ellipsis (branch-commit-preview, style.css) and this button
+    # reveals the untruncated text in the shared modal (base.html), same pattern as the
+    # Changes column but with its own title.
+    client, session = web
+    _seed_pending_request(session)  # git_branch="release/v12", commit_hash="a1b2c3d"
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert 'class="branch-commit-cell"' in response.text
+    assert 'class="link-button view-detail"' in response.text
+    assert 'data-detail-title="Branch Name / Commit"' in response.text
+    assert 'data-detail="release/v12 / a1b2c3d"' in response.text
+
+
+def _seed_many_requests(session, count):
+    for i in range(count):
+        session.add(
+            DeploymentRequest(
+                task_id=f"PR-{i:03d}",
+                requested_by=1,
+                status=RequestStatus.rejected,
+                # Descending created_at as i increases, so i=0 is newest (sorts first —
+                # list_requests() orders by created_at desc) and i=count-1 is oldest.
+                created_at=datetime.now(timezone.utc) - timedelta(minutes=i),
+            )
+        )
+    session.commit()
+
+
+def test_requests_queue_paginates_at_25_per_page(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 30)
+    login_as(client, "rajib")
+
+    page1 = client.get("/requests")
+    assert page1.status_code == 200
+    assert "Page 1 of 2 (30 total)" in page1.text
+    assert "PR-000" in page1.text  # newest — first page
+    assert "PR-029" not in page1.text  # oldest — second page
+
+    page2 = client.get("/requests", params={"page": 2})
+    assert page2.status_code == 200
+    assert "Page 2 of 2 (30 total)" in page2.text
+    assert "PR-029" in page2.text
+    assert "PR-000" not in page2.text
+
+
+def test_requests_queue_clamps_out_of_range_page(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 3)
+    login_as(client, "rajib")
+
+    response = client.get("/requests", params={"page": 999})
+
+    # Only one page exists, so the nav itself doesn't render (same as any single-page
+    # queue) — but the request must not 500/422, and page clamps down to showing
+    # everything rather than an empty "page 999 of 1" table.
+    assert response.status_code == 200
+    assert 'class="pagination"' not in response.text
+    assert "PR-000" in response.text
+
+
+def test_requests_queue_hides_pagination_nav_when_everything_fits_on_one_page(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 3)
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert 'class="pagination"' not in response.text
 
 
 def test_requests_queue_hides_approve_reject_from_team_lead_of_a_different_team(web):
@@ -1246,7 +1346,7 @@ def test_requests_queue_row_for_db_dump_restore_carries_deploy_notification_data
     # trigger never sees them arrive, and the "pending_approval -> approved" transition
     # trigger never fires either, since they never pass through pending_approval at all.
     # The only way the deploy team hears about a brand new one is a THIRD trigger keyed
-    # off data-request-type/data-dump-source, which this asserts are actually rendered.
+    # off requestType/dumpSource in active_requests_json, which this asserts are present.
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
@@ -1258,9 +1358,11 @@ def test_requests_queue_row_for_db_dump_restore_carries_deploy_notification_data
 
     response = client.get("/requests")
 
-    assert 'data-status="approved"' in response.text
-    assert 'data-request-type="db_dump_restore"' in response.text
-    assert 'data-dump-source="crm-live"' in response.text
+    active = _active_requests_data(response.text)
+    assert len(active) == 1
+    assert active[0]["status"] == "approved"
+    assert active[0]["requestType"] == "db_dump_restore"
+    assert active[0]["dumpSource"] == "crm-live"
     # Not sourced from deployable_tasks, so there's no module name to show — but the
     # request's own `version` (which used to be squeezed into the Details column as a
     # badge) still shows in the dedicated Version column.

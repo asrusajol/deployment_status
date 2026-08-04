@@ -15,6 +15,12 @@
     request needs your approval or is ready to deploy.
   </p>
 
+  <!-- Everything the notification script needs, independent of pagination below — an
+       old request several pages back moving to Pending Deployment is still worth a
+       popup even though it's not one of the rows currently rendered in the table. See
+       list_requests()'s active_requests_json in app/routers/dashboard.py. -->
+  <script type="application/json" id="active-requests-data">{{ active_requests_json | safe }}</script>
+
   {% if requests %}
     <div class="table-scroll">
     <table class="status-table">
@@ -35,16 +41,7 @@
       </thead>
       <tbody>
         {% for r in requests %}
-        <tr
-          data-request-id="{{ r.id }}"
-          data-status="{{ r.status.value }}"
-          data-request-type="{{ r.request_type.value }}"
-          data-can-approve="{{ 'true' if can_approve_request(r) else 'false' }}"
-          data-task-id="{{ r.task_id or '' }}"
-          data-client="{{ r.client.name if r.client else '' }}"
-          data-dump-source="{{ r.dump_source or '' }}"
-          data-server="{{ r.server or '' }}"
-        >
+        <tr>
           <td><span class="badge badge-type-{{ r.request_type.value }}">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span></td>
           <td>{{ r.task_id or "—" }}</td>
           <td>{{ r.module_name or "—" }}</td>
@@ -59,17 +56,34 @@
           <td>{{ r.version or "—" }}</td>
           <td>
             {% if r.request_type == RequestType.db_dump_restore %}
-              <code>{{ r.dump_source or "—" }}</code> →
-              {% if r.share_with_requestor %}
-                <em>share with requestor</em>
-              {% else %}
-                <code>{{ r.restore_source or "—" }}</code>
-              {% endif %}
+              {% set plain_detail = (r.dump_source or "—") ~ " → " ~ ("share with requestor" if r.share_with_requestor else (r.restore_source or "—")) %}
             {% elif r.request_type == RequestType.test_local %}
-              <code>{{ r.git_branch or "—" }}</code>
+              {% set plain_detail = r.git_branch or "—" %}
             {% else %}
-              <code>{{ r.git_branch or "—" }}</code> / <code>{{ r.commit_hash or "—" }}</code>
+              {% set plain_detail = (r.git_branch or "—") ~ " / " ~ (r.commit_hash or "—") %}
             {% endif %}
+            <div class="branch-commit-cell">
+              <span class="branch-commit-preview">
+                {% if r.request_type == RequestType.db_dump_restore %}
+                  <code>{{ r.dump_source or "—" }}</code> →
+                  {% if r.share_with_requestor %}
+                    <em>share with requestor</em>
+                  {% else %}
+                    <code>{{ r.restore_source or "—" }}</code>
+                  {% endif %}
+                {% elif r.request_type == RequestType.test_local %}
+                  <code>{{ r.git_branch or "—" }}</code>
+                {% else %}
+                  <code>{{ r.git_branch or "—" }}</code> / <code>{{ r.commit_hash or "—" }}</code>
+                {% endif %}
+              </span>
+              <button
+                type="button"
+                class="link-button view-detail"
+                data-detail-title="Branch Name / Commit"
+                data-detail="{{ plain_detail }}"
+              >View</button>
+            </div>
           </td>
           <td>
             {% if r.changes_description %}
@@ -133,28 +147,52 @@
     <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
   {% endif %}
 
+  {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="Requests pagination">
+      {% if page > 1 %}
+        <a href="/requests?page={{ page - 1 }}" class="button-secondary">Previous</a>
+      {% else %}
+        <span class="button-secondary is-disabled">Previous</span>
+      {% endif %}
+      <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
+      {% if page < total_pages %}
+        <a href="/requests?page={{ page + 1 }}" class="button-secondary">Next</a>
+      {% else %}
+        <span class="button-secondary is-disabled">Next</span>
+      {% endif %}
+    </nav>
+  {% endif %}
+
   <script>
     (function () {
       var SNAPSHOT_KEY = "deployment_tracker_request_snapshot";
       // canDeploy is the same for every row (deploy-team membership, not per-request —
       // see list_requests() in app/routers/dashboard.py); can-approve varies per row,
-      // so it's read from each <tr>'s own data-can-approve attribute instead.
+      // so it's read from each active request's own canApprove field below instead.
       var canDeploy = {{ 'true' if can_deploy else 'false' }};
 
-      // Snapshot every row actually on the page right now: id -> {status, canApprove,
-      // taskId, client, ...}. Compared against last visit's snapshot below to find the
-      // events this page actually alerts on — not "anything changed," specifically
-      // "something changed that needs *this* logged-in user to act."
+      // Every currently-active request (id -> {status, canApprove, taskId, client, ...}),
+      // NOT just the rows on this page — see list_requests()'s active_requests_json in
+      // app/routers/dashboard.py for why pagination and this snapshot are deliberately
+      // independent. Compared against last visit's snapshot below to find the events
+      // this page actually alerts on — not "anything changed," specifically "something
+      // changed that needs *this* logged-in user to act."
+      var activeRequests = [];
+      try {
+        activeRequests = JSON.parse(document.getElementById("active-requests-data").textContent || "[]");
+      } catch (e) {
+        activeRequests = [];
+      }
       var currentSnapshot = {};
-      document.querySelectorAll("tr[data-request-id]").forEach(function (row) {
-        currentSnapshot[row.getAttribute("data-request-id")] = {
-          status: row.getAttribute("data-status"),
-          requestType: row.getAttribute("data-request-type"),
-          canApprove: row.getAttribute("data-can-approve") === "true",
-          taskId: row.getAttribute("data-task-id"),
-          client: row.getAttribute("data-client"),
-          dumpSource: row.getAttribute("data-dump-source"),
-          server: row.getAttribute("data-server"),
+      activeRequests.forEach(function (r) {
+        currentSnapshot[String(r.id)] = {
+          status: r.status,
+          requestType: r.requestType,
+          canApprove: r.canApprove,
+          taskId: r.taskId,
+          client: r.client,
+          dumpSource: r.dumpSource,
+          server: r.server,
         };
       });
 

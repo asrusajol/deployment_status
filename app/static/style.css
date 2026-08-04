@@ -247,14 +247,14 @@ h1 {
 .deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
 .deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
 
-.changes-cell {
+.changes-cell, .branch-commit-cell {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   max-width: 220px;
 }
 
-.changes-preview {
+.changes-preview, .branch-commit-preview {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
@@ -262,7 +262,7 @@ h1 {
   white-space: nowrap;
 }
 
-.view-changes {
+.view-changes, .view-detail {
   flex: none;
   font-size: 0.82rem;
 }
@@ -703,6 +703,26 @@ code {
 .static-field { margin: 0; padding: 0.5rem 0.6rem; font-size: 0.9rem; color: var(--paper); font-family: var(--font-mono); }
 
 #enable-notifications-button, #notifications-enabled-notice { margin-bottom: 1.25rem; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.pagination-status {
+  font-size: 0.85rem;
+  color: var(--fog-dim);
+  font-family: var(--font-mono);
+}
+
+.pagination .is-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* Nav (logged-in state) */
 .nav-user { color: var(--paper); font-weight: 600; font-size: 0.85rem; font-family: var(--font-mono); }

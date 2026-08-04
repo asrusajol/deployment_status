@@ -45,22 +45,31 @@
     {% block content %}{% endblock %}
   </main>
 
+  <!-- Shared "show the full value" modal — originally Changes-only (.view-changes /
+       data-changes, title always "Changes"), generalized so any long/truncated cell can
+       reuse it: a trigger with class .view-detail plus data-detail (the full text) and
+       optionally data-detail-title (defaults to "Changes") gets the same popup with a
+       different heading — see request_list.html's Branch Name / Commit column. -->
   <dialog id="changes-modal" class="changes-modal">
-    <h2>Changes</h2>
+    <h2 id="changes-modal-title">Changes</h2>
     <p id="changes-modal-body" class="changes-modal-body"></p>
     <button type="button" class="button-secondary" id="changes-modal-close">Close</button>
   </dialog>
   <script>
     (function () {
       var dialog = document.getElementById("changes-modal");
+      var title = document.getElementById("changes-modal-title");
       var body = document.getElementById("changes-modal-body");
 
       document.addEventListener("click", function (event) {
-        var trigger = event.target.closest(".view-changes");
-        if (trigger) {
-          body.textContent = trigger.getAttribute("data-changes") || "";
-          dialog.showModal();
-        }
+        var trigger = event.target.closest(".view-changes, .view-detail");
+        if (!trigger) return;
+        var content = trigger.hasAttribute("data-detail")
+          ? trigger.getAttribute("data-detail")
+          : trigger.getAttribute("data-changes");
+        title.textContent = trigger.getAttribute("data-detail-title") || "Changes";
+        body.textContent = content || "";
+        dialog.showModal();
       });
 
       document.getElementById("changes-modal-close").addEventListener("click", function () {

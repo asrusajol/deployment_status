@@ -19,6 +19,8 @@ everything else, so who executed them and when is still tracked.
 Every route here requires login (require_login) — this whole router is the app.
 """
 
+import json
+import math
 from datetime import datetime, timezone
 from io import BytesIO
 from urllib.parse import quote
@@ -472,14 +474,38 @@ def create_test_local_request(
     return RedirectResponse(url="/requests", status_code=303)
 
 
+# Statuses that can still change further — the only ones the desktop-notification
+# feature (request_list.html's inline script) ever needs to watch. Used to build a
+# pagination-independent "active requests" feed below: an old request three pages back
+# moving to Pending Deployment shouldn't stop being notify-worthy just because
+# pagination pushed it off whatever page happens to be on screen.
+ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
+    RequestStatus.pending_approval,
+    RequestStatus.approved,
+    RequestStatus.in_progress,
+)
+REQUESTS_PAGE_SIZE = 25
+
+
 @router.get("/requests")
 def list_requests(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
     settings: Settings = Depends(get_settings),
+    page: int = 1,
 ):
-    requests_ = db.query(DeploymentRequest).order_by(DeploymentRequest.created_at.desc()).all()
+    total_count = db.query(DeploymentRequest).count()
+    total_pages = max(1, math.ceil(total_count / REQUESTS_PAGE_SIZE))
+    page = max(1, min(page, total_pages))
+
+    requests_ = (
+        db.query(DeploymentRequest)
+        .order_by(DeploymentRequest.created_at.desc())
+        .offset((page - 1) * REQUESTS_PAGE_SIZE)
+        .limit(REQUESTS_PAGE_SIZE)
+        .all()
+    )
     # can_deploy is the same for every row (deploy-team membership doesn't depend on
     # which request it is — require_deploy_team_member() in app/auth.py). can_approve
     # does depend on the row (each request's own requester's team lead may differ), so
@@ -489,6 +515,29 @@ def list_requests(
         current_user.role == UserRole.admin
         or current_user.machine_group_id == settings.task_api_deployable_machine_group_id
     )
+
+    active_requests = (
+        db.query(DeploymentRequest)
+        .filter(DeploymentRequest.status.in_(ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS))
+        .order_by(DeploymentRequest.created_at.desc())
+        .all()
+    )
+    active_requests_json = json.dumps(
+        [
+            {
+                "id": r.id,
+                "status": r.status.value,
+                "requestType": r.request_type.value,
+                "canApprove": can_approve_deployment_request(current_user, r),
+                "taskId": r.task_id or "",
+                "client": r.client.name if r.client else "",
+                "dumpSource": r.dump_source or "",
+                "server": r.server or "",
+            }
+            for r in active_requests
+        ]
+    )
+
     return templates.TemplateResponse(
         request,
         "request_list.html",
@@ -502,6 +551,10 @@ def list_requests(
             "rail_stages": RAIL_STAGES,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
             "can_deploy": can_deploy,
+            "page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "active_requests_json": active_requests_json,
         },
     )
 
