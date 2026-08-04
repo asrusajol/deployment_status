@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # `python -c "import secrets; print(secrets.token_hex(32))"`).
     session_secret_key: str = "dev-only-insecure-secret-change-me"
 
+    # Marks the session cookie Secure (browser only ever sends it back over HTTPS) once
+    # this deployment is actually behind TLS (see README's "Production deployment" —
+    # nginx terminates TLS and reverse-proxies to the app over plain HTTP on localhost,
+    # so this only needs to be true/false based on what the *browser* sees, regardless of
+    # that internal hop). Defaults False so local dev (`uvicorn --reload` over plain
+    # http://localhost) and any deployment not yet behind TLS keep working unchanged.
+    session_cookie_https_only: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

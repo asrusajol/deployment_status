@@ -67,12 +67,14 @@ def _completed_request(db, *, client_id, environment, git_branch, commit_hash, r
     return request
 
 
-def _add_deployable_task(session, *, id, task_id, client_name, target, target_status="PLANNED"):
+def _add_deployable_task(
+    session, *, id, task_id, client_name, target, target_status="PLANNED", item_name="Some Item"
+):
     task = DeployableTask(
         id=id,
         order_id=id,
         task_id=task_id,
-        item_name="Some Item",
+        item_name=item_name,
         client_name=client_name,
         pos_id="0040",
         target=target,
@@ -558,6 +560,7 @@ def test_create_request_uses_deployable_task_and_logged_in_user(web):
     request = session.query(DeploymentRequest).one()
     assert request.status == RequestStatus.pending_approval
     assert request.task_id == "PR-03045"  # copied from the DeployableTask, not typed
+    assert request.module_name == "Some Item"  # copied from the DeployableTask's item_name
     assert request.client_id == 1
     assert request.requested_by == 1  # the logged-in user, not a form field
     assert request.version == "V12"
@@ -617,8 +620,8 @@ def test_create_request_combines_multiple_tasks_for_the_same_client(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.add(Client(id=1, name="CRM"))
-    _add_deployable_task(session, id=100, task_id="PR-03045", client_name="CRM", target="live")
-    _add_deployable_task(session, id=101, task_id="PR-03046", client_name="CRM", target="live")
+    _add_deployable_task(session, id=100, task_id="PR-03045", client_name="CRM", target="live", item_name="Interface")
+    _add_deployable_task(session, id=101, task_id="PR-03046", client_name="CRM", target="live", item_name="Reports")
     session.commit()
     login_as(client, "rajib")
 
@@ -638,6 +641,7 @@ def test_create_request_combines_multiple_tasks_for_the_same_client(web):
     assert response.status_code == 303
     request = session.query(DeploymentRequest).one()
     assert request.task_id == "PR-03045, PR-03046"
+    assert request.module_name == "Interface, Reports"
 
 
 def test_create_request_rejects_tasks_from_different_clients(web):
@@ -823,6 +827,7 @@ def _seed_pending_request(session):
     session.commit()
     request = DeploymentRequest(
         task_id="PR-03045",
+        module_name="Interface",
         client_id=1,
         environment=DeploymentEnvironment.live,
         git_branch="release/v12",
@@ -876,6 +881,19 @@ def test_requests_queue_rows_carry_data_attributes_for_desktop_notifications(web
     assert 'data-can-approve="true"' in response.text
     assert 'data-task-id="PR-03045"' in response.text
     assert 'data-client="CRM"' in response.text
+
+
+def test_requests_queue_shows_module_name_and_version_columns(web):
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "<th>Module Name</th>" in response.text
+    assert "<th>Version</th>" in response.text
+    assert "<td>Interface</td>" in response.text
+    assert "<td>V12</td>" in response.text
 
 
 def test_requests_queue_hides_approve_reject_from_team_lead_of_a_different_team(web):
@@ -1243,6 +1261,11 @@ def test_requests_queue_row_for_db_dump_restore_carries_deploy_notification_data
     assert 'data-status="approved"' in response.text
     assert 'data-request-type="db_dump_restore"' in response.text
     assert 'data-dump-source="crm-live"' in response.text
+    # Not sourced from deployable_tasks, so there's no module name to show — but the
+    # request's own `version` (which used to be squeezed into the Details column as a
+    # badge) still shows in the dedicated Version column.
+    assert "<td>—</td>" in response.text
+    assert "<td>V12</td>" in response.text
 
 
 def test_create_db_dump_restore_request_with_share_with_requestor(web):
@@ -1344,7 +1367,12 @@ def test_create_test_local_request_skips_approval(web):
 
     response = client.post(
         "/requests/test-local",
-        data={"server": "crm.test.local", "git_branch": "feature/my-branch", "changes_description": "quick check"},
+        data={
+            "server": "crm.test.local",
+            "git_branch": "feature/my-branch",
+            "version": "V12",
+            "changes_description": "quick check",
+        },
         follow_redirects=False,
     )
 
@@ -1353,6 +1381,7 @@ def test_create_test_local_request_skips_approval(web):
     assert request.request_type == RequestType.test_local
     assert request.server == "crm.test.local"
     assert request.git_branch == "feature/my-branch"
+    assert request.version == "V12"
     assert request.changes_description == "quick check"
     assert request.requested_by == 1
     assert request.status == RequestStatus.approved
@@ -1365,7 +1394,8 @@ def test_create_test_local_request_rejects_non_test_local_host(web):
     login_as(client, "rajib")
 
     response = client.post(
-        "/requests/test-local", data={"server": "crm-live.example.com", "git_branch": "develop"}
+        "/requests/test-local",
+        data={"server": "crm-live.example.com", "git_branch": "develop", "version": "V1"},
     )
 
     assert response.status_code == 400
@@ -1379,10 +1409,27 @@ def test_create_test_local_request_requires_branch(web):
     session.commit()
     login_as(client, "rajib")
 
-    response = client.post("/requests/test-local", data={"server": "crm.test.local", "git_branch": "  "})
+    response = client.post(
+        "/requests/test-local", data={"server": "crm.test.local", "git_branch": "  ", "version": "V1"}
+    )
 
     assert response.status_code == 400
     assert "Branch name is required" in response.text
+    assert session.query(DeploymentRequest).count() == 0
+
+
+def test_create_test_local_request_requires_version(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.post(
+        "/requests/test-local", data={"server": "crm.test.local", "git_branch": "develop", "version": "  "}
+    )
+
+    assert response.status_code == 400
+    assert "Application version is required" in response.text
     assert session.query(DeploymentRequest).count() == 0
 
 
@@ -1398,7 +1445,7 @@ def test_no_approval_required_requests_go_straight_to_deploy_queue(web):
     )
     session.commit()
     login_as(client, "rajib")
-    client.post("/requests/test-local", data={"server": "tmp.test.local", "git_branch": "develop"})
+    client.post("/requests/test-local", data={"server": "tmp.test.local", "git_branch": "develop", "version": "V1"})
 
     login_as(client, "deployer")
     response = client.get("/requests")

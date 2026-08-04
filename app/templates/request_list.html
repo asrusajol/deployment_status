@@ -22,8 +22,10 @@
         <tr>
           <th>Type</th>
           <th>Task ID</th>
+          <th>Module Name</th>
           <th>Client</th>
           <th>System</th>
+          <th>Version</th>
           <th>Details</th>
           <th>Changes</th>
           <th>Requested By</th>
@@ -45,6 +47,7 @@
         >
           <td><span class="badge badge-type-{{ r.request_type.value }}">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span></td>
           <td>{{ r.task_id or "—" }}</td>
+          <td>{{ r.module_name or "—" }}</td>
           <td>{{ r.client.name if r.client else "—" }}</td>
           <td>
             {% if r.environment %}
@@ -53,6 +56,7 @@
               <span class="badge badge-testlocal">{{ r.server }}</span>
             {% else %}—{% endif %}
           </td>
+          <td>{{ r.version or "—" }}</td>
           <td>
             {% if r.request_type == RequestType.db_dump_restore %}
               <code>{{ r.dump_source or "—" }}</code> →
@@ -61,7 +65,6 @@
               {% else %}
                 <code>{{ r.restore_source or "—" }}</code>
               {% endif %}
-              <span class="badge">{{ r.version or "—" }}</span>
             {% elif r.request_type == RequestType.test_local %}
               <code>{{ r.git_branch or "—" }}</code>
             {% else %}

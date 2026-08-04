@@ -14,9 +14,12 @@ from app.routers.dashboard import router as dashboard_router
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
-# session_cookie/https_only left at their Starlette defaults for now — this is an
-# internal tool served over plain HTTP in dev; set https_only=True once it's behind TLS.
-app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+# https_only driven by SESSION_COOKIE_HTTPS_ONLY (app/config.py) — off by default for
+# local dev / any deployment not yet behind TLS, flip on once nginx is terminating HTTPS
+# in front of this app (see README's "Production deployment").
+app.add_middleware(
+    SessionMiddleware, secret_key=settings.session_secret_key, https_only=settings.session_cookie_https_only
+)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)
 app.include_router(admin_router)

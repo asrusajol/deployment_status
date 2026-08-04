@@ -337,6 +337,7 @@ def create_request(
         return rerender("All selected Task IDs must be for the same system (Test or Live).")
 
     combined_task_id = ", ".join(task.task_id for task in deployable_tasks)
+    combined_module_name = ", ".join(task.item_name or "?" for task in deployable_tasks)
 
     git_branch = git_branch.strip()
     commit_hash = commit_hash.strip()
@@ -363,6 +364,7 @@ def create_request(
     db.add(
         DeploymentRequest(
             task_id=combined_task_id,
+            module_name=combined_module_name,
             client_id=client.id,
             environment=environment,
             git_branch=git_branch,
@@ -434,6 +436,7 @@ def create_test_local_request(
     current_user: User = Depends(require_login),
     server: str = Form(...),
     git_branch: str = Form(...),
+    version: str = Form(...),
     changes_description: str = Form(""),
 ):
     def rerender(error: str):
@@ -442,18 +445,22 @@ def create_test_local_request(
 
     server = server.strip()
     git_branch = git_branch.strip()
+    version = version.strip()
     if not server:
         return rerender("Server name is required.")
     if not server.endswith(".test.local"):
         return rerender("Server must be a *.test.local host.")
     if not git_branch:
         return rerender("Branch name is required.")
+    if not version:
+        return rerender("Application version is required.")
 
     db.add(
         DeploymentRequest(
             request_type=RequestType.test_local,
             server=server,
             git_branch=git_branch,
+            version=version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
             # No approval required for this request type — see create_db_dump_restore_request above.

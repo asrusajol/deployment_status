@@ -222,19 +222,32 @@ passes it into the running container at deploy time instead (`env_file: .env`). 
 like any other production secret: readable only by whoever operates this server, never
 committed, never pasted into a ticket/chat.
 
-### 3. Put a reverse proxy in front of it
+### 3. Put a reverse proxy in front of it — with TLS
 
-The app itself only speaks plain HTTP on `APP_PORT` (`8010` by default). Putting a
-reverse proxy in front — even without TLS, for a tool that's only ever reachable on the
-internal network, never the public internet — is still worth it for a stable hostname
-instead of `host:8010`, request logging, and not exposing `${APP_PORT}` itself beyond
-`localhost`. If this ever needs to be reachable from outside the internal network, add
-TLS termination at this same layer rather than in the app.
+The app itself only speaks plain HTTP on `APP_PORT` (`8010` by default). A reverse proxy
+in front gives a stable hostname instead of `host:8010`, request logging, and a place to
+stop exposing `${APP_PORT}` itself beyond `localhost`.
 
-A full nginx example is at
+TLS specifically (not just "nice to have" here) is required for the desktop-notification
+feature on `/requests` to work at all — browsers block the Notification permission
+prompt entirely on insecure origins, and being internal-only network doesn't exempt an
+origin from that; browsers only check `http:` vs `https:`. If this deployment has no
+existing cert infrastructure (no internal CA), a self-signed cert is the pragmatic
+choice — it's manually trusted once per browser (a "your connection isn't private"
+click-through) rather than automatically, but that's a one-time step, not per visit.
+
+A full nginx example, including the self-signed-cert generation command and the
+HTTP→HTTPS redirect, is at
 [`deploy/nginx/deployment.test.local.conf`](deploy/nginx/deployment.test.local.conf) —
-copy it to `/etc/nginx/sites-available/`, adjust `server_name` and the upstream port,
-symlink it into `sites-enabled/`, and reload nginx. Equivalent minimal Caddy config:
+copy it to `/etc/nginx/sites-available/`, adjust `server_name`, cert paths, and the
+upstream port, symlink it into `sites-enabled/`, and reload nginx. Once it's live, set
+`SESSION_COOKIE_HTTPS_ONLY=true` in `.env` (`app/config.py`) so the login session cookie
+gets marked `Secure` to match — it defaults to `false` so local dev and any
+not-yet-TLS deployment keep working unchanged.
+
+Equivalent minimal Caddy config (Caddy auto-provisions/renews certs itself — no manual
+self-signed-cert step, but still needs its own internal-CA setup for a network with no
+public DNS, which is out of scope here):
 
 ```
 deployment.test.local {

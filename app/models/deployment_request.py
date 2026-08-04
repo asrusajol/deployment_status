@@ -60,6 +60,13 @@ class DeploymentRequest(Base):
         Enum(RequestType), nullable=False, default=RequestType.standard
     )
     task_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    # `DeployableTask.item_name` (e.g. "Interface"), copied at request-creation time —
+    # same reasoning as task_id: the source DeployableTask row can be re-synced/removed
+    # later, so this is a snapshot, not a live lookup. Comma-joined the same way task_id
+    # is when a request combines multiple orders (create_request() in
+    # app/routers/dashboard.py). Only ever set for `standard` requests — db_dump_restore
+    # and test_local aren't sourced from deployable_tasks at all.
+    module_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     # Freeform: the older intake skill fills this with things like "CRM Live"; for a
     # `test_local` request it holds the target host (e.g. "crm.test.local") instead.
