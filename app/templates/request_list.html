@@ -341,10 +341,35 @@
 
       // Keeps this page's queue current without the user having to hit reload — a
       // straightforward full-page reload rather than a partial fetch/patch, since this
-      // page is just a queue with buttons (no in-progress typing to lose).
+      // page is just a queue with buttons (no in-progress typing to lose). Triggered by
+      // a WebSocket ping from the server (app/ws.py) the instant any request actually
+      // changes, rather than blindly polling every 30 seconds — see
+      // docs/websocket-scaling.md for the single-worker caveat this carries today.
+      var RECONNECT_DELAY_MS = 3000;
+      // Purely a safety net, not the primary mechanism — covers a proxy that doesn't
+      // forward WebSocket upgrades, or a socket that silently never connects.
+      var FALLBACK_RELOAD_MS = 120000;
+
+      function connectLiveUpdateSocket() {
+        if (!("WebSocket" in window)) return;
+        var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        var socket = new WebSocket(protocol + "//" + window.location.host + "/ws/requests");
+
+        socket.onmessage = function () {
+          window.location.reload();
+        };
+        socket.onclose = function () {
+          setTimeout(connectLiveUpdateSocket, RECONNECT_DELAY_MS);
+        };
+        socket.onerror = function () {
+          socket.close();
+        };
+      }
+
+      connectLiveUpdateSocket();
       setTimeout(function () {
         window.location.reload();
-      }, 30000);
+      }, FALLBACK_RELOAD_MS);
     })();
   </script>
 {% endblock %}

@@ -115,8 +115,18 @@ forced to `/change-password` before you can do anything else (see below).
     always gated on membership in the one fixed deploy team regardless of who requested
     it. Only the deploy check reuses `TASK_API_DEPLOYABLE_MACHINE_GROUP_ID`; approval
     doesn't reference that setting at all.
-  - The page auto-refreshes every 30 seconds and, once you click **Enable Desktop
-    Notifications**, pops an OS-level notification (plus an audible beep either way) for
+  - The page reloads live — a WebSocket connection to `/ws/requests` (`app/ws.py`) gets a
+    tiny "changed" ping the instant any request is created/approved/rejected/started/
+    deployed/deleted, and the page just reloads on receipt, rather than blindly polling
+    on a timer. Falls back to a 2-minute reload if the socket never connects at all
+    (e.g. a proxy that doesn't forward WebSocket upgrades — see the nginx config's
+    `location /ws/` block) or drops and can't reconnect. This only broadcasts to clients
+    connected to the same worker process — fine for the single-process deployment this
+    repo runs today, but see
+    [`docs/websocket-scaling.md`](docs/websocket-scaling.md) before ever running this
+    with multiple workers or replicas. Once you click **Enable Desktop
+    Notifications**, the same ping also pops an OS-level notification (plus an audible
+    beep either way) for
     events relevant to *you*: a new request lands that you personally can approve, or a
     request becomes ready to deploy and you're on the deploy team — either because an
     existing one flipped from Pending Approval to Pending Deployment, or because it's a

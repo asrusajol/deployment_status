@@ -1,16 +1,17 @@
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.auth import NotAuthenticatedError
+from app.auth import SESSION_USER_ID_KEY, NotAuthenticatedError
 from app.config import get_settings
 from app.database import get_db
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
+from app.ws import manager
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
@@ -43,3 +44,30 @@ def health() -> dict:
 def health_db(db: Session = Depends(get_db)) -> dict:
     db.execute(text("SELECT 1"))
     return {"status": "ok", "database": "reachable"}
+
+
+@app.websocket("/ws/requests")
+async def requests_ws(websocket: WebSocket) -> None:
+    """Live-update ping for /requests (request_list.html) — see app/ws.py. Not a data
+    channel: the only thing ever sent over it is a bare "changed" string; the client
+    just reloads the page on receipt, so there's nothing here worth encrypting beyond
+    whatever TLS the reverse proxy already terminates (README's "Production deployment").
+    """
+    # A lightweight session check, not the full require_login() — a WebSocket can't be
+    # redirected to /login the way a normal request is, and the only consequence of
+    # letting a stale/borderline session through here is one extra "reload the page"
+    # ping; the reload itself still goes through full require_login() regardless.
+    if websocket.session.get(SESSION_USER_ID_KEY) is None:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Nothing meaningful ever arrives from the client — this just blocks until
+            # the browser closes the tab/connection, which raises WebSocketDisconnect.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)

@@ -44,6 +44,7 @@ from app.services.export import rows_to_xlsx
 from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
+from app.ws import manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -379,6 +380,7 @@ def create_request(
         )
     )
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -428,6 +430,7 @@ def create_db_dump_restore_request(
         )
     )
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -471,6 +474,7 @@ def create_test_local_request(
         )
     )
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -609,6 +613,7 @@ def approve_request(
     )
     deployment_request.status = RequestStatus.approved
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -635,6 +640,7 @@ def reject_request(
     )
     deployment_request.status = RequestStatus.rejected
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -665,6 +671,7 @@ def start_request(
     )
     deployment_request.status = RequestStatus.in_progress
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -688,6 +695,7 @@ def deploy_request(
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
@@ -711,4 +719,5 @@ def delete_request(
         db.delete(approval)
     db.delete(deployment_request)
     db.commit()
+    manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
