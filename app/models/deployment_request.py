@@ -26,6 +26,22 @@ class RequestStatus(str, enum.Enum):
     rolled_back = "rolled_back"
 
 
+# Statuses a request can still be deleted from (can_delete_request() in app/auth.py) —
+# anything up to and including a decision (approved/rejected), but not once execution has
+# actually started. `claimed`/`in_progress` mean a DeploymentExecution row already exists
+# for this request (require_deploy_team_member()'s start/deploy routes create one), and
+# `completed`/`failed`/`rolled_back` are historical record at that point — deleting any of
+# those would silently break the audit trail this whole tool exists for, so they're
+# excluded on purpose, not just left off by omission.
+DELETABLE_REQUEST_STATUSES = (
+    RequestStatus.pending_intake,
+    RequestStatus.submitted,
+    RequestStatus.pending_approval,
+    RequestStatus.approved,
+    RequestStatus.rejected,
+)
+
+
 # The web UI's four-stage flow (Submit -> Pending Team Lead Approval -> Pending Deployment
 # -> Deployed) maps directly onto four of the RequestStatus values above — a request
 # created via the form starts at `pending_approval` (skipping the bare `submitted` state,

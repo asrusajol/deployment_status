@@ -946,24 +946,133 @@ def _seed_many_requests(session, count):
     session.commit()
 
 
-def test_requests_queue_paginates_at_25_per_page(web):
+def test_requests_queue_paginates_at_15_per_page_by_default(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
-    _seed_many_requests(session, 30)
+    _seed_many_requests(session, 20)  # 15 on page 1, 5 on page 2 — unambiguous at the default
     login_as(client, "rajib")
 
     page1 = client.get("/requests")
     assert page1.status_code == 200
-    assert "Page 1 of 2 (30 total)" in page1.text
+    assert "Page 1 of 2 (20 total)" in page1.text
     assert "PR-000" in page1.text  # newest — first page
-    assert "PR-029" not in page1.text  # oldest — second page
+    assert "PR-014" in page1.text  # 15th item — still first page
+    assert "PR-019" not in page1.text  # oldest — second page
 
     page2 = client.get("/requests", params={"page": 2})
     assert page2.status_code == 200
-    assert "Page 2 of 2 (30 total)" in page2.text
-    assert "PR-029" in page2.text
+    assert "Page 2 of 2 (20 total)" in page2.text
+    assert "PR-019" in page2.text
     assert "PR-000" not in page2.text
+
+
+def test_requests_queue_page_size_is_configurable(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 20)
+    login_as(client, "rajib")
+
+    response = client.get("/requests", params={"page_size": 25})
+
+    assert response.status_code == 200
+    # Everything fits on one page at 25/page, so the pagination nav itself doesn't render
+    # — but every row, including the one that was pushed to page 2 at the 15/page default,
+    # must show up.
+    assert 'class="pagination"' not in response.text
+    assert "PR-000" in response.text
+    assert "PR-019" in response.text
+
+
+def test_requests_queue_rejects_out_of_range_page_size(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 20)
+    login_as(client, "rajib")
+
+    # Not one of the dropdown's allowed values (15/25/50/100) — falls back to the
+    # default rather than letting a hand-edited URL request an arbitrarily large page.
+    response = client.get("/requests", params={"page_size": 999})
+
+    assert response.status_code == 200
+    assert "Page 1 of 2 (20 total)" in response.text  # confirms it fell back to 15/page
+
+
+def test_requester_can_delete_own_pending_request(web):
+    client, session = web
+    _seed_pending_request(session)  # request id=1, requested_by=1 ("requester")
+    login_as(client, "requester")
+
+    response = client.post("/requests/1/delete", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1) is None
+
+
+def test_admin_can_delete_any_pending_request(web):
+    client, session = web
+    _seed_pending_request(session)
+    make_user(session, id=5, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "root")
+
+    response = client.post("/requests/1/delete", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1) is None
+
+
+def test_other_user_cannot_delete_someone_elses_request(web):
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")  # team_lead, but not the requester and not an admin
+
+    response = client.post("/requests/1/delete")
+
+    assert response.status_code == 403
+    assert session.get(DeploymentRequest, 1) is not None
+
+
+def test_cannot_delete_a_request_once_deployment_has_started(web):
+    # DELETABLE_REQUEST_STATUSES (app/models/deployment_request.py) deliberately excludes
+    # in_progress/completed — deleting either would silently erase real execution history.
+    client, session = web
+    _seed_pending_request(session)
+    request = session.get(DeploymentRequest, 1)
+    request.status = RequestStatus.in_progress
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post("/requests/1/delete")
+
+    assert response.status_code == 403
+    assert session.get(DeploymentRequest, 1) is not None
+
+
+def test_delete_request_requires_login(web):
+    client, session = web
+    _seed_pending_request(session)
+
+    response = client.post("/requests/1/delete", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+    assert session.get(DeploymentRequest, 1) is not None
+
+
+def test_requests_queue_shows_delete_button_only_to_requester_and_admin(web):
+    client, session = web
+    _seed_pending_request(session)
+
+    login_as(client, "requester")
+    as_requester = client.get("/requests")
+    assert 'action="/requests/1/delete"' in as_requester.text
+
+    login_as(client, "lead")
+    as_other_user = client.get("/requests")
+    assert 'action="/requests/1/delete"' not in as_other_user.text
 
 
 def test_requests_queue_clamps_out_of_range_page(web):

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
+from app.models.deployment_request import DELETABLE_REQUEST_STATUSES
 from app.models.user import User, UserRole
 
 SESSION_USER_ID_KEY = "user_id"
@@ -96,6 +97,22 @@ def can_approve_deployment_request(current_user: User, deployment_request) -> bo
     if requester is None or requester.machine_group_id is None:
         return False
     return current_user.machine_group_id == requester.machine_group_id
+
+
+def can_delete_request(current_user: User, deployment_request) -> bool:
+    """Whether current_user may delete this specific request: an admin, or the original
+    requester — and only while it's still in DELETABLE_REQUEST_STATUSES (app/models/
+    deployment_request.py). Once a deploy team member has actually started executing it
+    (in_progress) or it's reached a terminal state (completed/failed/rolled_back), it's
+    execution history, not a mistake to undo — deleting it would silently break the
+    audit trail this tool exists for, so neither an admin nor the requester can at that
+    point (there's no override; if a real correction is needed once execution has
+    started, that's an operational conversation, not a delete button)."""
+    if deployment_request.status not in DELETABLE_REQUEST_STATUSES:
+        return False
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
 
 
 def require_deploy_team_member(

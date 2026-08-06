@@ -30,7 +30,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.auth import can_approve_deployment_request, require_deploy_team_member, require_login
+from app.auth import can_approve_deployment_request, can_delete_request, require_deploy_team_member, require_login
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
@@ -484,7 +484,12 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
     RequestStatus.approved,
     RequestStatus.in_progress,
 )
-REQUESTS_PAGE_SIZE = 25
+# User-selectable via the page-size dropdown (request_list.html) — DEFAULT is what a
+# fresh visit (no page_size query param) gets; ALLOWED bounds the dropdown itself and
+# also anything sent directly as a query param, so a hand-edited/bookmarked URL can't
+# request an arbitrarily large page and turn every load into a full-table scan.
+DEFAULT_REQUESTS_PAGE_SIZE = 15
+ALLOWED_REQUESTS_PAGE_SIZES = (15, 25, 50, 100)
 
 
 @router.get("/requests")
@@ -494,16 +499,20 @@ def list_requests(
     current_user: User = Depends(require_login),
     settings: Settings = Depends(get_settings),
     page: int = 1,
+    page_size: int = DEFAULT_REQUESTS_PAGE_SIZE,
 ):
+    if page_size not in ALLOWED_REQUESTS_PAGE_SIZES:
+        page_size = DEFAULT_REQUESTS_PAGE_SIZE
+
     total_count = db.query(DeploymentRequest).count()
-    total_pages = max(1, math.ceil(total_count / REQUESTS_PAGE_SIZE))
+    total_pages = max(1, math.ceil(total_count / page_size))
     page = max(1, min(page, total_pages))
 
     requests_ = (
         db.query(DeploymentRequest)
         .order_by(DeploymentRequest.created_at.desc())
-        .offset((page - 1) * REQUESTS_PAGE_SIZE)
-        .limit(REQUESTS_PAGE_SIZE)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     # can_deploy is the same for every row (deploy-team membership doesn't depend on
@@ -550,8 +559,11 @@ def list_requests(
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
+            "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_deploy": can_deploy,
             "page": page,
+            "page_size": page_size,
+            "page_size_options": ALLOWED_REQUESTS_PAGE_SIZES,
             "total_pages": total_pages,
             "total_count": total_count,
             "active_requests_json": active_requests_json,
@@ -675,5 +687,28 @@ def deploy_request(
     execution.completed_at = datetime.now(timezone.utc)
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
+    db.commit()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+@router.post("/requests/{request_id}/delete")
+def delete_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    """Lets the original requester (or an admin) undo a mistaken submission — only while
+    it's still in DELETABLE_REQUEST_STATUSES (can_delete_request() in app/auth.py); once
+    a deploy-team member has actually started executing it, this 403s instead."""
+    deployment_request = _get_request_or_404(db, request_id)
+    if not can_delete_request(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete this request")
+
+    # Approval rows have a plain FK to this request (no cascade) — delete those first,
+    # or the DB rejects the delete. No DeploymentExecution row can exist yet: everything
+    # in DELETABLE_REQUEST_STATUSES is strictly before start_request() above ever runs.
+    for approval in list(deployment_request.approvals):
+        db.delete(approval)
+    db.delete(deployment_request)
     db.commit()
     return RedirectResponse(url="/requests", status_code=303)

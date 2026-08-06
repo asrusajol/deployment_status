@@ -220,6 +220,13 @@ h1 {
   font-size: 0.87rem;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  /* Explicit, rather than relying on the UA default — a <td> with `display: flex|grid`
+     directly on it (like the old .actions did) stops being a table-cell box at all, so
+     vertical-align no longer applies to it and it renders out of step with its plain
+     sibling cells in the same row. Fixed by moving that flex layout onto an inner .actions-inner
+     div instead (this <td> itself never gets a display override), but this rule is the
+     belt-and-suspenders guarantee every column lines up regardless. */
+  vertical-align: middle;
 }
 
 .status-table tbody tr {
@@ -572,7 +579,9 @@ code {
   flex: 1 1 220px;
 }
 
-.actions { display: flex; flex-direction: column; gap: 0.4rem; }
+/* On an inner div, not the <td> itself — see the comment on .status-table td above for
+   why a flex/grid display directly on a table cell breaks its row alignment. */
+.actions-inner { display: flex; flex-direction: column; gap: 0.4rem; }
 .inline-form { display: flex; gap: 0.35rem; align-items: center; }
 .inline-form select {
   padding: 0.25rem 0.4rem;
@@ -722,6 +731,35 @@ code {
   opacity: 0.4;
   cursor: default;
   pointer-events: none;
+}
+
+.queue-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.page-size-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-size-form label {
+  font-size: 0.8rem;
+  color: var(--fog-dim);
+}
+
+.page-size-form select {
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-raised);
+  color: var(--paper);
+  font-size: 0.85rem;
 }
 
 /* Nav (logged-in state) */

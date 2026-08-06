@@ -1,8 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
-  <p class="eyebrow">Queue</p>
-  <h1>Deployment Requests</h1>
+  <div class="queue-header">
+    <div>
+      <p class="eyebrow">Queue</p>
+      <h1>Deployment Requests</h1>
+    </div>
+    <form method="get" action="/requests" class="page-size-form">
+      <label for="page_size">Rows per page</label>
+      <select name="page_size" id="page_size" onchange="this.form.submit()">
+        {% for size in page_size_options %}
+          <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
 
   <!-- Hidden until JS confirms the browser supports the Notification API and hasn't
        already been asked (see the script below) — permission must be requested from a
@@ -106,37 +118,49 @@
             </span>
             <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
           </td>
-          <td class="actions">
-            {% if r.status == RequestStatus.pending_approval %}
-              {% if can_approve_request(r) %}
-                <form method="post" action="/requests/{{ r.id }}/approve" class="inline-form">
-                  <button type="submit" class="approve">Approve</button>
-                </form>
-                <form method="post" action="/requests/{{ r.id }}/reject" class="inline-form">
-                  <button type="submit" class="reject">Reject</button>
-                </form>
-              {% else %}
-                <span class="muted">Awaiting the requester's team lead</span>
+          <td>
+            <div class="actions-inner">
+              {% if r.status == RequestStatus.pending_approval %}
+                {% if can_approve_request(r) %}
+                  <form method="post" action="/requests/{{ r.id }}/approve" class="inline-form">
+                    <button type="submit" class="approve">Approve</button>
+                  </form>
+                  <form method="post" action="/requests/{{ r.id }}/reject" class="inline-form">
+                    <button type="submit" class="reject">Reject</button>
+                  </form>
+                {% else %}
+                  <span class="muted">Awaiting the requester's team lead</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.approved %}
+                {% if can_deploy %}
+                  <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
+                    <button type="submit" class="start">Start Deployment</button>
+                  </form>
+                {% else %}
+                  <span class="muted">Awaiting a deploy team member</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.in_progress %}
+                {% if can_deploy %}
+                  <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
+                    <button type="submit" class="deploy">Mark Deployed</button>
+                  </form>
+                {% else %}
+                  <span class="muted">In progress — awaiting completion</span>
+                {% endif %}
+              {% elif not can_delete_request(r) %}
+                <span class="muted">—</span>
               {% endif %}
-            {% elif r.status == RequestStatus.approved %}
-              {% if can_deploy %}
-                <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
-                  <button type="submit" class="start">Start Deployment</button>
+              {% if can_delete_request(r) %}
+                <form
+                  method="post"
+                  action="/requests/{{ r.id }}/delete"
+                  class="inline-form"
+                  onsubmit="return confirm('Delete this deployment request? This cannot be undone.');"
+                >
+                  <button type="submit" class="reject">Delete</button>
                 </form>
-              {% else %}
-                <span class="muted">Awaiting a deploy team member</span>
               {% endif %}
-            {% elif r.status == RequestStatus.in_progress %}
-              {% if can_deploy %}
-                <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
-                  <button type="submit" class="deploy">Mark Deployed</button>
-                </form>
-              {% else %}
-                <span class="muted">In progress — awaiting completion</span>
-              {% endif %}
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -150,13 +174,13 @@
   {% if total_pages > 1 %}
     <nav class="pagination" aria-label="Requests pagination">
       {% if page > 1 %}
-        <a href="/requests?page={{ page - 1 }}" class="button-secondary">Previous</a>
+        <a href="/requests?page={{ page - 1 }}&page_size={{ page_size }}" class="button-secondary">Previous</a>
       {% else %}
         <span class="button-secondary is-disabled">Previous</span>
       {% endif %}
       <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
       {% if page < total_pages %}
-        <a href="/requests?page={{ page + 1 }}" class="button-secondary">Next</a>
+        <a href="/requests?page={{ page + 1 }}&page_size={{ page_size }}" class="button-secondary">Next</a>
       {% else %}
         <span class="button-secondary is-disabled">Next</span>
       {% endif %}
