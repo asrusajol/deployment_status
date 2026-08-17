@@ -69,10 +69,19 @@
           <td>
             {% if r.request_type == RequestType.db_dump_restore %}
               {% set plain_detail = (r.dump_source or "—") ~ " → " ~ ("share with requestor" if r.share_with_requestor else (r.restore_source or "—")) %}
+              {# No standalone "branch" concept for this request type — copy the same full value shown. #}
+              {% set copy_value = plain_detail %}
             {% elif r.request_type == RequestType.test_local %}
               {% set plain_detail = r.git_branch or "—" %}
+              {% set copy_value = r.git_branch or "" %}
             {% else %}
-              {% set plain_detail = (r.git_branch or "—") ~ " / " ~ (r.commit_hash or "—") %}
+              {# "||" rather than "/" — branch names routinely contain their own slashes
+                 (e.g. "bugfix/PR-03168-..."), which made "branch / commit" ambiguous
+                 about where the branch ends and the commit begins. #}
+              {% set plain_detail = (r.git_branch or "—") ~ " || " ~ (r.commit_hash or "—") %}
+              {# Copy button copies the branch name alone, not "branch || commit" — the commit
+                 hash tacked on made pasted branch names unusable (see the copy-button fix). #}
+              {% set copy_value = r.git_branch or "" %}
             {% endif %}
             <div class="branch-commit-cell">
               <span class="branch-commit-preview">
@@ -86,7 +95,7 @@
                 {% elif r.request_type == RequestType.test_local %}
                   <code>{{ r.git_branch or "—" }}</code>
                 {% else %}
-                  <code>{{ r.git_branch or "—" }}</code> / <code>{{ r.commit_hash or "—" }}</code>
+                  <code>{{ r.git_branch or "—" }}</code> <span class="branch-commit-sep">||</span> <code>{{ r.commit_hash or "—" }}</code>
                 {% endif %}
               </span>
               <button
@@ -94,6 +103,7 @@
                 class="link-button view-detail"
                 data-detail-title="Branch Name / Commit"
                 data-detail="{{ plain_detail }}"
+                data-copy="{{ copy_value }}"
               >View</button>
             </div>
           </td>
