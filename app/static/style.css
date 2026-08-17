@@ -237,6 +237,45 @@ h1 {
   background: var(--panel-raised);
 }
 
+/* /requests has enough columns (11) that the table scrolls horizontally on normal
+   screens — without this, the rightmost Action column (Approve/Reject/Mark Deployed)
+   scrolls out of view along with everything else, so the buttons that actually do
+   something are the first thing hidden. Pinning it to the scroll container's right edge
+   keeps it reachable no matter how far right the rest of the row has scrolled. Scoped to
+   .requests-table specifically — .status-table alone is also used by admin_users.html
+   and the dashboard's .deployment-table, neither of which has this problem.
+
+   Confirmed against a real browser (position: sticky on table cells is easy to get
+   silently wrong): .status-table's own `overflow: hidden` (above) sits between this
+   cell and the actual scrolling ancestor (.table-scroll) and was intercepted as the
+   sticky containing block instead — since that box itself never scrolls, the cell just
+   sat at its normal flow position with zero sticky effect. Overriding it back to
+   `visible` here is what makes the position: sticky below actually take effect; it's
+   harmless because .table-scroll .status-table already zeroes border-radius (this
+   table is always wrapped in .table-scroll), so there's no rounded corner left for the
+   original `overflow: hidden` to be clipping anyway. */
+.requests-table {
+  overflow: visible;
+}
+
+.requests-table th:last-child,
+.requests-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--panel);
+  box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.45);
+}
+
+.requests-table thead th:last-child {
+  z-index: 2;
+  background: var(--panel-raised);
+}
+
+.requests-table tbody tr:hover td:last-child {
+  background: var(--panel-raised);
+}
+
 .deployment-table {
   table-layout: fixed;
 }
