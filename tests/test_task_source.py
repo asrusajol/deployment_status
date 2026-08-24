@@ -422,9 +422,12 @@ def test_list_deployable_tasks_skips_operations_that_are_not_planned():
     assert provider.list_deployable_tasks() == []
 
 
-def test_list_deployable_tasks_skips_rows_not_named_a_deploy_operation():
-    # Defensive client-side check even though the server's own name filter should
-    # already exclude these.
+def test_list_deployable_tasks_keeps_rows_not_named_a_deploy_operation():
+    # The name-based test/live filter was removed (confirmed with the user: real
+    # /get-orders data isn't reliably limited to just "Deployment Test system"/
+    # "Deployment Live System", so it was silently dropping legitimate rows) — the
+    # hall/machineGroup server-side scope plus the PLANNED check are the only filters
+    # now. A non-matching name still comes through, just with target="unknown".
     def handler(request):
         if request.url.path == "/api/login":
             return httpx.Response(200, json={"token": "tok-1"})
@@ -439,7 +442,9 @@ def test_list_deployable_tasks_skips_rows_not_named_a_deploy_operation():
         )
 
     provider = _make_provider(handler)
-    assert provider.list_deployable_tasks() == []
+    results = provider.list_deployable_tasks()
+    assert len(results) == 1
+    assert results[0].target == "unknown"
 
 
 def test_list_deployable_tasks_handles_missing_customer_and_machine():
