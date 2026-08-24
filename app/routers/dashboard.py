@@ -23,6 +23,7 @@ import json
 import math
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import NamedTuple
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -30,7 +31,13 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.auth import can_approve_deployment_request, can_delete_request, require_deploy_team_member, require_login
+from app.auth import (
+    can_approve_deployment_request,
+    can_delete_request,
+    can_edit_request,
+    require_deploy_team_member,
+    require_login,
+)
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
@@ -290,6 +297,91 @@ def _parse_deployable_task_ids(raw: str | None) -> list[int]:
     return ids
 
 
+class _ValidatedStandardRequestFields(NamedTuple):
+    """What create_request and edit_request both need after validating the Standard
+    Deployment form's task/client fields — the two routes submit the exact same fields,
+    so this is shared rather than duplicated."""
+
+    deployable_tasks: list[DeployableTask]
+    combined_task_id: str
+    combined_module_name: str
+    client: Client
+    git_branch: str
+    commit_hash: str
+    version: str
+
+
+def _validate_standard_request_fields(
+    db: Session,
+    deployable_task_ids: str | None,
+    client_id: str | None,
+    new_client_name: str,
+    git_branch: str,
+    commit_hash: str,
+    version: str,
+) -> _ValidatedStandardRequestFields | str:
+    """Returns the validated/derived fields, or a plain error string to show the user."""
+    task_id_error = (
+        "Select at least one Task ID from the list below — type to search, then pick a "
+        "suggestion; typed text that doesn't match one isn't a valid selection."
+    )
+    task_ids = _parse_deployable_task_ids(deployable_task_ids)
+    if not task_ids:
+        return task_id_error
+
+    # Looked up by DeployableTask.id (the CRM's own operation id, always unique) rather
+    # than the task's own task_id string — that string is NOT guaranteed unique across
+    # orders (see DeployableTask's docstring), so it can't safely be the lookup key here.
+    deployable_tasks = [db.get(DeployableTask, task_id) for task_id in task_ids]
+    if any(task is None or task.target_status != "PLANNED" for task in deployable_tasks):
+        return task_id_error
+
+    # Multiple orders can be deployed together in one request, but only if they're all
+    # for the same client AND the same target (test/live) — a request has exactly one
+    # `environment`, so mixing a Test order with a Live one into it would silently deploy
+    # one of them to the wrong system. (request_form.html's JS already blocks both of
+    # these client-side; this is the server-side backstop.)
+    if len({task.client_name for task in deployable_tasks}) > 1:
+        return "All selected Task IDs must belong to the same client."
+    if len({task.target for task in deployable_tasks}) > 1:
+        return "All selected Task IDs must be for the same system (Test or Live)."
+
+    combined_task_id = ", ".join(task.task_id for task in deployable_tasks)
+    combined_module_name = ", ".join(task.item_name or "?" for task in deployable_tasks)
+
+    git_branch = git_branch.strip()
+    commit_hash = commit_hash.strip()
+    version = version.strip()
+    if not git_branch or not commit_hash or not version:
+        return "Git branch, commit hash, and version are all required."
+
+    if client_id == NEW_CLIENT_VALUE:
+        new_client_name = new_client_name.strip()
+        if not new_client_name:
+            return "Enter a name for the new client."
+        client = db.query(Client).filter(Client.name == new_client_name).one_or_none()
+        if client is None:
+            client = Client(name=new_client_name)
+            db.add(client)
+            db.flush()  # populate client.id before using it below
+    elif client_id:
+        client = db.get(Client, int(client_id))
+        if client is None:
+            return "Selected client no longer exists."
+    else:
+        return 'Select a client, or choose "+ Add new client".'
+
+    return _ValidatedStandardRequestFields(
+        deployable_tasks=deployable_tasks,
+        combined_task_id=combined_task_id,
+        combined_module_name=combined_module_name,
+        client=client,
+        git_branch=git_branch,
+        commit_hash=commit_hash,
+        version=version,
+    )
+
+
 @router.post("/requests")
 def create_request(
     request: Request,
@@ -314,65 +406,22 @@ def create_request(
         context = _request_form_context(db, current_user, error)
         return templates.TemplateResponse(request, "request_form.html", context, status_code=400)
 
-    task_id_error = (
-        "Select at least one Task ID from the list below — type to search, then pick a "
-        "suggestion; typed text that doesn't match one isn't a valid selection."
+    result = _validate_standard_request_fields(
+        db, deployable_task_ids, client_id, new_client_name, git_branch, commit_hash, version
     )
-    task_ids = _parse_deployable_task_ids(deployable_task_ids)
-    if not task_ids:
-        return rerender(task_id_error)
-
-    # Looked up by DeployableTask.id (the CRM's own operation id, always unique) rather
-    # than the task's own task_id string — that string is NOT guaranteed unique across
-    # orders (see DeployableTask's docstring), so it can't safely be the lookup key here.
-    deployable_tasks = [db.get(DeployableTask, task_id) for task_id in task_ids]
-    if any(task is None or task.target_status != "PLANNED" for task in deployable_tasks):
-        return rerender(task_id_error)
-
-    # Multiple orders can be deployed together in one request, but only if they're all
-    # for the same client AND the same target (test/live) — a request has exactly one
-    # `environment`, so mixing a Test order with a Live one into it would silently deploy
-    # one of them to the wrong system. (request_form.html's JS already blocks both of
-    # these client-side; this is the server-side backstop.)
-    if len({task.client_name for task in deployable_tasks}) > 1:
-        return rerender("All selected Task IDs must belong to the same client.")
-    if len({task.target for task in deployable_tasks}) > 1:
-        return rerender("All selected Task IDs must be for the same system (Test or Live).")
-
-    combined_task_id = ", ".join(task.task_id for task in deployable_tasks)
-    combined_module_name = ", ".join(task.item_name or "?" for task in deployable_tasks)
-
-    git_branch = git_branch.strip()
-    commit_hash = commit_hash.strip()
-    version = version.strip()
-    if not git_branch or not commit_hash or not version:
-        return rerender("Git branch, commit hash, and version are all required.")
-
-    if client_id == NEW_CLIENT_VALUE:
-        new_client_name = new_client_name.strip()
-        if not new_client_name:
-            return rerender("Enter a name for the new client.")
-        client = db.query(Client).filter(Client.name == new_client_name).one_or_none()
-        if client is None:
-            client = Client(name=new_client_name)
-            db.add(client)
-            db.flush()  # populate client.id before using it below
-    elif client_id:
-        client = db.get(Client, int(client_id))
-        if client is None:
-            return rerender("Selected client no longer exists.")
-    else:
-        return rerender('Select a client, or choose "+ Add new client".')
+    if isinstance(result, str):
+        return rerender(result)
 
     db.add(
         DeploymentRequest(
-            task_id=combined_task_id,
-            module_name=combined_module_name,
-            client_id=client.id,
+            task_id=result.combined_task_id,
+            module_name=result.combined_module_name,
+            deployable_task_ids=",".join(str(task.id) for task in result.deployable_tasks),
+            client_id=result.client.id,
             environment=environment,
-            git_branch=git_branch,
-            commit_hash=commit_hash,
-            version=version,
+            git_branch=result.git_branch,
+            commit_hash=result.commit_hash,
+            version=result.version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
             status=RequestStatus.pending_approval,
@@ -564,6 +613,7 @@ def list_requests(
             "rail_stages": RAIL_STAGES,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
             "can_delete_request": lambda r: can_delete_request(current_user, r),
+            "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
             "page": page,
             "page_size": page_size,
@@ -694,6 +744,111 @@ def deploy_request(
     execution.completed_at = datetime.now(timezone.utc)
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+def _edit_request_context(
+    db: Session, current_user: User, deployment_request: DeploymentRequest, error: str | None = None
+) -> dict:
+    original_task_ids = _parse_deployable_task_ids(deployment_request.deployable_task_ids)
+    original_tasks = [db.get(DeployableTask, task_id) for task_id in original_task_ids]
+    original_tasks = [task for task in original_tasks if task is not None]
+
+    # The picker needs both: every currently-PLANNED task (so the requester can still swap
+    # in a different one, same as on creation) and whichever originally-selected tasks
+    # aren't currently PLANNED anymore (so they still show up as already-selected instead
+    # of silently vanishing from the list) — submitting still re-checks PLANNED status
+    # regardless, same as create_request, so a stale one can't sneak through.
+    combined_by_id = {
+        task.id: task
+        for task in db.query(DeployableTask)
+        .filter(DeployableTask.target_status == "PLANNED")
+        .order_by(DeployableTask.due_date)
+        .all()
+    }
+    for task in original_tasks:
+        combined_by_id.setdefault(task.id, task)
+
+    return {
+        "current_user": current_user,
+        "deployment_request": deployment_request,
+        "clients": db.query(Client).order_by(Client.name).all(),
+        "deployable_tasks": list(combined_by_id.values()),
+        "initial_selected_tasks": [
+            {
+                "id": task.id,
+                "clientName": task.client_name or "",
+                "target": task.target,
+                "label": f"{task.task_id} — {task.item_name or '?'} ({task.client_name or 'internal'}, "
+                f"{task.target.capitalize()})",
+            }
+            for task in original_tasks
+        ],
+        "new_client_value": NEW_CLIENT_VALUE,
+        "environments": list(DeploymentEnvironment),
+        "error": error,
+    }
+
+
+@router.get("/requests/{request_id}/edit")
+def edit_request_form(
+    request_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    deployment_request = _get_request_or_404(db, request_id)
+    if not can_edit_request(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this request")
+    context = _edit_request_context(db, current_user, deployment_request)
+    return templates.TemplateResponse(request, "request_edit.html", context)
+
+
+@router.post("/requests/{request_id}/edit")
+def edit_request(
+    request_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+    deployable_task_ids: str | None = Form(None),
+    client_id: str | None = Form(None),
+    new_client_name: str = Form(""),
+    environment: DeploymentEnvironment = Form(...),
+    git_branch: str = Form(...),
+    commit_hash: str = Form(...),
+    version: str = Form(...),
+    changes_description: str = Form(""),
+):
+    """Lets the original requester (or an admin) fix up a request before it's been decided
+    on — only while it's still in EDITABLE_REQUEST_STATUSES (can_edit_request() in
+    app/auth.py); once a team lead has approved or rejected it, this 403s instead, same
+    "no override, it's a recorded decision" stance delete_request takes once execution
+    has started."""
+    deployment_request = _get_request_or_404(db, request_id)
+    if not can_edit_request(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this request")
+
+    def rerender(error: str):
+        context = _edit_request_context(db, current_user, deployment_request, error=error)
+        return templates.TemplateResponse(request, "request_edit.html", context, status_code=400)
+
+    result = _validate_standard_request_fields(
+        db, deployable_task_ids, client_id, new_client_name, git_branch, commit_hash, version
+    )
+    if isinstance(result, str):
+        return rerender(result)
+
+    deployment_request.task_id = result.combined_task_id
+    deployment_request.module_name = result.combined_module_name
+    deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
+    deployment_request.client_id = result.client.id
+    deployment_request.environment = environment
+    deployment_request.git_branch = result.git_branch
+    deployment_request.commit_hash = result.commit_hash
+    deployment_request.version = result.version
+    deployment_request.changes_description = changes_description.strip() or None
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)

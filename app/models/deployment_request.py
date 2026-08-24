@@ -41,6 +41,19 @@ DELETABLE_REQUEST_STATUSES = (
     RequestStatus.rejected,
 )
 
+# Statuses a `standard` request can still be edited from (can_edit_request() in
+# app/auth.py) — deliberately narrower than DELETABLE_REQUEST_STATUSES above: once a
+# team lead has actually decided on it (approved OR rejected), it's a recorded decision,
+# not a draft — the requester would need a brand new request instead of editing this one
+# (confirmed with the user). db_dump_restore/test_local requests are never editable at
+# all regardless of status, since they're created straight into `approved` and have no
+# real pre-decision window — see can_edit_request()'s request_type check.
+EDITABLE_REQUEST_STATUSES = (
+    RequestStatus.pending_intake,
+    RequestStatus.submitted,
+    RequestStatus.pending_approval,
+)
+
 
 # The web UI's four-stage flow (Submit -> Pending Team Lead Approval -> Pending Deployment
 # -> Deployed) maps directly onto four of the RequestStatus values above — a request
@@ -83,6 +96,13 @@ class DeploymentRequest(Base):
     # app/routers/dashboard.py). Only ever set for `standard` requests — db_dump_restore
     # and test_local aren't sourced from deployable_tasks at all.
     module_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Comma-joined DeployableTask.id values behind task_id/module_name above — the actual
+    # FK-ish selection, kept only so the edit form (app/routers/dashboard.py's edit_request)
+    # can reopen the Task ID picker pre-loaded with the exact original selection instead of
+    # making the requester re-search from scratch. Only ever set for `standard` requests,
+    # same as task_id/module_name; not itself validated against DeployableTask at the DB
+    # level, since a stale/re-synced id here should never break loading the request.
+    deployable_task_ids: Mapped[str | None] = mapped_column(String(500), nullable=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     # Freeform: the older intake skill fills this with things like "CRM Live"; for a
     # `test_local` request it holds the target host (e.g. "crm.test.local") instead.

@@ -157,8 +157,11 @@
                 {% else %}
                   <span class="muted">In progress — awaiting completion</span>
                 {% endif %}
-              {% elif not can_delete_request(r) %}
+              {% elif not can_delete_request(r) and not can_edit_request(r) %}
                 <span class="muted">—</span>
+              {% endif %}
+              {% if can_edit_request(r) %}
+                <a href="/requests/{{ r.id }}/edit" class="action-link edit">Edit</a>
               {% endif %}
               {% if can_delete_request(r) %}
                 <form
