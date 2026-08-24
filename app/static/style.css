@@ -738,6 +738,24 @@ code {
 .inline-form button.reject { background: transparent; color: var(--red); border: 1px solid rgba(226, 88, 74, 0.45); }
 .inline-form button.reject:hover { background: var(--red-dim); }
 
+/* A plain <a> (GET, not a form submission), styled to match the .inline-form buttons
+   above so "Edit" reads as the same kind of action, not a lesser text link. */
+.actions-inner .action-link {
+  display: inline-block;
+  align-self: flex-start;
+  border: none;
+  border-radius: 5px;
+  padding: 0.32rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--teal);
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.actions-inner .action-link:hover { filter: brightness(1.1); }
+
 .filter-bar {
   display: flex;
   flex-wrap: wrap;

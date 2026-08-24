@@ -1062,6 +1062,228 @@ def test_delete_request_requires_login(web):
     assert session.get(DeploymentRequest, 1) is not None
 
 
+def _seed_editable_request(session):
+    """Like _seed_pending_request, but also backs the request with a real DeployableTask
+    (id=100) referenced via deployable_task_ids, so its edit form's Task ID picker has
+    something real to prefill/re-validate against."""
+    request = _seed_pending_request(session)
+    _add_deployable_task(session, id=100, task_id="PR-03045", client_name="CRM", target="live")
+    request.deployable_task_ids = "100"
+    session.commit()
+    return request
+
+
+def test_requester_can_view_edit_form_for_own_pending_request(web):
+    client, session = web
+    _seed_editable_request(session)
+    login_as(client, "requester")
+
+    response = client.get("/requests/1/edit")
+
+    assert response.status_code == 200
+    assert 'value="release/v12"' in response.text
+
+
+def test_other_user_cannot_view_edit_form(web):
+    client, session = web
+    _seed_editable_request(session)
+    login_as(client, "lead")  # team_lead, but not the requester and not an admin
+
+    response = client.get("/requests/1/edit")
+
+    assert response.status_code == 403
+
+
+def test_cannot_view_edit_form_once_approved(web):
+    client, session = web
+    request = _seed_editable_request(session)
+    request.status = RequestStatus.approved
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.get("/requests/1/edit")
+
+    assert response.status_code == 403
+
+
+def test_requester_can_edit_own_pending_request(web):
+    client, session = web
+    _seed_editable_request(session)
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    request = session.get(DeploymentRequest, 1)
+    assert request.git_branch == "release/v13"
+    assert request.commit_hash == "e5f6g7h"
+    assert request.version == "V13"
+    assert request.status == RequestStatus.pending_approval  # editing doesn't change status
+
+
+def test_admin_can_edit_any_pending_request(web):
+    client, session = web
+    _seed_editable_request(session)
+    make_user(session, id=5, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "root")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).git_branch == "release/v13"
+
+
+def test_other_user_cannot_edit_someone_elses_request(web):
+    client, session = web
+    _seed_editable_request(session)
+    login_as(client, "lead")  # team_lead, but not the requester and not an admin
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+    )
+
+    assert response.status_code == 403
+    assert session.get(DeploymentRequest, 1).git_branch == "release/v12"
+
+
+def test_cannot_edit_a_request_once_approved(web):
+    client, session = web
+    request = _seed_editable_request(session)
+    request.status = RequestStatus.approved
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+    )
+
+    assert response.status_code == 403
+    assert session.get(DeploymentRequest, 1).git_branch == "release/v12"
+
+
+def test_cannot_edit_a_rejected_request(web):
+    # Confirmed with the user: rejected is a decided outcome, same as approved — a
+    # rejected request needs a brand new submission, not an edit-and-resubmit.
+    client, session = web
+    request = _seed_editable_request(session)
+    request.status = RequestStatus.rejected
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_edit_request_rejects_tasks_with_different_targets(web):
+    # Same server-side backstop create_request() applies (test_create_request_rejects_
+    # tasks_with_different_targets above) must still hold on edit.
+    client, session = web
+    request = _seed_editable_request(session)
+    _add_deployable_task(session, id=101, task_id="PR-02960", client_name="CRM", target="test")
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100,101",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "must be for the same system" in response.text
+    assert session.get(DeploymentRequest, request.id).git_branch == "release/v12"
+
+
+def test_db_dump_restore_request_cannot_be_edited(web):
+    # Editing only exists for `standard` requests — db_dump_restore/test_local requests
+    # are created straight into `approved` and never have a real editable window, but
+    # this pins the request_type restriction independent of status too.
+    client, session = web
+    make_user(session, id=1, name="Requester", username="requester", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = DeploymentRequest(
+        request_type=RequestType.db_dump_restore,
+        dump_source="crm-live DB",
+        version="V12",
+        requested_by=1,
+        status=RequestStatus.pending_approval,  # artificial, to isolate the type check
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(request)
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.get(f"/requests/{request.id}/edit")
+
+    assert response.status_code == 403
+
+
+def test_edit_request_requires_login(web):
+    client, session = web
+    _seed_editable_request(session)
+
+    response = client.get("/requests/1/edit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
 def test_requests_queue_shows_delete_button_only_to_requester_and_admin(web):
     client, session = web
     _seed_pending_request(session)

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.models.deployment_request import DELETABLE_REQUEST_STATUSES
+from app.models.deployment_request import DELETABLE_REQUEST_STATUSES, EDITABLE_REQUEST_STATUSES, RequestType
 from app.models.user import User, UserRole
 
 SESSION_USER_ID_KEY = "user_id"
@@ -109,6 +109,24 @@ def can_delete_request(current_user: User, deployment_request) -> bool:
     point (there's no override; if a real correction is needed once execution has
     started, that's an operational conversation, not a delete button)."""
     if deployment_request.status not in DELETABLE_REQUEST_STATUSES:
+        return False
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
+
+
+def can_edit_request(current_user: User, deployment_request) -> bool:
+    """Whether current_user may edit this specific request: an admin, or the original
+    requester — and only while it's a `standard` request still in
+    EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py). Once a team lead has
+    actually decided on it (approved or rejected) it's a recorded decision, not a draft —
+    neither the requester nor an admin can edit it at that point, the same "no override"
+    stance can_delete_request takes once execution has started. db_dump_restore/test_local
+    requests are never editable regardless of status: they're created straight into
+    `approved` and have no real pre-decision window."""
+    if deployment_request.request_type != RequestType.standard:
+        return False
+    if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
         return False
     if current_user.role == UserRole.admin:
         return True
