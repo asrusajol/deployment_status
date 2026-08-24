@@ -392,19 +392,17 @@ class InHouseTaskSourceProvider:
         ]
 
     def list_deployable_tasks(self) -> list[DeployableTaskInfo]:
-        # /get-orders returns a flat list of operations, already scoped to this team's
-        # hall + machine group and pre-filtered server-side to just deploy-named
-        # operations (name=deployment) — confirmed against the real endpoint: every row's
-        # own "name" is "Deployment Test system" or "Deployment Live System", never
-        # anything else. Unlike the earlier /planvisu/orders/list source, there is no
-        # nested operations-per-position list here, so the preceding QA/gate operation
-        # isn't available at all — this is a flat "currently planned deploy operations"
-        # list, not a readiness gate (confirmed with the user after this endpoint switch).
+        # /get-orders returns a flat list of operations, already scoped server-side to
+        # this team's hall + machine group (name=deployment is sent too, but is no longer
+        # relied on as a hard filter — see below). Unlike the earlier /planvisu/orders/list
+        # source, there is no nested operations-per-position list here, so the preceding
+        # QA/gate operation isn't available at all — this is a flat "currently planned
+        # deploy operations" list, not a readiness gate (confirmed with the user after
+        # this endpoint switch).
         #
-        # We still match by name (not by "pos", which stays unreliable) and filter to
-        # status_plan == "PLANNED" ourselves rather than trust the params alone, since
-        # matching client-side is cheap and doesn't depend on the server filter staying
-        # exactly as observed.
+        # We filter to status_plan == "PLANNED" ourselves rather than trust the params
+        # alone, since matching client-side is cheap and doesn't depend on the server
+        # filter staying exactly as observed.
         rows = self._rest_odata_get_all(
             "/get-orders",
             {
@@ -421,9 +419,16 @@ class InHouseTaskSourceProvider:
 
         results: list[DeployableTaskInfo] = []
         for row in rows:
-            target = DEPLOY_OPERATION_TARGETS_BY_NAME.get((row.get("name") or "").strip().lower())
-            if target is None or row.get("status_plan") != "PLANNED":
+            if row.get("status_plan") != "PLANNED":
                 continue
+            # No longer filtering rows out for not matching a known deploy-operation name —
+            # the hall/machineGroup server-side scope plus the PLANNED check above are the
+            # only filters now (confirmed with the user: real /get-orders data isn't reliably
+            # limited to just "Deployment Test system"/"Deployment Live System", so the old
+            # name-based filter was silently dropping legitimate rows). The name is still used
+            # to classify test/live when it matches a known pattern; anything else falls back
+            # to "unknown" rather than being excluded.
+            target = DEPLOY_OPERATION_TARGETS_BY_NAME.get((row.get("name") or "").strip().lower(), "unknown")
             position = row.get("prodOrderPos") or {}
             order = position.get("prodOrder") or {}
             # order.customer is null on most real orders (confirmed against live /get-orders
