@@ -6,6 +6,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from app.models.client_version_record import ClientVersionRecord
 from app.services.dashboard import DeploymentStatusRow
 
 COLUMNS = [
@@ -36,6 +37,40 @@ def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
 
     for index, (header, getter) in enumerate(COLUMNS, start=1):
         widest = max([len(header)] + [len(str(getter(row))) for row in rows])
+        sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+RELEASE_TRACKER_COLUMNS = [
+    ("Client", lambda r: r.client.name if r.client else ""),
+    ("System", lambda r: r.environment.value.capitalize() if r.environment else ""),
+    ("Current Version", lambda r: r.current_version or ""),
+    ("Previous Version", lambda r: r.previous_version or ""),
+    (
+        "Current Version at Main",
+        lambda r: f"{r.main_version} (PR #{r.main_pr_number})" if r.main_version and r.main_pr_number
+        else (r.main_version or ""),
+    ),
+    ("Recorded By", lambda r: r.recorder.name if r.recorder else ""),
+    ("Updated At", lambda r: r.updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.updated_at else ""),
+]
+
+
+def release_tracker_rows_to_xlsx(rows: list[ClientVersionRecord], sheet_title: str) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_title[:31]
+
+    headers = [label for label, _ in RELEASE_TRACKER_COLUMNS]
+    sheet.append(headers)
+    for row in rows:
+        sheet.append([getter(row) for _, getter in RELEASE_TRACKER_COLUMNS])
+
+    for index, (header, getter) in enumerate(RELEASE_TRACKER_COLUMNS, start=1):
+        widest = max([len(header)] + [len(str(getter(row))) for row in rows]) if rows else len(header)
         sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
 
     buffer = BytesIO()
