@@ -431,7 +431,8 @@
             var requestId = button.getAttribute("data-deploy-request-id");
             deployForm.action = "/requests/" + requestId + "/deploy";
             deployClientEl.textContent = button.getAttribute("data-deploy-client") || "—";
-            deploySystemEl.textContent = button.getAttribute("data-deploy-system") || "—";
+            var deploySystem = button.getAttribute("data-deploy-system") || "";
+            deploySystemEl.textContent = deploySystem ? deploySystem.charAt(0).toUpperCase() + deploySystem.slice(1) : "—";
             deployPreviousEl.textContent = button.getAttribute("data-deploy-previous-version") || "—";
             deployCurrentInput.value = "";
             deployDialog.showModal();

@@ -7,32 +7,10 @@
   <p class="subtitle">Current + previous deployed version per client and system, and
     what's on <code>main</code> at the moment each deployment was confirmed.</p>
 
-  <form method="get" action="/release-tracker" class="filter-bar">
-    <div class="filter-field">
-      <label for="client_id">Client</label>
-      <select name="client_id" id="client_id">
-        <option value="">All clients</option>
-        {% for c in filter_clients %}
-          <option value="{{ c.id }}" {% if selected_client_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="filter-field">
-      <label for="environment">System</label>
-      <select name="environment" id="environment">
-        <option value="">All systems</option>
-        {% for env in filter_environments %}
-          <option value="{{ env.value }}" {% if selected_environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button type="submit" class="button-primary">Filter</button>
-    <a href="/release-tracker" class="button-secondary">Reset</a>
-    <a
-      href="/release-tracker/export.xlsx?client_id={{ selected_client_id or '' }}&environment={{ selected_environment.value if selected_environment else '' }}"
-      class="button-secondary"
-    >Export to Excel</a>
-  </form>
+  {% set show_task_id_filter = false %}
+  {% set filter_action = "/release-tracker" %}
+  {% set export_action = "/release-tracker/export.xlsx" %}
+  {% include "_deployment_filter_bar.html" %}
 
   {% if rows %}
     <div class="table-scroll">
@@ -68,11 +46,13 @@
           <td>{{ row.recorder.name if row.recorder else "—" }}</td>
           <td>{{ row.updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.updated_at else "—" }}</td>
           <td>
-            {% if can_edit_record(row) %}
-              <a href="/release-tracker/{{ row.id }}/edit" class="action-link edit">Edit</a>
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
+            <div class="actions-inner">
+              {% if can_edit_record(row) %}
+                <a href="/release-tracker/{{ row.id }}/edit" class="action-link edit">Edit</a>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </div>
           </td>
         </tr>
         {% endfor %}

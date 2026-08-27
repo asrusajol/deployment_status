@@ -1560,6 +1560,35 @@ def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
     assert record.main_pr_number is None
 
 
+def test_deploy_request_succeeds_for_standard_request_with_null_client_id(web):
+    # A `standard` request created via the older intake-skill `pending_intake` path can
+    # have a null client_id/environment (both columns are nullable specifically to allow
+    # this) — ClientVersionRecord.client_id/.environment are NOT NULL, so deploy_request
+    # must treat this row like a non-standard request: no current_version requirement,
+    # no ClientVersionRecord insert, no 500.
+    client, session = web
+    _seed_in_progress_standard_request(session, client_id=None, environment=None)
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
+    assert session.query(ClientVersionRecord).count() == 0
+
+
+def test_deploy_request_succeeds_for_standard_request_with_null_environment(web):
+    client, session = web
+    _seed_in_progress_standard_request(session, environment=None)
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
+    assert session.query(ClientVersionRecord).count() == 0
+
+
 def test_requests_queue_renders_deploy_version_dialog_for_standard_in_progress_row(web):
     client, session = web
     _seed_in_progress_standard_request(session)

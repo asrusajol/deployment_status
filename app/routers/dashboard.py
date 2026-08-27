@@ -755,7 +755,13 @@ def deploy_request(
     if deployment_request.status != RequestStatus.in_progress:
         raise HTTPException(status_code=409, detail="Request has not been started yet")
 
-    if deployment_request.request_type == RequestType.standard:
+    # A `standard` request created via the older intake-skill `pending_intake` path can
+    # still have a null client_id/environment (both columns are nullable specifically to
+    # allow that) — ClientVersionRecord.client_id/.environment are NOT NULL, so treat such
+    # a row like a non-standard request here: no current_version requirement, no record.
+    has_client_and_environment = bool(deployment_request.client_id and deployment_request.environment)
+
+    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
         current_version = (current_version or "").strip()
         if not current_version:
             raise HTTPException(status_code=400, detail="Current version is required.")
@@ -770,7 +776,7 @@ def deploy_request(
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
 
-    if deployment_request.request_type == RequestType.standard:
+    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
         bitbucket_status = db.get(BitbucketMainBranchStatus, 1)
         db.add(
             ClientVersionRecord(

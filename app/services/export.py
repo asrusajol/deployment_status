@@ -2,6 +2,7 @@
 the "Export to Excel" button on both dashboards."""
 
 from io import BytesIO
+from typing import Callable
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -25,23 +26,27 @@ COLUMNS = [
 ]
 
 
-def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
+def _columns_to_xlsx(rows: list, columns: list[tuple[str, Callable]], sheet_title: str) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = sheet_title[:31]  # Excel's hard limit on sheet-name length
 
-    headers = [label for label, _ in COLUMNS]
+    headers = [label for label, _ in columns]
     sheet.append(headers)
     for row in rows:
-        sheet.append([getter(row) for _, getter in COLUMNS])
+        sheet.append([getter(row) for _, getter in columns])
 
-    for index, (header, getter) in enumerate(COLUMNS, start=1):
+    for index, (header, getter) in enumerate(columns, start=1):
         widest = max([len(header)] + [len(str(getter(row))) for row in rows])
         sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
 
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
+    return _columns_to_xlsx(rows, COLUMNS, sheet_title)
 
 
 RELEASE_TRACKER_COLUMNS = [
@@ -60,19 +65,4 @@ RELEASE_TRACKER_COLUMNS = [
 
 
 def release_tracker_rows_to_xlsx(rows: list[ClientVersionRecord], sheet_title: str) -> bytes:
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = sheet_title[:31]
-
-    headers = [label for label, _ in RELEASE_TRACKER_COLUMNS]
-    sheet.append(headers)
-    for row in rows:
-        sheet.append([getter(row) for _, getter in RELEASE_TRACKER_COLUMNS])
-
-    for index, (header, getter) in enumerate(RELEASE_TRACKER_COLUMNS, start=1):
-        widest = max([len(header)] + [len(str(getter(row))) for row in rows]) if rows else len(header)
-        sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
-
-    buffer = BytesIO()
-    workbook.save(buffer)
-    return buffer.getvalue()
+    return _columns_to_xlsx(rows, RELEASE_TRACKER_COLUMNS, sheet_title)
