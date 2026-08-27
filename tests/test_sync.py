@@ -389,3 +389,29 @@ def test_sync_bitbucket_main_status_updates_in_place_not_duplicates(db_session):
     status = db_session.get(BitbucketMainBranchStatus, 1)
     assert status.version == "2026.34.40"
     assert status.pr_number == 1300
+
+
+def test_sync_bitbucket_main_status_bumps_version_changed_at_when_version_differs(db_session):
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.34", 1234))
+    first = db_session.get(BitbucketMainBranchStatus, 1)
+    first_changed_at = first.version_changed_at
+    assert first_changed_at is not None
+
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.40", 1300))
+    second = db_session.get(BitbucketMainBranchStatus, 1)
+
+    assert second.version_changed_at > first_changed_at
+    assert second.version == "2026.34.40"
+
+
+def test_sync_bitbucket_main_status_leaves_version_changed_at_when_version_is_the_same(db_session):
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.34", 1234))
+    first = db_session.get(BitbucketMainBranchStatus, 1)
+    first_changed_at = first.version_changed_at
+    first_synced_at = first.last_synced_at
+
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.34", 1234))
+    second = db_session.get(BitbucketMainBranchStatus, 1)
+
+    assert second.version_changed_at == first_changed_at  # unchanged
+    assert second.last_synced_at > first_synced_at  # this DOES bump every time

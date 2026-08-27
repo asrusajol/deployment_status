@@ -133,15 +133,15 @@ def can_edit_request(current_user: User, deployment_request) -> bool:
     return current_user.id == deployment_request.requested_by
 
 
-def can_edit_client_version_record(current_user: User, record) -> bool:
-    """Whether current_user may correct this ClientVersionRecord's current_version:
-    an admin, or whoever originally recorded it. No status-window restriction (see
-    can_delete_request/can_edit_request for that pattern) — there's no approval
-    workflow on these rows, just a plain typo correction, so it stays correctable
-    indefinitely."""
+def can_edit_client_version_status(current_user: User, row, environment) -> bool:
+    """Whether current_user may correct row's `{environment}_current_version`
+    — checked PER COLUMN, not per row: a user who only ever confirmed this
+    client's Test deploy can fix Test but not Live on the same row, and vice
+    versa. Admins can edit either."""
     if current_user.role == UserRole.admin:
         return True
-    return current_user.id == record.recorded_by
+    recorded_by = getattr(row, f"{environment.value}_recorded_by")
+    return current_user.id == recorded_by
 
 
 def require_deploy_team_member(

@@ -1,44 +1,39 @@
 from datetime import datetime, timezone
 
 from app.models.client import Client
-from app.models.client_version_record import ClientVersionRecord
-from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
-from app.models.user import User
+from app.models.client_version_status import ClientVersionStatus
 from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
 
 
-def _seed_release_tracker_row(session, *, client_id=1, client_name="CRM", current_version="2026.34.34"):
-    session.add(Client(id=client_id, name=client_name))
-    if session.get(User, 1) is None:
-        make_user(session, id=1, name="Deployer", username="deployer", password=DEFAULT_TEST_PASSWORD)
-    session.add(
-        DeploymentRequest(
-            id=client_id, request_type=RequestType.standard, client_id=client_id,
-            environment=DeploymentEnvironment.live, status=RequestStatus.completed,
-            created_at=datetime.now(timezone.utc),
-        )
-    )
+def _seed_release_tracker_row(session, *, client_id=1, client_name="CRM", recorded_by=1, **overrides):
+    if session.get(Client, client_id) is None:
+        session.add(Client(id=client_id, name=client_name))
+    make_user(session, id=recorded_by, name="Deployer", username=f"deployer{recorded_by}", password=DEFAULT_TEST_PASSWORD)
     session.commit()
-    record = ClientVersionRecord(
-        client_id=client_id, environment=DeploymentEnvironment.live, current_version=current_version,
-        deployment_request_id=client_id, recorded_by=1,
-        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+    defaults = dict(
+        client_id=client_id,
+        test_current_version="1.0", test_recorded_by=recorded_by, test_updated_at=datetime.now(timezone.utc),
+        live_current_version="2.0", live_recorded_by=recorded_by, live_updated_at=datetime.now(timezone.utc),
     )
-    session.add(record)
+    defaults.update(overrides)
+    row = ClientVersionStatus(**defaults)
+    session.add(row)
     session.commit()
-    return record
+    return row
 
 
-def test_release_tracker_page_renders_for_any_logged_in_user(web):
+def test_release_tracker_page_renders_one_row_per_client(web):
     client, session = web
     _seed_release_tracker_row(session)
-    login_as(client, "deployer")
+    login_as(client, "deployer1")
 
     response = client.get("/release-tracker")
 
     assert response.status_code == 200
-    assert "2026.34.34" in response.text
+    assert "1.0" in response.text
+    assert "2.0" in response.text
     assert "CRM" in response.text
+    assert 'name="environment"' not in response.text  # System filter is gone
 
 
 def test_release_tracker_requires_login(web):
@@ -53,20 +48,20 @@ def test_release_tracker_requires_login(web):
 
 def test_release_tracker_filters_by_client(web):
     client, session = web
-    _seed_release_tracker_row(session, client_id=1, client_name="CRM", current_version="1.0")
-    _seed_release_tracker_row(session, client_id=2, client_name="Acme", current_version="2.0")
-    login_as(client, "deployer")
+    _seed_release_tracker_row(session, client_id=1, client_name="CRM", test_current_version="1.0")
+    _seed_release_tracker_row(session, client_id=2, client_name="Acme", recorded_by=2, test_current_version="9.0")
+    login_as(client, "deployer1")
 
     response = client.get("/release-tracker", params={"client_id": "1"})
 
     assert "1.0" in response.text
-    assert "2.0" not in response.text
+    assert "9.0" not in response.text
 
 
 def test_release_tracker_export_xlsx(web):
     client, session = web
     _seed_release_tracker_row(session)
-    login_as(client, "deployer")
+    login_as(client, "deployer1")
 
     response = client.get("/release-tracker/export.xlsx")
 
@@ -74,53 +69,58 @@ def test_release_tracker_export_xlsx(web):
     assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def test_nav_shows_release_tracker_link_for_logged_in_user(web):
+def test_recorder_can_edit_the_environment_they_recorded(web):
     client, session = web
-    _seed_release_tracker_row(session)
-    login_as(client, "deployer")
-
-    response = client.get("/requests")
-
-    assert 'href="/release-tracker"' in response.text
-
-
-def test_recorder_can_edit_their_own_record(web):
-    client, session = web
-    record = _seed_release_tracker_row(session, current_version="2026.34.34")
-    login_as(client, "deployer")
+    row = _seed_release_tracker_row(session, test_current_version="1.0")
+    login_as(client, "deployer1")
 
     response = client.post(
-        f"/release-tracker/{record.id}/edit",
-        data={"current_version": "2026.34.35"},
-        follow_redirects=False,
+        f"/release-tracker/{row.id}/edit", data={"test_current_version": "1.1"}, follow_redirects=False
     )
 
     assert response.status_code == 303
-    session.refresh(record)
-    assert record.current_version == "2026.34.35"
+    session.refresh(row)
+    assert row.test_current_version == "1.1"
+    assert row.live_current_version == "2.0"  # untouched — no live_current_version in the POST
 
 
-def test_other_user_cannot_edit_someone_elses_record(web):
+def test_recorder_cannot_edit_the_other_environment(web):
     client, session = web
-    record = _seed_release_tracker_row(session, current_version="2026.34.34")
+    row = _seed_release_tracker_row(session, test_recorded_by=1, live_recorded_by=1)
     make_user(session, id=2, name="Other Dev", username="otherdev", password=DEFAULT_TEST_PASSWORD)
     session.commit()
-    login_as(client, "otherdev")
+    # Give live to a different recorder so deployer2 has no permission over it
+    row.live_recorded_by = 2
+    session.commit()
+    login_as(client, "deployer1")
 
-    response = client.post(f"/release-tracker/{record.id}/edit", data={"current_version": "9.9.9"})
+    response = client.post(f"/release-tracker/{row.id}/edit", data={"live_current_version": "9.9"})
 
     assert response.status_code == 403
-    session.refresh(record)
-    assert record.current_version == "2026.34.34"
+    session.refresh(row)
+    assert row.live_current_version == "2.0"
 
 
 def test_edit_rejects_blank_current_version(web):
     client, session = web
-    record = _seed_release_tracker_row(session, current_version="2026.34.34")
-    login_as(client, "deployer")
+    row = _seed_release_tracker_row(session, test_current_version="1.0")
+    login_as(client, "deployer1")
 
-    response = client.post(f"/release-tracker/{record.id}/edit", data={"current_version": "  "})
+    response = client.post(f"/release-tracker/{row.id}/edit", data={"test_current_version": "   "})
 
     assert response.status_code == 400
-    session.refresh(record)
-    assert record.current_version == "2026.34.34"
+    session.refresh(row)
+    assert row.test_current_version == "1.0"
+
+
+def test_edit_no_op_does_not_bump_updated_at(web):
+    client, session = web
+    row = _seed_release_tracker_row(session, test_current_version="1.0")
+    original_updated_at = row.test_updated_at
+    session.commit()
+    login_as(client, "deployer1")
+
+    client.post(f"/release-tracker/{row.id}/edit", data={"test_current_version": "1.0"})  # same value
+
+    session.refresh(row)
+    assert row.test_updated_at == original_updated_at  # unchanged, since nothing actually differed

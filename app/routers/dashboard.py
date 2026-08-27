@@ -41,16 +41,14 @@ from app.auth import (
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
-from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
-from app.models.client_version_record import ClientVersionRecord
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
-from app.services.release_tracker import latest_current_version
+from app.services.release_tracker import current_version_for, record_client_deploy
 from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
@@ -590,7 +588,7 @@ def list_requests(
         if r.request_type == RequestType.standard and r.status == RequestStatus.in_progress and r.client_id and r.environment:
             key = f"{r.client_id}:{r.environment.value}"
             if key not in previous_versions:
-                previous_versions[key] = latest_current_version(db, r.client_id, r.environment)
+                previous_versions[key] = current_version_for(db, r.client_id, r.environment)
 
     active_requests = (
         db.query(DeploymentRequest)
@@ -757,7 +755,7 @@ def deploy_request(
 
     # A `standard` request created via the older intake-skill `pending_intake` path can
     # still have a null client_id/environment (both columns are nullable specifically to
-    # allow that) — ClientVersionRecord.client_id/.environment are NOT NULL, so treat such
+    # allow that) — ClientVersionStatus.client_id is NOT NULL, so treat such
     # a row like a non-standard request here: no current_version requirement, no record.
     has_client_and_environment = bool(deployment_request.client_id and deployment_request.environment)
 
@@ -777,22 +775,13 @@ def deploy_request(
     deployment_request.status = RequestStatus.completed
 
     if deployment_request.request_type == RequestType.standard and has_client_and_environment:
-        bitbucket_status = db.get(BitbucketMainBranchStatus, 1)
-        db.add(
-            ClientVersionRecord(
-                client_id=deployment_request.client_id,
-                environment=deployment_request.environment,
-                current_version=current_version,
-                previous_version=latest_current_version(
-                    db, deployment_request.client_id, deployment_request.environment
-                ),
-                main_version=bitbucket_status.version if bitbucket_status else None,
-                main_pr_number=bitbucket_status.pr_number if bitbucket_status else None,
-                deployment_request_id=deployment_request.id,
-                recorded_by=current_user.id,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            )
+        record_client_deploy(
+            db,
+            client_id=deployment_request.client_id,
+            environment=deployment_request.environment,
+            current_version=current_version,
+            recorded_by=current_user.id,
+            deployment_request_id=deployment_request.id,
         )
 
     db.commit()

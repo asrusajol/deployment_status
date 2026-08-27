@@ -7,7 +7,7 @@ from typing import Callable
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from app.models.client_version_record import ClientVersionRecord
+from app.models.client_version_status import ClientVersionStatus
 from app.services.dashboard import DeploymentStatusRow
 
 COLUMNS = [
@@ -51,18 +51,18 @@ def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
 
 RELEASE_TRACKER_COLUMNS = [
     ("Client", lambda r: r.client.name if r.client else ""),
-    ("System", lambda r: r.environment.value.capitalize() if r.environment else ""),
-    ("Current Version", lambda r: r.current_version or ""),
-    ("Previous Version", lambda r: r.previous_version or ""),
+    ("Test Current Version", lambda r: r.test_current_version or ""),
+    ("Test Updated At", lambda r: r.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.test_updated_at else ""),
+    ("Live Current Version", lambda r: r.live_current_version or ""),
+    ("Live Updated At", lambda r: r.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.live_updated_at else ""),
     (
-        "Current Version at Main",
+        "Main Version",
         lambda r: f"{r.main_version} (PR #{r.main_pr_number})" if r.main_version and r.main_pr_number
         else (r.main_version or ""),
     ),
-    ("Recorded By", lambda r: r.recorder.name if r.recorder else ""),
-    ("Updated At", lambda r: r.updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.updated_at else ""),
+    ("Main Updated At", lambda r: r.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.main_updated_at else ""),
 ]
 
 
-def release_tracker_rows_to_xlsx(rows: list[ClientVersionRecord], sheet_title: str) -> bytes:
+def release_tracker_rows_to_xlsx(rows: list[ClientVersionStatus], sheet_title: str) -> bytes:
     return _columns_to_xlsx(rows, RELEASE_TRACKER_COLUMNS, sheet_title)

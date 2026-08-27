@@ -1,18 +1,14 @@
 {# app/templates/release_tracker_edit.html #}
 {% extends "base.html" %}
-{% block title %}Edit Version Record — Deployment Tracker{% endblock %}
+{% block title %}Edit Version — Deployment Tracker{% endblock %}
 {% block content %}
-  <h1>Edit Version Record — {{ record.client.name if record.client else "—" }} ({{ record.environment.value | capitalize }})</h1>
+  <h1>Edit Version — {{ record.client.name if record.client else "—" }}</h1>
 
   {% if error %}
     <p class="error">{{ error }}</p>
   {% endif %}
 
   <form method="post" action="/release-tracker/{{ record.id }}/edit" class="form">
-    <div class="field">
-      <label>Previous version <span class="optional">(not editable)</span></label>
-      <p class="static-field">{{ record.previous_version or "—" }}</p>
-    </div>
     <div class="field">
       <label>Current version at main <span class="optional">(not editable)</span></label>
       <p class="static-field">
@@ -23,10 +19,27 @@
         {% endif %}
       </p>
     </div>
+
     <div class="field">
-      <label for="current_version">Current version</label>
-      <input type="text" id="current_version" name="current_version" required value="{{ record.current_version }}">
+      {% if can_edit_test %}
+        <label for="test_current_version">Test current version</label>
+        <input type="text" id="test_current_version" name="test_current_version" value="{{ record.test_current_version or '' }}">
+      {% else %}
+        <label>Test current version <span class="optional">(not editable by you)</span></label>
+        <p class="static-field">{{ record.test_current_version or "—" }}</p>
+      {% endif %}
     </div>
+
+    <div class="field">
+      {% if can_edit_live %}
+        <label for="live_current_version">Live current version</label>
+        <input type="text" id="live_current_version" name="live_current_version" value="{{ record.live_current_version or '' }}">
+      {% else %}
+        <label>Live current version <span class="optional">(not editable by you)</span></label>
+        <p class="static-field">{{ record.live_current_version or "—" }}</p>
+      {% endif %}
+    </div>
+
     <button type="submit">Save Changes</button>
     <a href="/release-tracker" class="link-button">Cancel</a>
   </form>

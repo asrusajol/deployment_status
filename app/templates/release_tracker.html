@@ -4,10 +4,11 @@
 {% block content %}
   <p class="eyebrow">Versions</p>
   <h1>Release Tracker</h1>
-  <p class="subtitle">Current + previous deployed version per client and system, and
-    what's on <code>main</code> at the moment each deployment was confirmed.</p>
+  <p class="subtitle">Current deployed version per client, for Test and Live, and
+    what's on <code>main</code> as of that client's last deploy.</p>
 
   {% set show_task_id_filter = false %}
+  {% set show_system_filter = false %}
   {% set filter_action = "/release-tracker" %}
   {% set export_action = "/release-tracker/export.xlsx" %}
   {% include "_deployment_filter_bar.html" %}
@@ -17,37 +18,40 @@
     <table class="status-table release-tracker-table">
       <thead>
         <tr>
-          <th>Client</th>
-          <th>System</th>
-          <th>Current Version</th>
-          <th>Previous Version</th>
-          <th>Current Version at Main</th>
-          <th>Recorded By</th>
-          <th>Updated At</th>
-          <th>Action</th>
+          <th rowspan="2">Client</th>
+          <th colspan="2" class="col-test">Test</th>
+          <th colspan="2" class="col-live">Live</th>
+          <th colspan="2" class="col-main">Main Version</th>
+          <th rowspan="2">Action</th>
+        </tr>
+        <tr>
+          <th class="col-test">Current Version</th>
+          <th class="col-test">Updated At</th>
+          <th class="col-live">Current Version</th>
+          <th class="col-live">Updated At</th>
+          <th class="col-main">Version</th>
+          <th class="col-main">Updated At</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
         <tr>
           <td>{{ row.client.name if row.client else "—" }}</td>
-          <td><span class="badge badge-{{ row.environment.value }}">{{ row.environment.value | capitalize }}</span></td>
-          <td>{{ row.current_version }}</td>
-          <td>{{ row.previous_version or "—" }}</td>
-          <td>
+          <td class="col-test">{{ row.test_current_version or "—" }}</td>
+          <td class="col-test">{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
+          <td class="col-live">{{ row.live_current_version or "—" }}</td>
+          <td class="col-live">{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
+          <td class="col-main">
             {% if row.main_version and row.main_pr_number %}
               {{ row.main_version }} (PR #{{ row.main_pr_number }})
-            {% elif row.main_version %}
-              {{ row.main_version }}
             {% else %}
-              —
+              {{ row.main_version or "—" }}
             {% endif %}
           </td>
-          <td>{{ row.recorder.name if row.recorder else "—" }}</td>
-          <td>{{ row.updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.updated_at else "—" }}</td>
+          <td class="col-main">{{ row.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.main_updated_at else "—" }}</td>
           <td>
             <div class="actions-inner">
-              {% if can_edit_record(row) %}
+              {% if can_edit_test(row) or can_edit_live(row) %}
                 <a href="/release-tracker/{{ row.id }}/edit" class="action-link edit">Edit</a>
               {% else %}
                 <span class="muted">—</span>

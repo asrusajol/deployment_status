@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.database import Base
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
-from app.models.client_version_record import ClientVersionRecord
+from app.models.client_version_status import ClientVersionStatus
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
@@ -1500,10 +1500,10 @@ def test_deploy_request_requires_current_version_for_standard_requests(web):
 
     assert response.status_code == 400
     assert session.get(DeploymentRequest, 1).status == RequestStatus.in_progress
-    assert session.query(ClientVersionRecord).count() == 0
+    assert session.query(ClientVersionStatus).count() == 0
 
 
-def test_deploy_request_creates_client_version_record(web):
+def test_deploy_request_creates_client_version_status(web):
     client, session = web
     _seed_in_progress_standard_request(session)
     session.add(BitbucketMainBranchStatus(id=1, version="2026.34.40", pr_number=1234))
@@ -1514,25 +1514,24 @@ def test_deploy_request_creates_client_version_record(web):
 
     assert response.status_code == 303
     assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
-    record = session.query(ClientVersionRecord).one()
-    assert record.client_id == 1
-    assert record.environment == DeploymentEnvironment.live
-    assert record.current_version == "2026.34.34"
-    assert record.previous_version is None
-    assert record.main_version == "2026.34.40"
-    assert record.main_pr_number == 1234
-    assert record.deployment_request_id == 1
-    assert record.recorded_by == 3
+    row = session.query(ClientVersionStatus).one()
+    assert row.client_id == 1
+    assert row.live_current_version == "2026.34.34"  # _seed_in_progress_standard_request uses live
+    assert row.live_previous_version is None
+    assert row.main_version == "2026.34.40"
+    assert row.main_pr_number == 1234
+    assert row.live_deployment_request_id == 1
+    assert row.live_recorded_by == 3
 
 
-def test_deploy_request_fills_previous_version_from_prior_record(web):
+def test_deploy_request_fills_previous_version_from_prior_status(web):
     client, session = web
     _seed_in_progress_standard_request(session)
     session.add(
-        ClientVersionRecord(
-            client_id=1, environment=DeploymentEnvironment.live, current_version="2026.34.30",
-            deployment_request_id=1, recorded_by=3,
-            created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+        ClientVersionStatus(
+            client_id=1, live_current_version="2026.34.30",
+            live_deployment_request_id=1, live_recorded_by=3,
+            live_updated_at=datetime.now(timezone.utc),
         )
     )
     session.commit()
@@ -1540,9 +1539,9 @@ def test_deploy_request_fills_previous_version_from_prior_record(web):
 
     client.post("/requests/1/deploy", data={"current_version": "2026.34.34"})
 
-    latest = session.query(ClientVersionRecord).order_by(ClientVersionRecord.id.desc()).first()
-    assert latest.previous_version == "2026.34.30"
-    assert latest.current_version == "2026.34.34"
+    row = session.query(ClientVersionStatus).one()
+    assert row.live_previous_version == "2026.34.30"
+    assert row.live_current_version == "2026.34.34"
 
 
 def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
@@ -1555,17 +1554,18 @@ def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
     response = client.post("/requests/1/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False)
 
     assert response.status_code == 303
-    record = session.query(ClientVersionRecord).one()
-    assert record.main_version is None
-    assert record.main_pr_number is None
+    row = session.query(ClientVersionStatus).one()
+    assert row.main_version is None
+    assert row.main_pr_number is None
+    assert row.main_updated_at is None
 
 
 def test_deploy_request_succeeds_for_standard_request_with_null_client_id(web):
     # A `standard` request created via the older intake-skill `pending_intake` path can
     # have a null client_id/environment (both columns are nullable specifically to allow
-    # this) — ClientVersionRecord.client_id/.environment are NOT NULL, so deploy_request
+    # this) — ClientVersionStatus.client_id is NOT NULL, so deploy_request
     # must treat this row like a non-standard request: no current_version requirement,
-    # no ClientVersionRecord insert, no 500.
+    # no ClientVersionStatus insert, no 500.
     client, session = web
     _seed_in_progress_standard_request(session, client_id=None, environment=None)
     login_as(client, "deployer")
@@ -1574,7 +1574,7 @@ def test_deploy_request_succeeds_for_standard_request_with_null_client_id(web):
 
     assert response.status_code == 303
     assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
-    assert session.query(ClientVersionRecord).count() == 0
+    assert session.query(ClientVersionStatus).count() == 0
 
 
 def test_deploy_request_succeeds_for_standard_request_with_null_environment(web):
@@ -1586,17 +1586,36 @@ def test_deploy_request_succeeds_for_standard_request_with_null_environment(web)
 
     assert response.status_code == 303
     assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
-    assert session.query(ClientVersionRecord).count() == 0
+    assert session.query(ClientVersionStatus).count() == 0
+
+
+def test_deploy_request_live_does_not_touch_existing_test_value(web):
+    client, session = web
+    _seed_in_progress_standard_request(session)  # environment=live by default
+    session.add(
+        ClientVersionStatus(
+            client_id=1, test_current_version="1.0",
+            test_deployment_request_id=99, test_recorded_by=3,
+            test_updated_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "deployer")
+
+    client.post("/requests/1/deploy", data={"current_version": "2026.34.34"})
+
+    row = session.query(ClientVersionStatus).one()
+    assert row.test_current_version == "1.0"  # untouched
+    assert row.live_current_version == "2026.34.34"
 
 
 def test_requests_queue_renders_deploy_version_dialog_for_standard_in_progress_row(web):
     client, session = web
     _seed_in_progress_standard_request(session)
     session.add(
-        ClientVersionRecord(
-            client_id=1, environment=DeploymentEnvironment.live, current_version="2026.34.30",
-            deployment_request_id=1, recorded_by=3,
-            created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+        ClientVersionStatus(
+            client_id=1, live_current_version="2026.34.30",
+            live_recorded_by=3, live_updated_at=datetime.now(timezone.utc),
         )
     )
     session.commit()
