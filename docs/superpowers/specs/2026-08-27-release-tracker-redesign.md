@@ -46,26 +46,27 @@ One row per client (`client_id` unique), environment flattened into columns:
 | `live_updated_at` | timestamp, nullable | |
 | `live_recorded_by` | FK → `users.id`, nullable | |
 | `live_deployment_request_id` | FK → `deployment_requests.id`, nullable | |
+| `main_version` | string, nullable | snapshot, see below |
+| `main_pr_number` | int, nullable | snapshot, see below |
+| `main_updated_at` | timestamp, nullable | snapshot, see below |
 
-No `main_*` columns on this table — see below for why.
+### Main Version is a per-client snapshot taken at that client's own deploy time
 
-### Main Version is global, not per-client
+Revised per the user: NOT a single shared live value read at render time (an
+earlier draft of this spec proposed that; superseded here). Each client row
+keeps its own `main_version`/`main_pr_number`/`main_updated_at`. These are
+written **only** when that specific client has a new deploy (test or live) —
+at that moment, copy the current values out of the `bitbucket_main_branch_status`
+cache (see below) into this client's row. The periodic 5-minute sync never
+touches `client_version_status` directly — it only ever updates the one
+global cache row, so "no need to update the whole clients table" on every
+poll. `main_updated_at` is set to the cache's `version_changed_at` (not
+"now") — see below for why that's the meaningful value here.
 
-Every client row would show the identical Main Version value at any given
-moment (it's the same Bitbucket `main` branch for everyone) — storing it
-per-client-row would be pure duplication with a real staleness risk (500
-client rows to update in sync, or 499 stale rows if the update misses one).
-Instead, the Release Tracker template renders the single
-`bitbucket_main_branch_status` row's `version`/`pr_number` as trailing
-columns on *every* client row at render time — one read, one source of
-truth, reused across all rows in the same page load.
+### `bitbucket_main_branch_status`: `version_changed_at` is the honest "when did main last actually change"
 
-### `bitbucket_main_branch_status`: `version_changed_at` replaces the
-displayed "Updated at"
-
-Per the user: the "Updated at" shown for Main Version must only move when
-the release version actually changes, not every 5-minute poll. Add a new
-column:
+Per the user: a version's timestamp must only move when the release version
+actually changes, not every 5-minute poll. Add a new column:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -74,9 +75,14 @@ column:
 `last_synced_at` (existing column) keeps its current behavior — bumped on
 every successful sync regardless of whether the value changed — kept for
 ops/liveness diagnostics (e.g. "is the cron job actually still running"),
-just no longer shown in the Release Tracker UI. The tab displays
-`version_changed_at` where it previously would have shown a per-sync
-timestamp.
+not shown anywhere in the Release Tracker UI.
+
+This is the value client rows snapshot at their own deploy time (see Data
+model above): a client's `main_updated_at` = the cache's `version_changed_at`
+as of that deploy, not the deploy's own timestamp — so it answers "main had
+been at this version since Y" rather than "I happened to look at time Y",
+which is the actually useful signal for spotting a client that's fallen
+behind.
 
 ## Deploy-time popup (unchanged behavior, different backend target)
 
@@ -92,7 +98,11 @@ required input) is unchanged. What changes is what confirming it does:
   touched.
 - If `environment == test`: the mirror of the above, touching only `test_*`
   fields.
-- No `main_*` write happens here anymore (removed — see Data model above).
+- Either way, also snapshot `main_version`/`main_pr_number` from the current
+  `bitbucket_main_branch_status` row (both null if no sync has run yet — same
+  null-safety as v1) and set `main_updated_at` to that cache row's
+  `version_changed_at`. This is a per-client write, same transaction as the
+  `test_*`/`live_*` update above — no other client's row is touched.
 
 ## Release Tracker tab
 
@@ -109,8 +119,11 @@ required input) is unchanged. What changes is what confirming it does:
   filtering by system no longer means anything.
 - **Excel export**: same column set as the table, one row per client.
 - **Empty cells**: a client with no Test deploy yet shows "—" in the Test
-  block (and similarly for Live) rather than erroring — this is the normal
-  state for a brand-new client until their first deploy of that type.
+  block (and similarly for Live, and for Main Version if that client has
+  never deployed at all yet) rather than erroring — the normal state for a
+  brand-new client. Different clients can legitimately show different Main
+  Version values, since each one's is a snapshot from their own last deploy,
+  not a live shared read.
 
 ## Row correction (edit)
 
@@ -140,18 +153,24 @@ Deploy-time popup above).
 `client_version_status` and drops `client_version_records`:
 
 1. Create `client_version_status`.
-2. For each distinct `client_id` present in `client_version_records`: query
+2. Add `version_changed_at` to `bitbucket_main_branch_status`; backfill it to
+   the existing `last_synced_at` value if `version` is already set (best
+   available approximation — the exact moment the current value first
+   appeared isn't recoverable), else leave null.
+3. For each distinct `client_id` present in `client_version_records`: query
    that client's `ClientVersionRecord` rows ordered by `created_at` ascending,
    separately for `environment == test` and `environment == live`. For each
    environment with at least one row: `*_current_version` = the last row's
    `current_version`; `*_previous_version` = the second-to-last row's
    `current_version` (null if only one row exists); `*_updated_at` = the last
    row's `updated_at`; `*_recorded_by` = the last row's `recorded_by`;
-   `*_deployment_request_id` = the last row's `deployment_request_id`.
-3. Add `version_changed_at` to `bitbucket_main_branch_status`; backfill it to
-   the existing `last_synced_at` value if `version` is already set (best
-   available approximation — the exact moment the current value first
-   appeared isn't recoverable), else leave null.
+   `*_deployment_request_id` = the last row's `deployment_request_id`. Also
+   backfill `main_version`/`main_pr_number` from whichever of that client's
+   old rows is most recent overall (test or live, whichever was later) —
+   those columns already existed on `client_version_records` in v1 — and set
+   `main_updated_at` to `bitbucket_main_branch_status.version_changed_at`
+   (the newly-backfilled value from step 2), since the exact historical
+   moment isn't recoverable per-client either.
 4. Drop `client_version_records`.
 
 This migration touches real data — run it against the dev/staging DB first
@@ -170,11 +189,17 @@ Following this repo's existing pattern:
   never create a second row per client.
 - `sync_bitbucket_main_status`: `version_changed_at` bumps when version
   differs from stored, stays put when it's the same, even though
-  `last_synced_at` bumps every time either way.
+  `last_synced_at` bumps every time either way; confirm the sync never
+  touches `client_version_status` at all.
+- Deploy confirmation: a client's `main_version`/`main_pr_number`/
+  `main_updated_at` are correctly snapshotted from the cache at deploy time
+  (`main_updated_at` = the cache's `version_changed_at`, not the deploy's own
+  timestamp); confirm no other client's row is touched by one client's deploy.
 - Release Tracker route/template: one row per client with both environment
-  blocks rendered; empty-state "—" for a client missing one environment;
-  Main Version columns show the same global value on every row; System
-  filter is gone, Client filter still works.
+  blocks rendered; empty-state "—" for a client missing one environment or
+  never deployed at all; two different clients can show two different Main
+  Version values (since each is that client's own snapshot); System filter
+  is gone, Client filter still works.
 - Per-column edit permission: a user who recorded only the Test value can
   edit Test but gets 403 attempting to edit Live on the same row (and vice
   versa); admin can edit either.
