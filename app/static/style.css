@@ -504,6 +504,12 @@ code {
 .release-tracker-table th.col-main,
 .release-tracker-table td.col-main { background: var(--green-dim); }
 
+/* Center the group header cells (Test, Live, Main Version) in the first thead row
+   over their two-column spans. Selector targets only the colspan="2" headers in the
+   first row, leaving rowspan="2" Client/Action headers and the plain sub-column labels
+   in the second row left-aligned as per standard table styling. */
+.release-tracker-table thead tr:first-child th[colspan] { text-align: center; }
+
 /* Request type: which of the three "New Deployment Request" tabs a row came
    from — blue/rose/slate, distinct from both the environment badges above and
    the teal/green/amber/red workflow-status colors so "what kind of request"
