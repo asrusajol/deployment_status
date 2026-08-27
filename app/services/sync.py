@@ -227,18 +227,26 @@ def sync_deployable_tasks(db: Session, provider: TaskSourceProvider) -> Deployab
 
 
 def sync_bitbucket_main_status(db: Session, provider) -> None:
-    """Upserts the single BitbucketMainBranchStatus row (id=1) — a cache, not a
-    history table (contrast sync_deployable_tasks' never-delete upsert onto many
-    rows). See docs/superpowers/specs/2026-08-27-release-tracker-design.md.
+    """Upserts the single BitbucketMainBranchStatus row (id=1) — a cache, not
+    a history table. version_changed_at only advances when the fetched
+    version actually differs from what's stored; last_synced_at bumps every
+    time regardless (ops/liveness diagnostic only). See
+    docs/superpowers/specs/2026-08-27-release-tracker-redesign.md.
     """
     status_info = provider.get_main_branch_status()
+    now = datetime.now(timezone.utc)
 
     row = db.get(BitbucketMainBranchStatus, 1)
     if row is None:
         row = BitbucketMainBranchStatus(id=1)
         db.add(row)
+        version_changed = status_info.version is not None
+    else:
+        version_changed = status_info.version != row.version
 
     row.version = status_info.version
     row.pr_number = status_info.pr_number
-    row.last_synced_at = datetime.now(timezone.utc)
+    row.last_synced_at = now
+    if version_changed:
+        row.version_changed_at = now
     db.commit()
