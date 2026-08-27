@@ -10,7 +10,9 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401 — registers all models on Base.metadata
 from app.config import get_settings
 from app.database import Base
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
+from app.models.client_version_record import ClientVersionRecord
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
@@ -1465,6 +1467,99 @@ def test_start_moves_request_to_in_progress_and_records_who(web):
     assert execution.completed_at is None
 
 
+def _seed_in_progress_standard_request(session, *, client_id=1, environment=DeploymentEnvironment.live):
+    session.add(Client(id=client_id, name="CRM"))
+    make_user(session, id=1, name="Requester", username="requester", password=DEFAULT_TEST_PASSWORD)
+    make_user(
+        session, id=3, name="Deployer", username="deployer", password=DEFAULT_TEST_PASSWORD,
+        machine_group_id=DEPLOY_TEAM_MACHINE_GROUP_ID,
+    )
+    session.commit()
+    request = DeploymentRequest(
+        id=1, request_type=RequestType.standard, client_id=client_id, environment=environment,
+        git_branch="release/v12", commit_hash="a1b2c3d", version="V12", requested_by=1,
+        status=RequestStatus.in_progress, created_at=datetime.now(timezone.utc),
+    )
+    session.add(request)
+    session.add(
+        DeploymentExecution(
+            request_id=1, executed_by=3, claimed_at=datetime.now(timezone.utc),
+            started_at=datetime.now(timezone.utc), status=ExecutionStatus.in_progress,
+        )
+    )
+    session.commit()
+    return request
+
+
+def test_deploy_request_requires_current_version_for_standard_requests(web):
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={"current_version": ""})
+
+    assert response.status_code == 400
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.in_progress
+    assert session.query(ClientVersionRecord).count() == 0
+
+
+def test_deploy_request_creates_client_version_record(web):
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    session.add(BitbucketMainBranchStatus(id=1, version="2026.34.40", pr_number=1234))
+    session.commit()
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
+    record = session.query(ClientVersionRecord).one()
+    assert record.client_id == 1
+    assert record.environment == DeploymentEnvironment.live
+    assert record.current_version == "2026.34.34"
+    assert record.previous_version is None
+    assert record.main_version == "2026.34.40"
+    assert record.main_pr_number == 1234
+    assert record.deployment_request_id == 1
+    assert record.recorded_by == 3
+
+
+def test_deploy_request_fills_previous_version_from_prior_record(web):
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    session.add(
+        ClientVersionRecord(
+            client_id=1, environment=DeploymentEnvironment.live, current_version="2026.34.30",
+            deployment_request_id=1, recorded_by=3,
+            created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "deployer")
+
+    client.post("/requests/1/deploy", data={"current_version": "2026.34.34"})
+
+    latest = session.query(ClientVersionRecord).order_by(ClientVersionRecord.id.desc()).first()
+    assert latest.previous_version == "2026.34.30"
+    assert latest.current_version == "2026.34.34"
+
+
+def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
+    # No BitbucketMainBranchStatus row at all — main_version/main_pr_number just
+    # come through null rather than erroring.
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    record = session.query(ClientVersionRecord).one()
+    assert record.main_version is None
+    assert record.main_pr_number is None
+
+
 def test_deploy_before_start_is_rejected_with_409(web):
     client, session = web
     request = _seed_pending_request(session)
@@ -1513,7 +1608,9 @@ def test_deploy_allows_admin_regardless_of_team(web):
     login_as(client, "root2")
     client.post(f"/requests/{request.id}/start")
 
-    response = client.post(f"/requests/{request.id}/deploy", follow_redirects=False)
+    response = client.post(
+        f"/requests/{request.id}/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False
+    )
 
     assert response.status_code == 303
     session.refresh(request)
@@ -1536,7 +1633,9 @@ def test_deploy_can_be_done_by_a_different_deploy_team_member_than_who_started_i
     session.commit()
     login_as(client, "deployer2")
 
-    response = client.post(f"/requests/{request.id}/deploy", follow_redirects=False)
+    response = client.post(
+        f"/requests/{request.id}/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False
+    )
 
     assert response.status_code == 303
     session.refresh(request)
@@ -1563,7 +1662,9 @@ def test_approve_then_start_then_deploy_updates_dashboard_with_logged_in_users(w
     assert request.status == RequestStatus.in_progress
     assert "In Progress" in client.get("/requests").text
 
-    deploy_response = client.post(f"/requests/{request.id}/deploy", follow_redirects=False)
+    deploy_response = client.post(
+        f"/requests/{request.id}/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False
+    )
     assert deploy_response.status_code == 303
     session.refresh(request)
     assert request.status == RequestStatus.completed

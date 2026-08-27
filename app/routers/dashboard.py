@@ -41,13 +41,16 @@ from app.auth import (
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
+from app.models.client_version_record import ClientVersionRecord
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
+from app.services.release_tracker import latest_current_version
 from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
@@ -730,10 +733,20 @@ def deploy_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
+    # Only required/used for `standard` requests — see the Release Tracker design
+    # doc. db_dump_restore/test_local requests don't carry a client+environment
+    # pair, so this field is simply ignored for them (Form(None), not Form(...),
+    # so their bare-submit button — which never sends this field — still works).
+    current_version: str | None = Form(None),
 ):
     deployment_request = _get_request_or_404(db, request_id)
     if deployment_request.status != RequestStatus.in_progress:
         raise HTTPException(status_code=409, detail="Request has not been started yet")
+
+    if deployment_request.request_type == RequestType.standard:
+        current_version = (current_version or "").strip()
+        if not current_version:
+            raise HTTPException(status_code=400, detail="Current version is required.")
 
     # Updates the row start_request() above created — DeploymentExecution.request_id is
     # unique-per-request (app/models/deployment_execution.py), so this is always exactly
@@ -744,6 +757,26 @@ def deploy_request(
     execution.completed_at = datetime.now(timezone.utc)
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
+
+    if deployment_request.request_type == RequestType.standard:
+        bitbucket_status = db.get(BitbucketMainBranchStatus, 1)
+        db.add(
+            ClientVersionRecord(
+                client_id=deployment_request.client_id,
+                environment=deployment_request.environment,
+                current_version=current_version,
+                previous_version=latest_current_version(
+                    db, deployment_request.client_id, deployment_request.environment
+                ),
+                main_version=bitbucket_status.version if bitbucket_status else None,
+                main_pr_number=bitbucket_status.pr_number if bitbucket_status else None,
+                deployment_request_id=deployment_request.id,
+                recorded_by=current_user.id,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
