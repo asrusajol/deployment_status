@@ -1,5 +1,5 @@
 """Adapter for the Bitbucket Cloud REST API — backs the Release Tracker's "current
-version at main" snapshot (docs/superpowers/specs/2026-08-27-release-tracker-design.md).
+version at main" snapshot (docs/superpowers/specs/2026-08-27-release-tracker-redesign.md).
 
 Only ever reads from ONE fixed repo (settings.bitbucket_workspace/bitbucket_repo_slug,
 "SCT/shopfloor-suite" by default) and ONE fixed branch (bitbucket_branch, "main") — this

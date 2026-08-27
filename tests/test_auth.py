@@ -192,7 +192,6 @@ from app.database import Base
 from app.models.client import Client
 from app.models.client_version_status import ClientVersionStatus
 from app.models.deployment_request import DeploymentEnvironment
-from app.models.user import UserRole
 
 
 @pytest.fixture()
@@ -205,7 +204,7 @@ def db_session():
 
 
 def _make_permission_test_user(session, *, id, name, role=UserRole.developer, username=None):
-    # Deliberately independent of tests.conftest.make_user (see the guarded import above)
+    # Deliberately independent of tests.conftest.make_user
     # — these tests only need a bare User row, no password/login machinery.
     from app.models.user import User
 

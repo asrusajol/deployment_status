@@ -212,3 +212,52 @@ def test_clients_with_version_records_only_lists_clients_with_a_status_row(db_se
 
     clients = clients_with_version_records(db_session)
     assert [c.name for c in clients] == ["CRM"]
+
+
+def test_record_client_deploy_test_previous_version_rolls_forward_past_intervening_live(db_session):
+    """Test -> Live -> Test-again: test_previous_version should roll forward
+    from the FIRST Test deploy, not from the intervening Live deploy in a
+    different environment, and not stay stale from before any Test deploy."""
+    _seed(db_session)
+
+    record_client_deploy(
+        db_session, client_id=1, environment=DeploymentEnvironment.test,
+        current_version="1.0", recorded_by=1, deployment_request_id=1,
+    )
+    record_client_deploy(
+        db_session, client_id=1, environment=DeploymentEnvironment.live,
+        current_version="2.0", recorded_by=1, deployment_request_id=1,
+    )
+    row = record_client_deploy(
+        db_session, client_id=1, environment=DeploymentEnvironment.test,
+        current_version="1.1", recorded_by=1, deployment_request_id=1,
+    )
+    db_session.commit()
+
+    assert row.test_current_version == "1.1"
+    assert row.test_previous_version == "1.0"
+
+
+def test_record_client_deploy_always_bumps_updated_at_on_identical_redeploy(db_session):
+    """Global Constraint: *_updated_at bumps on EVERY deploy confirmation
+    for that environment, even a redeploy of the identical version string —
+    it must update in place (still exactly one row), not skip the bump."""
+    _seed(db_session)
+
+    first = record_client_deploy(
+        db_session, client_id=1, environment=DeploymentEnvironment.test,
+        current_version="1.0", recorded_by=1, deployment_request_id=1,
+    )
+    db_session.commit()
+    first_updated_at = first.test_updated_at
+    assert first_updated_at is not None
+
+    second = record_client_deploy(
+        db_session, client_id=1, environment=DeploymentEnvironment.test,
+        current_version="1.0", recorded_by=1, deployment_request_id=1,
+    )
+    db_session.commit()
+
+    assert second.test_updated_at is not None
+    assert second.test_updated_at >= first_updated_at
+    assert db_session.query(ClientVersionStatus).count() == 1

@@ -32,7 +32,6 @@ def _parse_release_tracker_filters(client_id: str | None) -> int | None:
 def _filter_context(db: Session, client_id: int | None) -> dict:
     return {
         "filter_clients": clients_with_version_records(db),
-        "show_system_filter": False,
         "selected_client_id": client_id,
     }
 

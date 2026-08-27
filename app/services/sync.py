@@ -242,7 +242,13 @@ def sync_bitbucket_main_status(db: Session, provider) -> None:
         db.add(row)
         version_changed = status_info.version is not None
     else:
-        version_changed = status_info.version != row.version
+        # Only a real, non-null new version counts as "changed" — a fetch
+        # that comes back None (malformed/renamed release.json response)
+        # should not stamp version_changed_at fresh alongside a NULL
+        # version, which would misleadingly look like "main just changed to
+        # nothing" rather than "we failed to fetch main's version this
+        # cycle".
+        version_changed = status_info.version is not None and status_info.version != row.version
 
     row.version = status_info.version
     row.pr_number = status_info.pr_number
