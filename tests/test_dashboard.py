@@ -1560,6 +1560,29 @@ def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
     assert record.main_pr_number is None
 
 
+def test_requests_queue_renders_deploy_version_dialog_for_standard_in_progress_row(web):
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    session.add(
+        ClientVersionRecord(
+            client_id=1, environment=DeploymentEnvironment.live, current_version="2026.34.30",
+            deployment_request_id=1, recorded_by=3,
+            created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "deployer")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert 'id="deploy-version-modal"' in response.text
+    assert 'data-deploy-request-id="1"' in response.text
+    assert 'data-deploy-previous-version="2026.34.30"' in response.text
+    # The button itself is no longer a bare submit for standard rows:
+    assert 'type="button" class="deploy" data-deploy-request-id="1"' in response.text
+
+
 def test_deploy_before_start_is_rejected_with_409(web):
     client, session = web
     request = _seed_pending_request(session)

@@ -581,6 +581,17 @@ def list_requests(
         or current_user.machine_group_id == settings.task_api_deployable_machine_group_id
     )
 
+    # Feeds the deploy-confirmation popup's read-only "Previous version" field
+    # (request_list.html) — only meaningful for standard, in_progress rows, but
+    # cheap enough to just compute for every distinct (client_id, environment)
+    # pair actually on this page rather than filtering further.
+    previous_versions: dict[str, str | None] = {}
+    for r in requests_:
+        if r.request_type == RequestType.standard and r.status == RequestStatus.in_progress and r.client_id and r.environment:
+            key = f"{r.client_id}:{r.environment.value}"
+            if key not in previous_versions:
+                previous_versions[key] = latest_current_version(db, r.client_id, r.environment)
+
     active_requests = (
         db.query(DeploymentRequest)
         .filter(DeploymentRequest.status.in_(ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS))
@@ -618,6 +629,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "previous_versions": previous_versions,
             "page": page,
             "page_size": page_size,
             "page_size_options": ALLOWED_REQUESTS_PAGE_SIZES,
