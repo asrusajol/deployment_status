@@ -21,19 +21,21 @@
     </div>
 
     <div class="field">
-      <label for="test_current_version">Test current version</label>
       {% if can_edit_test %}
+        <label for="test_current_version">Test current version</label>
         <input type="text" id="test_current_version" name="test_current_version" value="{{ record.test_current_version or '' }}">
       {% else %}
+        <label>Test current version <span class="optional">(not editable by you)</span></label>
         <p class="static-field">{{ record.test_current_version or "—" }}</p>
       {% endif %}
     </div>
 
     <div class="field">
-      <label for="live_current_version">Live current version</label>
       {% if can_edit_live %}
+        <label for="live_current_version">Live current version</label>
         <input type="text" id="live_current_version" name="live_current_version" value="{{ record.live_current_version or '' }}">
       {% else %}
+        <label>Live current version <span class="optional">(not editable by you)</span></label>
         <p class="static-field">{{ record.live_current_version or "—" }}</p>
       {% endif %}
     </div>
