@@ -3,9 +3,10 @@ the deploy-confirmation popup in app/routers/dashboard.py's deploy_request(). Se
 docs/superpowers/specs/2026-08-27-release-tracker-design.md.
 """
 
+from datetime import datetime, timezone
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -74,3 +75,52 @@ def release_tracker_export_xlsx(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=release-tracker.xlsx"},
     )
+
+
+def _get_record_or_404(db: Session, record_id: int) -> ClientVersionRecord:
+    record = db.get(ClientVersionRecord, record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Client version record not found")
+    return record
+
+
+@router.get("/release-tracker/{record_id}/edit")
+def release_tracker_edit_form(
+    record_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    record = _get_record_or_404(db, record_id)
+    if not can_edit_client_version_record(current_user, record):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this record")
+    return templates.TemplateResponse(
+        request, "release_tracker_edit.html", {"current_user": current_user, "record": record}
+    )
+
+
+@router.post("/release-tracker/{record_id}/edit")
+def release_tracker_edit(
+    record_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+    current_version: str = Form(...),
+):
+    record = _get_record_or_404(db, record_id)
+    if not can_edit_client_version_record(current_user, record):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this record")
+
+    current_version = current_version.strip()
+    if not current_version:
+        return templates.TemplateResponse(
+            request,
+            "release_tracker_edit.html",
+            {"current_user": current_user, "record": record, "error": "Current version is required."},
+            status_code=400,
+        )
+
+    record.current_version = current_version
+    record.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return RedirectResponse(url="/release-tracker", status_code=303)

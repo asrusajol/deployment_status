@@ -82,3 +82,45 @@ def test_nav_shows_release_tracker_link_for_logged_in_user(web):
     response = client.get("/requests")
 
     assert 'href="/release-tracker"' in response.text
+
+
+def test_recorder_can_edit_their_own_record(web):
+    client, session = web
+    record = _seed_release_tracker_row(session, current_version="2026.34.34")
+    login_as(client, "deployer")
+
+    response = client.post(
+        f"/release-tracker/{record.id}/edit",
+        data={"current_version": "2026.34.35"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session.refresh(record)
+    assert record.current_version == "2026.34.35"
+
+
+def test_other_user_cannot_edit_someone_elses_record(web):
+    client, session = web
+    record = _seed_release_tracker_row(session, current_version="2026.34.34")
+    make_user(session, id=2, name="Other Dev", username="otherdev", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "otherdev")
+
+    response = client.post(f"/release-tracker/{record.id}/edit", data={"current_version": "9.9.9"})
+
+    assert response.status_code == 403
+    session.refresh(record)
+    assert record.current_version == "2026.34.34"
+
+
+def test_edit_rejects_blank_current_version(web):
+    client, session = web
+    record = _seed_release_tracker_row(session, current_version="2026.34.34")
+    login_as(client, "deployer")
+
+    response = client.post(f"/release-tracker/{record.id}/edit", data={"current_version": "  "})
+
+    assert response.status_code == 400
+    session.refresh(record)
+    assert record.current_version == "2026.34.34"
