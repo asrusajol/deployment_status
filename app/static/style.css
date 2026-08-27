@@ -163,9 +163,16 @@ a { color: inherit; }
 /* --- Page shell ------------------------------------------------------------ */
 
 .page {
-  max-width: 1560px;
+  /* Widened from 1560px and the left/right padding trimmed from 1.75rem — on a wide
+     monitor the old values left ~175px of dead space on each side while the Requests
+     table's pinned Requested By/Status/Action columns sat directly on top of the
+     Changes column (confirmed in a real browser: Changes rendered at 0% visible,
+     entirely underneath the pinned block). This alone fully resolves it on wide
+     monitors (>=1800px); see the .requests-table column-width comments below for the
+     rest of the trim that also helps on narrower laptop screens. */
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 2.25rem 1.75rem 4rem;
+  padding: 2.25rem 1.25rem 4rem;
 }
 
 h1 {
@@ -280,7 +287,12 @@ h1 {
 .requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
 .requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 140px; }  /* System */
 .requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 80px; }   /* Version */
-.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 260px; }  /* Branch Name / Commit */
+/* Trimmed from 260px — confirmed in a real browser this column was the single biggest
+   contributor pushing Changes out past the pinned block's overlay point. The cell
+   already truncates with ellipsis and a "View" button for the untruncated text
+   (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
+   information, just wraps/truncates a little sooner. */
+.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 210px; }  /* Branch Name / Commit */
 .requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 240px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
@@ -288,7 +300,13 @@ h1 {
    as reaching the buttons while scrolling right through the wider columns (Branch /
    Commit, Changes). Their `right` offsets below stack on the fixed widths set for
    these same three columns — see the table-layout: fixed comment above for why that's
-   required for the offsets to land correctly. */
+   required for the offsets to land correctly.
+
+   Widths trimmed from 160/190/150px (confirmed in a real browser: at the old widths
+   plus the old .page sizing, Changes rendered 100% hidden underneath this pinned
+   block — see the .page comment above). Chosen conservatively so the rail + longest
+   status label ("Pending Team Lead Approval") and the longest button label ("Mark
+   Deployed") still fit without excessive wrapping. */
 .requests-table th:nth-last-child(-n + 3),
 .requests-table td:nth-last-child(-n + 3) {
   position: sticky;
@@ -296,9 +314,9 @@ h1 {
   background: var(--panel);
 }
 
-.requests-table th:nth-last-child(1), .requests-table td:nth-last-child(1) { width: 160px; right: 0; }
-.requests-table th:nth-last-child(2), .requests-table td:nth-last-child(2) { width: 190px; right: 160px; }
-.requests-table th:nth-last-child(3), .requests-table td:nth-last-child(3) { width: 150px; right: 350px; }
+.requests-table th:nth-last-child(1), .requests-table td:nth-last-child(1) { width: 140px; right: 0; }
+.requests-table th:nth-last-child(2), .requests-table td:nth-last-child(2) { width: 170px; right: 140px; }
+.requests-table th:nth-last-child(3), .requests-table td:nth-last-child(3) { width: 130px; right: 310px; }
 
 /* Only the leftmost pinned column needs the scroll-separator shadow — one between
    each pinned pair would just be noise, since they all share the same background. */
