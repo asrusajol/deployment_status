@@ -1,6 +1,6 @@
-"""Web UI for the Release Tracker tab — per-client/system version history, fed by
-the deploy-confirmation popup in app/routers/dashboard.py's deploy_request(). See
-docs/superpowers/specs/2026-08-27-release-tracker-design.md.
+"""Web UI for the Release Tracker tab — one row per client, fed by the
+deploy-confirmation popup in app/routers/dashboard.py's deploy_request(). See
+docs/superpowers/specs/2026-08-27-release-tracker-redesign.md.
 """
 
 from datetime import datetime, timezone
@@ -11,9 +11,9 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.auth import can_edit_client_version_record, require_login
+from app.auth import can_edit_client_version_status, require_login
 from app.database import get_db
-from app.models.client_version_record import ClientVersionRecord
+from app.models.client_version_status import ClientVersionStatus
 from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import User
 from app.services.export import release_tracker_rows_to_xlsx
@@ -25,18 +25,15 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
 
 
-def _parse_release_tracker_filters(client_id: str | None, environment: str | None):
-    parsed_client_id = int(client_id) if client_id else None
-    parsed_environment = DeploymentEnvironment(environment) if environment else None
-    return parsed_client_id, parsed_environment
+def _parse_release_tracker_filters(client_id: str | None) -> int | None:
+    return int(client_id) if client_id else None
 
 
-def _filter_context(db: Session, client_id: int | None, environment: DeploymentEnvironment | None) -> dict:
+def _filter_context(db: Session, client_id: int | None) -> dict:
     return {
         "filter_clients": clients_with_version_records(db),
-        "filter_environments": list(DeploymentEnvironment),
+        "show_system_filter": False,
         "selected_client_id": client_id,
-        "selected_environment": environment,
     }
 
 
@@ -46,16 +43,16 @@ def release_tracker_page(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
     client_id: str | None = None,
-    environment: str | None = None,
 ):
-    parsed_client_id, parsed_environment = _parse_release_tracker_filters(client_id, environment)
-    rows = release_tracker_rows(db, parsed_client_id, parsed_environment)
+    parsed_client_id = _parse_release_tracker_filters(client_id)
+    rows = release_tracker_rows(db, parsed_client_id)
     context = {
         "current_user": current_user,
         "rows": rows,
-        "can_edit_record": lambda r: can_edit_client_version_record(current_user, r),
+        "can_edit_test": lambda r: can_edit_client_version_status(current_user, r, DeploymentEnvironment.test),
+        "can_edit_live": lambda r: can_edit_client_version_status(current_user, r, DeploymentEnvironment.live),
     }
-    context.update(_filter_context(db, parsed_client_id, parsed_environment))
+    context.update(_filter_context(db, parsed_client_id))
     return templates.TemplateResponse(request, "release_tracker.html", context)
 
 
@@ -64,10 +61,9 @@ def release_tracker_export_xlsx(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
     client_id: str | None = None,
-    environment: str | None = None,
 ):
-    parsed_client_id, parsed_environment = _parse_release_tracker_filters(client_id, environment)
-    rows = release_tracker_rows(db, parsed_client_id, parsed_environment)
+    parsed_client_id = _parse_release_tracker_filters(client_id)
+    rows = release_tracker_rows(db, parsed_client_id)
     content = release_tracker_rows_to_xlsx(rows, "Release Tracker")
     return StreamingResponse(
         BytesIO(content),
@@ -76,50 +72,77 @@ def release_tracker_export_xlsx(
     )
 
 
-def _get_record_or_404(db: Session, record_id: int) -> ClientVersionRecord:
-    record = db.get(ClientVersionRecord, record_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Client version record not found")
-    return record
+def _get_status_or_404(db: Session, status_id: int) -> ClientVersionStatus:
+    row = db.get(ClientVersionStatus, status_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Client version status not found")
+    return row
 
 
-@router.get("/release-tracker/{record_id}/edit")
+@router.get("/release-tracker/{status_id}/edit")
 def release_tracker_edit_form(
-    record_id: int,
+    status_id: int,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
 ):
-    record = _get_record_or_404(db, record_id)
-    if not can_edit_client_version_record(current_user, record):
+    row = _get_status_or_404(db, status_id)
+    can_edit_test = can_edit_client_version_status(current_user, row, DeploymentEnvironment.test)
+    can_edit_live = can_edit_client_version_status(current_user, row, DeploymentEnvironment.live)
+    if not can_edit_test and not can_edit_live:
         raise HTTPException(status_code=403, detail="You don't have permission to edit this record")
     return templates.TemplateResponse(
-        request, "release_tracker_edit.html", {"current_user": current_user, "record": record}
+        request, "release_tracker_edit.html",
+        {"current_user": current_user, "record": row, "can_edit_test": can_edit_test, "can_edit_live": can_edit_live},
     )
 
 
-@router.post("/release-tracker/{record_id}/edit")
+@router.post("/release-tracker/{status_id}/edit")
 def release_tracker_edit(
-    record_id: int,
+    status_id: int,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
-    current_version: str = Form(...),
+    test_current_version: str | None = Form(None),
+    live_current_version: str | None = Form(None),
 ):
-    record = _get_record_or_404(db, record_id)
-    if not can_edit_client_version_record(current_user, record):
+    row = _get_status_or_404(db, status_id)
+    can_edit_test = can_edit_client_version_status(current_user, row, DeploymentEnvironment.test)
+    can_edit_live = can_edit_client_version_status(current_user, row, DeploymentEnvironment.live)
+
+    if test_current_version is not None and not can_edit_test:
+        raise HTTPException(status_code=403, detail="You don't have permission to edit the Test version")
+    if live_current_version is not None and not can_edit_live:
+        raise HTTPException(status_code=403, detail="You don't have permission to edit the Live version")
+    if test_current_version is None and live_current_version is None:
         raise HTTPException(status_code=403, detail="You don't have permission to edit this record")
 
-    current_version = current_version.strip()
-    if not current_version:
+    errors = []
+    now = datetime.now(timezone.utc)
+    if test_current_version is not None:
+        stripped = test_current_version.strip()
+        if not stripped:
+            errors.append("Test current version cannot be blank.")
+        elif stripped != row.test_current_version:
+            row.test_current_version = stripped
+            row.test_updated_at = now
+    if live_current_version is not None:
+        stripped = live_current_version.strip()
+        if not stripped:
+            errors.append("Live current version cannot be blank.")
+        elif stripped != row.live_current_version:
+            row.live_current_version = stripped
+            row.live_updated_at = now
+
+    if errors:
         return templates.TemplateResponse(
-            request,
-            "release_tracker_edit.html",
-            {"current_user": current_user, "record": record, "error": "Current version is required."},
+            request, "release_tracker_edit.html",
+            {
+                "current_user": current_user, "record": row, "error": " ".join(errors),
+                "can_edit_test": can_edit_test, "can_edit_live": can_edit_live,
+            },
             status_code=400,
         )
 
-    record.current_version = current_version
-    record.updated_at = datetime.now(timezone.utc)
     db.commit()
     return RedirectResponse(url="/release-tracker", status_code=303)

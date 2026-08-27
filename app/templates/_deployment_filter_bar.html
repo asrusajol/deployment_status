@@ -8,6 +8,7 @@
       {% endfor %}
     </select>
   </div>
+  {% if show_system_filter | default(true) %}
   <div class="filter-field">
     <label for="environment">System</label>
     <select name="environment" id="environment">
@@ -17,6 +18,7 @@
       {% endfor %}
     </select>
   </div>
+  {% endif %}
   {% if show_task_id_filter | default(true) %}
   <div class="filter-field">
     <label for="task_id">Task ID</label>
