@@ -396,6 +396,25 @@ This deliberately only *flags* what's planned — it doesn't auto-create a
 `DeploymentRequest`. A developer/DevOps still submits the request explicitly, referencing
 the order's `custom_id` as the Task ID, same as everywhere else in this tool.
 
+## Syncing shopfloor-suite's main-branch release status
+
+```bash
+source .venv/bin/activate
+python -m app.cli sync-bitbucket-main
+```
+
+Pulls `shopfloor-suite`'s `main` branch `release.json` (release version) and its latest
+merged PR from the Bitbucket Cloud API, upserting them into a single cached row. The
+Release Tracker tab reads this cached row (not live from Bitbucket) when a Standard
+Deployment request is marked deployed.
+
+This is also meant to be **run frequently** (e.g. every 5 minutes) so the cache stays
+current. Schedule it with cron, alongside the `deployable-tasks` entry above:
+
+```cron
+*/5 * * * * cd /path/to/Deployment_status && .venv/bin/python -m app.cli sync-bitbucket-main >> /var/log/bitbucket-main-sync.log 2>&1
+```
+
 ## Project layout
 
 ```
