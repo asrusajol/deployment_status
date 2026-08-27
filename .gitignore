@@ -38,3 +38,7 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Superpowers subagent-driven-development scratch workspace (ledgers, briefs,
+# review packages) — not part of the shipped codebase.
+.superpowers/

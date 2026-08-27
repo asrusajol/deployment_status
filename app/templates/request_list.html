@@ -151,9 +151,16 @@
                 {% endif %}
               {% elif r.status == RequestStatus.in_progress %}
                 {% if can_deploy %}
-                  <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
-                    <button type="submit" class="deploy">Mark Deployed</button>
-                  </form>
+                  {% if r.request_type == RequestType.standard %}
+                    {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
+                    <div class="inline-form">
+                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
+                    </div>
+                  {% else %}
+                    <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
+                      <button type="submit" class="deploy">Mark Deployed</button>
+                    </form>
+                  {% endif %}
                 {% else %}
                   <span class="muted">In progress — awaiting completion</span>
                 {% endif %}
@@ -199,6 +206,32 @@
       {% endif %}
     </nav>
   {% endif %}
+
+  <dialog id="deploy-version-modal" class="changes-modal">
+    <h2>Confirm Deployment</h2>
+    <form method="post" id="deploy-version-form" class="form">
+      <div class="field">
+        <label>Client</label>
+        <p class="static-field" id="deploy-version-client"></p>
+      </div>
+      <div class="field">
+        <label>System</label>
+        <p class="static-field" id="deploy-version-system"></p>
+      </div>
+      <div class="field">
+        <label>Previous version</label>
+        <p class="static-field" id="deploy-version-previous"></p>
+      </div>
+      <div class="field">
+        <label for="deploy-version-current">Current version</label>
+        <input type="text" id="deploy-version-current" name="current_version" required placeholder="e.g. 2026.34.34">
+      </div>
+      <div class="changes-modal-actions">
+        <button type="submit" class="deploy">Confirm Deployment</button>
+        <button type="button" class="button-secondary" id="deploy-version-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script>
     (function () {
@@ -383,6 +416,36 @@
       setTimeout(function () {
         window.location.reload();
       }, FALLBACK_RELOAD_MS);
+
+      // --- Deploy-confirmation popup (Standard Deployment only) ---------------------
+      var deployDialog = document.getElementById("deploy-version-modal");
+      if (deployDialog) {
+        var deployForm = document.getElementById("deploy-version-form");
+        var deployClientEl = document.getElementById("deploy-version-client");
+        var deploySystemEl = document.getElementById("deploy-version-system");
+        var deployPreviousEl = document.getElementById("deploy-version-previous");
+        var deployCurrentInput = document.getElementById("deploy-version-current");
+
+        document.querySelectorAll("button.deploy[data-deploy-request-id]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var requestId = button.getAttribute("data-deploy-request-id");
+            deployForm.action = "/requests/" + requestId + "/deploy";
+            deployClientEl.textContent = button.getAttribute("data-deploy-client") || "—";
+            var deploySystem = button.getAttribute("data-deploy-system") || "";
+            deploySystemEl.textContent = deploySystem ? deploySystem.charAt(0).toUpperCase() + deploySystem.slice(1) : "—";
+            deployPreviousEl.textContent = button.getAttribute("data-deploy-previous-version") || "—";
+            deployCurrentInput.value = "";
+            deployDialog.showModal();
+          });
+        });
+
+        document.getElementById("deploy-version-cancel").addEventListener("click", function () {
+          deployDialog.close();
+        });
+        deployDialog.addEventListener("click", function (event) {
+          if (event.target === deployDialog) deployDialog.close();
+        });
+      }
     })();
   </script>
 {% endblock %}

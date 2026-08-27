@@ -6,10 +6,13 @@ import getpass
 from app.auth import hash_password
 from app.config import get_settings
 from app.database import SessionLocal
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.deployable_task import DeployableTask
 from app.models.user import User, UserRole
+from app.services.bitbucket_source import BitbucketCloudProvider
 from app.services.reports import users_by_team
 from app.services.sync import (
+    sync_bitbucket_main_status,
     sync_deployable_tasks,
     sync_team_leads,
     sync_teams,
@@ -103,6 +106,21 @@ def cmd_deployable_tasks(_args: argparse.Namespace) -> None:
         db.close()
 
 
+def cmd_sync_bitbucket_main(_args: argparse.Namespace) -> None:
+    # Meant to be run every 5 minutes via cron, same as deployable-tasks — see
+    # README's crontab section. Refreshes the single cached row deploy_request()
+    # snapshots from when marking a Standard Deployment request as deployed.
+    settings = get_settings()
+    provider = BitbucketCloudProvider(settings)
+    db = SessionLocal()
+    try:
+        sync_bitbucket_main_status(db, provider)
+        status = db.query(BitbucketMainBranchStatus).first()
+        print(f"Synced main branch status: version={status.version} pr={status.pr_number}")
+    finally:
+        db.close()
+
+
 def cmd_create_admin(args: argparse.Namespace) -> None:
     # Bootstraps the very first admin — every other admin/password afterwards is managed
     # through the /admin/users web UI (app/routers/admin.py), which needs an admin already
@@ -172,6 +190,12 @@ def main() -> None:
         help="Sync deploy-test/deploy-live operations from the CRM and report what's ready to request",
     )
     deployable_tasks_parser.set_defaults(func=cmd_deployable_tasks)
+
+    sync_bitbucket_main_parser = subparsers.add_parser(
+        "sync-bitbucket-main",
+        help="Refresh the cached shopfloor-suite main-branch release version + latest merged PR",
+    )
+    sync_bitbucket_main_parser.set_defaults(func=cmd_sync_bitbucket_main)
 
     create_admin_parser = subparsers.add_parser(
         "create-admin",

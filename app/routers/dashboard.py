@@ -41,13 +41,16 @@ from app.auth import (
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
+from app.models.client_version_record import ClientVersionRecord
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
+from app.services.release_tracker import latest_current_version
 from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
@@ -578,6 +581,17 @@ def list_requests(
         or current_user.machine_group_id == settings.task_api_deployable_machine_group_id
     )
 
+    # Feeds the deploy-confirmation popup's read-only "Previous version" field
+    # (request_list.html) — only meaningful for standard, in_progress rows, but
+    # cheap enough to just compute for every distinct (client_id, environment)
+    # pair actually on this page rather than filtering further.
+    previous_versions: dict[str, str | None] = {}
+    for r in requests_:
+        if r.request_type == RequestType.standard and r.status == RequestStatus.in_progress and r.client_id and r.environment:
+            key = f"{r.client_id}:{r.environment.value}"
+            if key not in previous_versions:
+                previous_versions[key] = latest_current_version(db, r.client_id, r.environment)
+
     active_requests = (
         db.query(DeploymentRequest)
         .filter(DeploymentRequest.status.in_(ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS))
@@ -615,6 +629,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "previous_versions": previous_versions,
             "page": page,
             "page_size": page_size,
             "page_size_options": ALLOWED_REQUESTS_PAGE_SIZES,
@@ -730,10 +745,26 @@ def deploy_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
+    # Only required/used for `standard` requests — see the Release Tracker design
+    # doc. db_dump_restore/test_local requests don't carry a client+environment
+    # pair, so this field is simply ignored for them (Form(None), not Form(...),
+    # so their bare-submit button — which never sends this field — still works).
+    current_version: str | None = Form(None),
 ):
     deployment_request = _get_request_or_404(db, request_id)
     if deployment_request.status != RequestStatus.in_progress:
         raise HTTPException(status_code=409, detail="Request has not been started yet")
+
+    # A `standard` request created via the older intake-skill `pending_intake` path can
+    # still have a null client_id/environment (both columns are nullable specifically to
+    # allow that) — ClientVersionRecord.client_id/.environment are NOT NULL, so treat such
+    # a row like a non-standard request here: no current_version requirement, no record.
+    has_client_and_environment = bool(deployment_request.client_id and deployment_request.environment)
+
+    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+        current_version = (current_version or "").strip()
+        if not current_version:
+            raise HTTPException(status_code=400, detail="Current version is required.")
 
     # Updates the row start_request() above created — DeploymentExecution.request_id is
     # unique-per-request (app/models/deployment_execution.py), so this is always exactly
@@ -744,6 +775,26 @@ def deploy_request(
     execution.completed_at = datetime.now(timezone.utc)
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
+
+    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+        bitbucket_status = db.get(BitbucketMainBranchStatus, 1)
+        db.add(
+            ClientVersionRecord(
+                client_id=deployment_request.client_id,
+                environment=deployment_request.environment,
+                current_version=current_version,
+                previous_version=latest_current_version(
+                    db, deployment_request.client_id, deployment_request.environment
+                ),
+                main_version=bitbucket_status.version if bitbucket_status else None,
+                main_pr_number=bitbucket_status.pr_number if bitbucket_status else None,
+                deployment_request_id=deployment_request.id,
+                recorded_by=current_user.id,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
