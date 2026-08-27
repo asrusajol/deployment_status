@@ -7,10 +7,12 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — registers all models on Base.metadata
 from app.database import Base
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.deployable_task import DeployableTask
 from app.models.team import Team
 from app.models.user import User, UserRole
 from app.services.sync import (
+    sync_bitbucket_main_status,
     sync_deployable_tasks,
     sync_team_leads,
     sync_teams,
@@ -18,6 +20,16 @@ from app.services.sync import (
     sync_users,
 )
 from app.services.task_source import DeployableTaskInfo, TeamInfo, TeamLeadInfo, UserContactInfo, UserInfo
+
+
+class FakeBitbucketProvider:
+    def __init__(self, version, pr_number):
+        self._version = version
+        self._pr_number = pr_number
+
+    def get_main_branch_status(self):
+        from app.services.bitbucket_source import BitbucketMainStatusInfo
+        return BitbucketMainStatusInfo(version=self._version, pr_number=self._pr_number)
 
 
 class FakeProvider:
@@ -357,3 +369,23 @@ def test_sync_deployable_tasks_rerun_updates_not_duplicates(db_session):
     assert (first.created, first.updated) == (1, 0)
     assert (second.created, second.updated) == (0, 1)
     assert db_session.query(DeployableTask).count() == 1  # upsert, not a duplicate row
+
+
+def test_sync_bitbucket_main_status_creates_row_on_first_sync(db_session):
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.34", 1234))
+
+    status = db_session.get(BitbucketMainBranchStatus, 1)
+    assert status is not None
+    assert status.version == "2026.34.34"
+    assert status.pr_number == 1234
+    assert status.last_synced_at is not None
+
+
+def test_sync_bitbucket_main_status_updates_in_place_not_duplicates(db_session):
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.34", 1234))
+    sync_bitbucket_main_status(db_session, FakeBitbucketProvider("2026.34.40", 1300))
+
+    assert db_session.query(BitbucketMainBranchStatus).count() == 1
+    status = db_session.get(BitbucketMainBranchStatus, 1)
+    assert status.version == "2026.34.40"
+    assert status.pr_number == 1300

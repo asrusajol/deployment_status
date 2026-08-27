@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     task_api_deployable_hall_id: int = 5
     task_api_deployable_machine_group_id: int = 13
 
+    # Bitbucket Cloud REST API — backs the Release Tracker's "current version at
+    # main" snapshot (docs/superpowers/specs/2026-08-27-release-tracker-design.md).
+    # A Repository or Workspace Access Token (bearer, no username) — confirmed
+    # with the user. Real value only ever lives in .env (gitignored), never here.
+    bitbucket_api_token: str | None = None
+    # Confirmed against the real repo URL: https://bitbucket.org/SCT/shopfloor-suite/src/main/
+    bitbucket_workspace: str = "SCT"
+    bitbucket_repo_slug: str = "shopfloor-suite"
+    bitbucket_release_path: str = "frontend-sap/src/assets/release.json"
+    bitbucket_branch: str = "main"
+
     # Signs the login session cookie (Starlette SessionMiddleware). The default below is
     # fine for local dev only — anyone who reads it could forge a session cookie, so every
     # real deployment must override this in its own .env with a long random value (e.g.

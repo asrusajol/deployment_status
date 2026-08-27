@@ -179,3 +179,54 @@ def test_change_password_too_short_is_rejected(web):
     )
 
     assert response.status_code == 400
+
+
+from datetime import datetime
+
+from app.auth import can_edit_client_version_record
+from app.models.client import Client
+from app.models.client_version_record import ClientVersionRecord
+from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.user import UserRole
+
+
+def _make_client_version_record(session, *, recorded_by):
+    session.add(Client(id=1, name="CRM"))
+    session.add(
+        DeploymentRequest(
+            id=1, request_type=RequestType.standard, client_id=1,
+            environment=DeploymentEnvironment.live, status=RequestStatus.completed,
+            created_at=datetime.now(),
+        )
+    )
+    session.flush()
+    now = datetime.now()
+    record = ClientVersionRecord(
+        client_id=1, environment=DeploymentEnvironment.live, current_version="1.0",
+        deployment_request_id=1, recorded_by=recorded_by,
+        created_at=now, updated_at=now,
+    )
+    session.add(record)
+    session.flush()
+    return record
+
+
+def test_recorder_can_edit_their_own_client_version_record(web):
+    _, session = web
+    user = make_user(session, id=5, name="Deployer", username="deployer")
+    record = _make_client_version_record(session, recorded_by=5)
+    assert can_edit_client_version_record(user, record) is True
+
+
+def test_other_user_cannot_edit_someone_elses_client_version_record(web):
+    _, session = web
+    other = make_user(session, id=6, name="Someone Else", username="someone-else")
+    record = _make_client_version_record(session, recorded_by=5)
+    assert can_edit_client_version_record(other, record) is False
+
+
+def test_admin_can_edit_any_client_version_record(web):
+    _, session = web
+    admin = make_user(session, id=7, name="Root Admin", role=UserRole.admin, username="root")
+    record = _make_client_version_record(session, recorded_by=5)
+    assert can_edit_client_version_record(admin, record) is True
