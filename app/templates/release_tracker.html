@@ -1,0 +1,85 @@
+{# app/templates/release_tracker.html #}
+{% extends "base.html" %}
+{% block title %}Release Tracker — Deployment Tracker{% endblock %}
+{% block content %}
+  <p class="eyebrow">Versions</p>
+  <h1>Release Tracker</h1>
+  <p class="subtitle">Current + previous deployed version per client and system, and
+    what's on <code>main</code> at the moment each deployment was confirmed.</p>
+
+  <form method="get" action="/release-tracker" class="filter-bar">
+    <div class="filter-field">
+      <label for="client_id">Client</label>
+      <select name="client_id" id="client_id">
+        <option value="">All clients</option>
+        {% for c in filter_clients %}
+          <option value="{{ c.id }}" {% if selected_client_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="environment">System</label>
+      <select name="environment" id="environment">
+        <option value="">All systems</option>
+        {% for env in filter_environments %}
+          <option value="{{ env.value }}" {% if selected_environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="button-primary">Filter</button>
+    <a href="/release-tracker" class="button-secondary">Reset</a>
+    <a
+      href="/release-tracker/export.xlsx?client_id={{ selected_client_id or '' }}&environment={{ selected_environment.value if selected_environment else '' }}"
+      class="button-secondary"
+    >Export to Excel</a>
+  </form>
+
+  {% if rows %}
+    <div class="table-scroll">
+    <table class="status-table release-tracker-table">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th>System</th>
+          <th>Current Version</th>
+          <th>Previous Version</th>
+          <th>Current Version at Main</th>
+          <th>Recorded By</th>
+          <th>Updated At</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.client.name if row.client else "—" }}</td>
+          <td><span class="badge badge-{{ row.environment.value }}">{{ row.environment.value | capitalize }}</span></td>
+          <td>{{ row.current_version }}</td>
+          <td>{{ row.previous_version or "—" }}</td>
+          <td>
+            {% if row.main_version and row.main_pr_number %}
+              {{ row.main_version }} (PR #{{ row.main_pr_number }})
+            {% elif row.main_version %}
+              {{ row.main_version }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ row.recorder.name if row.recorder else "—" }}</td>
+          <td>{{ row.updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.updated_at else "—" }}</td>
+          <td>
+            {% if can_edit_record(row) %}
+              <a href="/release-tracker/{{ row.id }}/edit" class="action-link edit">Edit</a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No deployments have been confirmed with a version yet.</p>
+  {% endif %}
+{% endblock %}
