@@ -153,7 +153,9 @@
                 {% if can_deploy %}
                   {% if r.request_type == RequestType.standard %}
                     {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
-                    <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
+                    <div class="inline-form">
+                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
+                    </div>
                   {% else %}
                     <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
                       <button type="submit" class="deploy">Mark Deployed</button>
