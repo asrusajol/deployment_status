@@ -492,6 +492,18 @@ code {
    marks them as internal infrastructure, not environment data. */
 .badge-testlocal { background: var(--slate-chip-dim); color: var(--slate-chip); font-family: var(--font-mono); }
 
+/* Release Tracker's Test/Live/Main column blocks — same hues as the
+   test/live badges above (amber/violet), plus green for Main Version,
+   matching the app's existing "shipped/complete" signal color. Applied to
+   both the two-row <thead> and every <td> in that column so the tinted
+   block reads as one visual group per row. */
+.release-tracker-table th.col-test,
+.release-tracker-table td.col-test { background: var(--amber-dim); }
+.release-tracker-table th.col-live,
+.release-tracker-table td.col-live { background: var(--violet-dim); }
+.release-tracker-table th.col-main,
+.release-tracker-table td.col-main { background: var(--green-dim); }
+
 /* Request type: which of the three "New Deployment Request" tabs a row came
    from — blue/rose/slate, distinct from both the environment badges above and
    the teal/green/amber/red workflow-status colors so "what kind of request"

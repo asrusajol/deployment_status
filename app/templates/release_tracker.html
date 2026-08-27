@@ -18,32 +18,37 @@
     <table class="status-table release-tracker-table">
       <thead>
         <tr>
-          <th>Client</th>
-          <th>Test Version</th>
-          <th>Test Updated</th>
-          <th>Live Version</th>
-          <th>Live Updated</th>
-          <th>Current Version at Main</th>
-          <th>Action</th>
+          <th rowspan="2">Client</th>
+          <th colspan="2" class="col-test">Test</th>
+          <th colspan="2" class="col-live">Live</th>
+          <th colspan="2" class="col-main">Main Version</th>
+          <th rowspan="2">Action</th>
+        </tr>
+        <tr>
+          <th class="col-test">Current Version</th>
+          <th class="col-test">Updated At</th>
+          <th class="col-live">Current Version</th>
+          <th class="col-live">Updated At</th>
+          <th class="col-main">Version</th>
+          <th class="col-main">Updated At</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
         <tr>
           <td>{{ row.client.name if row.client else "—" }}</td>
-          <td>{{ row.test_current_version or "—" }}</td>
-          <td>{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
-          <td>{{ row.live_current_version or "—" }}</td>
-          <td>{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
-          <td>
+          <td class="col-test">{{ row.test_current_version or "—" }}</td>
+          <td class="col-test">{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
+          <td class="col-live">{{ row.live_current_version or "—" }}</td>
+          <td class="col-live">{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
+          <td class="col-main">
             {% if row.main_version and row.main_pr_number %}
               {{ row.main_version }} (PR #{{ row.main_pr_number }})
-            {% elif row.main_version %}
-              {{ row.main_version }}
             {% else %}
-              —
+              {{ row.main_version or "—" }}
             {% endif %}
           </td>
+          <td class="col-main">{{ row.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.main_updated_at else "—" }}</td>
           <td>
             <div class="actions-inner">
               {% if can_edit_test(row) or can_edit_live(row) %}
