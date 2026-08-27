@@ -92,9 +92,9 @@ def upgrade() -> None:
         sa.column('main_updated_at', sa.DateTime),
     )
 
-    cached_version_changed_at = bind.execute(
-        sa.text("SELECT version_changed_at FROM bitbucket_main_branch_status WHERE id = 1")
-    ).scalar()
+    cached_version, cached_version_changed_at = bind.execute(
+        sa.text("SELECT version, version_changed_at FROM bitbucket_main_branch_status WHERE id = 1")
+    ).one()
 
     client_ids = [
         row[0] for row in bind.execute(sa.text("SELECT DISTINCT client_id FROM client_version_records"))
@@ -105,7 +105,7 @@ def upgrade() -> None:
         latest_overall_main_version = None
         latest_overall_main_pr = None
 
-        for env, prefix in (('test', 'test'), ('live', 'live')):
+        for env in ('test', 'live'):
             records = bind.execute(
                 sa.select(old)
                 .where(old.c.client_id == client_id, old.c.environment == env)
@@ -114,11 +114,11 @@ def upgrade() -> None:
             if not records:
                 continue
             last = records[-1]
-            values[f'{prefix}_current_version'] = last.current_version
-            values[f'{prefix}_previous_version'] = records[-2].current_version if len(records) > 1 else None
-            values[f'{prefix}_updated_at'] = last.updated_at
-            values[f'{prefix}_recorded_by'] = last.recorded_by
-            values[f'{prefix}_deployment_request_id'] = last.deployment_request_id
+            values[f'{env}_current_version'] = last.current_version
+            values[f'{env}_previous_version'] = records[-2].current_version if len(records) > 1 else None
+            values[f'{env}_updated_at'] = last.updated_at
+            values[f'{env}_recorded_by'] = last.recorded_by
+            values[f'{env}_deployment_request_id'] = last.deployment_request_id
             if latest_overall_updated_at is None or last.updated_at > latest_overall_updated_at:
                 latest_overall_updated_at = last.updated_at
                 latest_overall_main_version = last.main_version
@@ -126,7 +126,19 @@ def upgrade() -> None:
 
         values['main_version'] = latest_overall_main_version
         values['main_pr_number'] = latest_overall_main_pr
-        values['main_updated_at'] = cached_version_changed_at
+        # main_updated_at has no recoverable "changed at" timestamp per
+        # client in v1's data — the only timestamp available is the cache's
+        # current version_changed_at. That's only a safe stand-in for a
+        # client whose folded-forward main_version still matches what's
+        # currently cached; if the client's last-recorded snapshot is stale
+        # (main branch has moved on since), pairing it with "now" would be
+        # a plausible-but-wrong timestamp. Leave it NULL in that case,
+        # consistent with how test/live_previous_version are left NULL
+        # when unrecoverable.
+        if latest_overall_main_version is not None and latest_overall_main_version == cached_version:
+            values['main_updated_at'] = cached_version_changed_at
+        else:
+            values['main_updated_at'] = None
         bind.execute(sa.insert(new).values(**values))
 
     # 4. Drop the old history table — its real data has been folded forward
