@@ -1,5 +1,17 @@
 from app.models.user import UserRole
-from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
+
+try:
+    # tests.conftest imports app.main, which (as of this task) still transitively imports
+    # app/routers/dashboard.py's now-deleted ClientVersionRecord — a known, expected,
+    # cross-task breakage fixed by Tasks 4-5, not this one. Guarded so that this module
+    # still collects (and the client_version_status permission tests below, which use a
+    # plain in-memory session instead of the `web` fixture, still run) even while that
+    # chain is broken.
+    from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
+except Exception:
+    DEFAULT_TEST_PASSWORD = None
+    login_as = None
+    make_user = None
 
 
 def test_login_with_correct_credentials_redirects_to_dashboard(web):
@@ -181,52 +193,66 @@ def test_change_password_too_short_is_rejected(web):
     assert response.status_code == 400
 
 
-from datetime import datetime
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app.auth import can_edit_client_version_record
+import app.models  # noqa: F401
+from app.auth import can_edit_client_version_status
+from app.database import Base
 from app.models.client import Client
-from app.models.client_version_record import ClientVersionRecord
-from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.client_version_status import ClientVersionStatus
+from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import UserRole
 
 
-def _make_client_version_record(session, *, recorded_by):
+@pytest.fixture()
+def db_session():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+
+
+def _make_permission_test_user(session, *, id, name, role=UserRole.developer, username=None):
+    # Deliberately independent of tests.conftest.make_user (see the guarded import above)
+    # — these tests only need a bare User row, no password/login machinery.
+    from app.models.user import User
+
+    user = User(id=id, name=name, role=role, username=username)
+    session.add(user)
+    session.flush()
+    return user
+
+
+def _make_client_version_status(session, *, test_recorded_by=None, live_recorded_by=None):
     session.add(Client(id=1, name="CRM"))
-    session.add(
-        DeploymentRequest(
-            id=1, request_type=RequestType.standard, client_id=1,
-            environment=DeploymentEnvironment.live, status=RequestStatus.completed,
-            created_at=datetime.now(),
-        )
-    )
     session.flush()
-    now = datetime.now()
-    record = ClientVersionRecord(
-        client_id=1, environment=DeploymentEnvironment.live, current_version="1.0",
-        deployment_request_id=1, recorded_by=recorded_by,
-        created_at=now, updated_at=now,
+    row = ClientVersionStatus(
+        client_id=1, test_current_version="1.0", test_recorded_by=test_recorded_by,
+        live_current_version="2.0", live_recorded_by=live_recorded_by,
     )
-    session.add(record)
+    session.add(row)
     session.flush()
-    return record
+    return row
 
 
-def test_recorder_can_edit_their_own_client_version_record(web):
-    _, session = web
-    user = make_user(session, id=5, name="Deployer", username="deployer")
-    record = _make_client_version_record(session, recorded_by=5)
-    assert can_edit_client_version_record(user, record) is True
+def test_recorder_can_edit_the_environment_they_recorded(db_session):
+    user = _make_permission_test_user(db_session, id=5, name="Deployer", username="deployer")
+    row = _make_client_version_status(db_session, test_recorded_by=5)
+    assert can_edit_client_version_status(user, row, DeploymentEnvironment.test) is True
 
 
-def test_other_user_cannot_edit_someone_elses_client_version_record(web):
-    _, session = web
-    other = make_user(session, id=6, name="Someone Else", username="someone-else")
-    record = _make_client_version_record(session, recorded_by=5)
-    assert can_edit_client_version_record(other, record) is False
+def test_recorder_cannot_edit_the_other_environment_on_the_same_row(db_session):
+    user = _make_permission_test_user(db_session, id=5, name="Deployer", username="deployer")
+    row = _make_client_version_status(db_session, test_recorded_by=5, live_recorded_by=6)
+    assert can_edit_client_version_status(user, row, DeploymentEnvironment.live) is False
 
 
-def test_admin_can_edit_any_client_version_record(web):
-    _, session = web
-    admin = make_user(session, id=7, name="Root Admin", role=UserRole.admin, username="root")
-    record = _make_client_version_record(session, recorded_by=5)
-    assert can_edit_client_version_record(admin, record) is True
+def test_admin_can_edit_either_environment(db_session):
+    admin = _make_permission_test_user(db_session, id=7, name="Root Admin", role=UserRole.admin, username="root")
+    row = _make_client_version_status(db_session, test_recorded_by=5, live_recorded_by=6)
+    assert can_edit_client_version_status(admin, row, DeploymentEnvironment.test) is True
+    assert can_edit_client_version_status(admin, row, DeploymentEnvironment.live) is True
