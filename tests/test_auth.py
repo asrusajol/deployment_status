@@ -1,17 +1,5 @@
 from app.models.user import UserRole
-
-try:
-    # tests.conftest imports app.main, which (as of this task) still transitively imports
-    # app/routers/dashboard.py's now-deleted ClientVersionRecord — a known, expected,
-    # cross-task breakage fixed by Tasks 4-5, not this one. Guarded so that this module
-    # still collects (and the client_version_status permission tests below, which use a
-    # plain in-memory session instead of the `web` fixture, still run) even while that
-    # chain is broken.
-    from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
-except Exception:
-    DEFAULT_TEST_PASSWORD = None
-    login_as = None
-    make_user = None
+from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
 
 
 def test_login_with_correct_credentials_redirects_to_dashboard(web):

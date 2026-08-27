@@ -28,7 +28,7 @@
   <button type="submit" class="button-primary">Filter</button>
   <a href="{{ filter_action }}" class="button-secondary">Reset</a>
   <a
-    href="{{ export_action }}?client_id={{ selected_client_id or '' }}&environment={{ selected_environment.value if selected_environment else '' }}{% if show_task_id_filter | default(true) %}&task_id={{ selected_task_id | urlencode }}{% endif %}"
+    href="{{ export_action }}?client_id={{ selected_client_id or '' }}{% if show_system_filter | default(true) %}&environment={{ selected_environment.value if selected_environment else '' }}{% endif %}{% if show_task_id_filter | default(true) %}&task_id={{ selected_task_id | urlencode }}{% endif %}"
     class="button-secondary"
   >Export to Excel</a>
 </form>
