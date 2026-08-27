@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from app.auth import can_edit_client_version_record, require_login
 from app.database import get_db
-from app.models.client import Client
 from app.models.client_version_record import ClientVersionRecord
 from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import User

@@ -29,7 +29,8 @@ def db_session():
 
 def _seed(db_session, *, client_id=1, client_name="CRM"):
     db_session.add(Client(id=client_id, name=client_name))
-    # Only add user if it doesn't exist
+    # _seed() is called once per client in some tests, so guard against a duplicate
+    # user id=1 insert.
     if not db_session.query(User).filter(User.id == 1).first():
         db_session.add(User(id=1, name="Deployer", role=UserRole.developer))
     db_session.add(
