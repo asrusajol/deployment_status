@@ -11,13 +11,7 @@
   <form method="post" action="/release-tracker/{{ record.id }}/edit" class="form">
     <div class="field">
       <label>Current version at main <span class="optional">(not editable)</span></label>
-      <p class="static-field">
-        {% if record.main_version and record.main_pr_number %}
-          {{ record.main_version }} (PR #{{ record.main_pr_number }})
-        {% else %}
-          {{ record.main_version or "—" }}
-        {% endif %}
-      </p>
+      <p class="static-field">{{ record.main_version or "—" }}</p>
     </div>
 
     <div class="field">

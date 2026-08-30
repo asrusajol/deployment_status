@@ -243,3 +243,10 @@ def test_admin_can_edit_either_environment(db_session):
     row = _make_client_version_status(db_session, test_recorded_by=5, live_recorded_by=6)
     assert can_edit_client_version_status(admin, row, DeploymentEnvironment.test) is True
     assert can_edit_client_version_status(admin, row, DeploymentEnvironment.live) is True
+
+
+def test_devops_can_edit_either_environment(db_session):
+    devops = _make_permission_test_user(db_session, id=8, name="Ops", role=UserRole.devops, username="ops")
+    row = _make_client_version_status(db_session, test_recorded_by=5, live_recorded_by=6)
+    assert can_edit_client_version_status(devops, row, DeploymentEnvironment.test) is True
+    assert can_edit_client_version_status(devops, row, DeploymentEnvironment.live) is True

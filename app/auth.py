@@ -137,8 +137,8 @@ def can_edit_client_version_status(current_user: User, row, environment) -> bool
     """Whether current_user may correct row's `{environment}_current_version`
     — checked PER COLUMN, not per row: a user who only ever confirmed this
     client's Test deploy can fix Test but not Live on the same row, and vice
-    versa. Admins can edit either."""
-    if current_user.role == UserRole.admin:
+    versa. Admins and devops can edit either, on any row."""
+    if current_user.role in (UserRole.admin, UserRole.devops):
         return True
     recorded_by = getattr(row, f"{environment.value}_recorded_by")
     return current_user.id == recorded_by
