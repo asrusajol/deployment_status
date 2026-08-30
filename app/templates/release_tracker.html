@@ -41,13 +41,7 @@
           <td class="col-test">{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
           <td class="col-live">{{ row.live_current_version or "—" }}</td>
           <td class="col-live">{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
-          <td class="col-main">
-            {% if row.main_version and row.main_pr_number %}
-              {{ row.main_version }} (PR #{{ row.main_pr_number }})
-            {% else %}
-              {{ row.main_version or "—" }}
-            {% endif %}
-          </td>
+          <td class="col-main">{{ row.main_version or "—" }}</td>
           <td class="col-main">{{ row.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.main_updated_at else "—" }}</td>
           <td>
             <div class="actions-inner">
