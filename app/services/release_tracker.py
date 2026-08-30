@@ -27,10 +27,10 @@ def record_client_deploy(
     the columns for `environment` — the other environment's columns are left
     completely untouched, and no other client's row is touched either way.
 
-    Also snapshots main_version/main_pr_number/main_updated_at from the
-    current BitbucketMainBranchStatus cache (all None if no sync has run
-    yet). main_updated_at is set to the cache's version_changed_at, not
-    datetime.now() — see BitbucketMainBranchStatus's docstring for why.
+    Does not touch BitbucketMainBranchStatus at all: Main Version is a live
+    read at render time (current_main_branch_status(), below), not a
+    per-client snapshot taken at deploy time — see ClientVersionStatus's
+    docstring for why that changed.
     """
     row = db.query(ClientVersionStatus).filter_by(client_id=client_id).one_or_none()
     if row is None:
@@ -45,12 +45,18 @@ def record_client_deploy(
     setattr(row, f"{prefix}_recorded_by", recorded_by)
     setattr(row, f"{prefix}_deployment_request_id", deployment_request_id)
 
-    cache = db.get(BitbucketMainBranchStatus, 1)
-    row.main_version = cache.version if cache else None
-    row.main_pr_number = cache.pr_number if cache else None
-    row.main_updated_at = cache.version_changed_at if cache else None
-
     return row
+
+
+def current_main_branch_status(db: Session) -> BitbucketMainBranchStatus | None:
+    """The single cached row of shopfloor-suite's main-branch status
+    (id=1), refreshed every 5 minutes by `python -m app.cli
+    sync-bitbucket-main` — None if that sync has never run. This is what
+    the Release Tracker tab's Main Version block reads for every client
+    row, live, at render time (see release_tracker_rows() — this is
+    deliberately not folded into that function, since it's one shared row,
+    not per-client)."""
+    return db.get(BitbucketMainBranchStatus, 1)
 
 
 def current_version_for(db: Session, client_id: int, environment: DeploymentEnvironment) -> str | None:

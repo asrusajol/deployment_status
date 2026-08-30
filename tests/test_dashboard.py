@@ -1518,8 +1518,6 @@ def test_deploy_request_creates_client_version_status(web):
     assert row.client_id == 1
     assert row.live_current_version == "2026.34.34"  # _seed_in_progress_standard_request uses live
     assert row.live_previous_version is None
-    assert row.main_version == "2026.34.40"
-    assert row.main_pr_number == 1234
     assert row.live_deployment_request_id == 1
     assert row.live_recorded_by == 3
 
@@ -1545,8 +1543,9 @@ def test_deploy_request_fills_previous_version_from_prior_status(web):
 
 
 def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
-    # No BitbucketMainBranchStatus row at all — main_version/main_pr_number just
-    # come through null rather than erroring.
+    # No BitbucketMainBranchStatus row at all — deploy confirmation doesn't touch or
+    # depend on it at all now (Main Version is a live read at render time, in
+    # release_tracker.py, not something the deploy path snapshots).
     client, session = web
     _seed_in_progress_standard_request(session)
     login_as(client, "deployer")
@@ -1555,9 +1554,7 @@ def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
 
     assert response.status_code == 303
     row = session.query(ClientVersionStatus).one()
-    assert row.main_version is None
-    assert row.main_pr_number is None
-    assert row.main_updated_at is None
+    assert row.live_current_version == "2026.34.34"
 
 
 def test_deploy_request_succeeds_for_standard_request_with_null_client_id(web):

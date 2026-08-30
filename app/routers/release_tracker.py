@@ -17,7 +17,11 @@ from app.models.client_version_status import ClientVersionStatus
 from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import User
 from app.services.export import release_tracker_rows_to_xlsx
-from app.services.release_tracker import clients_with_version_records, release_tracker_rows
+from app.services.release_tracker import (
+    clients_with_version_records,
+    current_main_branch_status,
+    release_tracker_rows,
+)
 from app.static_version import STATIC_VERSION
 
 router = APIRouter()
@@ -48,6 +52,7 @@ def release_tracker_page(
     context = {
         "current_user": current_user,
         "rows": rows,
+        "main_status": current_main_branch_status(db),
         "can_edit_test": lambda r: can_edit_client_version_status(current_user, r, DeploymentEnvironment.test),
         "can_edit_live": lambda r: can_edit_client_version_status(current_user, r, DeploymentEnvironment.live),
     }
@@ -63,7 +68,7 @@ def release_tracker_export_xlsx(
 ):
     parsed_client_id = _parse_release_tracker_filters(client_id)
     rows = release_tracker_rows(db, parsed_client_id)
-    content = release_tracker_rows_to_xlsx(rows, "Release Tracker")
+    content = release_tracker_rows_to_xlsx(rows, "Release Tracker", main_status=current_main_branch_status(db))
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -92,7 +97,10 @@ def release_tracker_edit_form(
         raise HTTPException(status_code=403, detail="You don't have permission to edit this record")
     return templates.TemplateResponse(
         request, "release_tracker_edit.html",
-        {"current_user": current_user, "record": row, "can_edit_test": can_edit_test, "can_edit_live": can_edit_live},
+        {
+            "current_user": current_user, "record": row, "main_status": current_main_branch_status(db),
+            "can_edit_test": can_edit_test, "can_edit_live": can_edit_live,
+        },
     )
 
 
@@ -138,6 +146,7 @@ def release_tracker_edit(
             request, "release_tracker_edit.html",
             {
                 "current_user": current_user, "record": row, "error": " ".join(errors),
+                "main_status": current_main_branch_status(db),
                 "can_edit_test": can_edit_test, "can_edit_live": can_edit_live,
             },
             status_code=400,
