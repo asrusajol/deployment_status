@@ -65,6 +65,15 @@ def require_admin(current_user: User = Depends(require_login)) -> User:
     return current_user
 
 
+def require_devops(current_user: User = Depends(require_login)) -> User:
+    """Gate for the Seeder Collection tab (app/routers/seeder_collection.py):
+    admin or devops only — everyone else gets 403, and the nav link is
+    hidden for them too (base.html)."""
+    if current_user.role not in (UserRole.admin, UserRole.devops):
+        raise HTTPException(status_code=403, detail="Devops access required")
+    return current_user
+
+
 def _is_deploy_team_member(user: User, settings: Settings) -> bool:
     # The whole app is already scoped to this one team's deploy tasks (deployable-tasks
     # only ever pulls hall/machine-group task_api_deployable_hall_id /

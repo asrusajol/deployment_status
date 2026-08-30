@@ -6,6 +6,7 @@ from app.models.client_version_status import ClientVersionStatus
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution
 from app.models.deployment_request import DeploymentRequest
+from app.models.seeder_command import SeederCommand
 from app.models.team import Team
 from app.models.user import User
 
@@ -18,6 +19,7 @@ __all__ = [
     "DeployableTask",
     "DeploymentExecution",
     "DeploymentRequest",
+    "SeederCommand",
     "Team",
     "User",
 ]

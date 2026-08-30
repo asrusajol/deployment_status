@@ -12,6 +12,7 @@ from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.release_tracker import router as release_tracker_router
+from app.routers.seeder_collection import router as seeder_collection_router
 from app.ws import manager
 
 settings = get_settings()
@@ -27,6 +28,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(dashboard_router)
 app.include_router(release_tracker_router)
+app.include_router(seeder_collection_router)
 
 
 @app.exception_handler(NotAuthenticatedError)
