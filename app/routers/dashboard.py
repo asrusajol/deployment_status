@@ -580,12 +580,13 @@ def list_requests(
     )
 
     # Feeds the deploy-confirmation popup's read-only "Previous version" field
-    # (request_list.html) — only meaningful for standard, in_progress rows, but
-    # cheap enough to just compute for every distinct (client_id, environment)
-    # pair actually on this page rather than filtering further.
+    # (request_list.html) — only meaningful for in_progress rows that will actually
+    # use the Release Tracker (see _uses_release_tracker), but cheap enough to just
+    # compute for every distinct (client_id, environment) pair actually on this page
+    # rather than filtering further.
     previous_versions: dict[str, str | None] = {}
     for r in requests_:
-        if r.request_type == RequestType.standard and r.status == RequestStatus.in_progress and r.client_id and r.environment:
+        if r.status == RequestStatus.in_progress and _uses_release_tracker(r):
             key = f"{r.client_id}:{r.environment.value}"
             if key not in previous_versions:
                 previous_versions[key] = current_version_for(db, r.client_id, r.environment)
@@ -627,6 +628,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "uses_release_tracker": _uses_release_tracker,
             "previous_versions": previous_versions,
             "page": page,
             "page_size": page_size,
@@ -636,6 +638,18 @@ def list_requests(
             "active_requests_json": active_requests_json,
         },
     )
+
+
+def _uses_release_tracker(deployment_request: DeploymentRequest) -> bool:
+    """Whether this request's deploy should go through the version-confirmation
+    popup/ClientVersionStatus tracking at all. The Release Tracker only covers V12
+    applications — a `standard` request against a V10 (or any other non-V12) client
+    system has no current_version to collect, same as db_dump_restore/test_local."""
+    if deployment_request.request_type != RequestType.standard:
+        return False
+    if not (deployment_request.client_id and deployment_request.environment):
+        return False
+    return (deployment_request.version or "").strip().lower() == "v12"
 
 
 def _get_request_or_404(db: Session, request_id: int) -> DeploymentRequest:
@@ -755,11 +769,12 @@ def deploy_request(
 
     # A `standard` request created via the older intake-skill `pending_intake` path can
     # still have a null client_id/environment (both columns are nullable specifically to
-    # allow that) — ClientVersionStatus.client_id is NOT NULL, so treat such
-    # a row like a non-standard request here: no current_version requirement, no record.
-    has_client_and_environment = bool(deployment_request.client_id and deployment_request.environment)
+    # allow that) — ClientVersionStatus.client_id is NOT NULL, so treat such a row like a
+    # non-standard request here: no current_version requirement, no record. Same for any
+    # non-V12 request — see _uses_release_tracker().
+    uses_release_tracker = _uses_release_tracker(deployment_request)
 
-    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+    if uses_release_tracker:
         current_version = (current_version or "").strip()
         if not current_version:
             raise HTTPException(status_code=400, detail="Current version is required.")
@@ -774,7 +789,7 @@ def deploy_request(
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
 
-    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+    if uses_release_tracker:
         record_client_deploy(
             db,
             client_id=deployment_request.client_id,
