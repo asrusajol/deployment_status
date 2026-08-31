@@ -151,7 +151,7 @@
                 {% endif %}
               {% elif r.status == RequestStatus.in_progress %}
                 {% if can_deploy %}
-                  {% if r.request_type == RequestType.standard %}
+                  {% if uses_release_tracker(r) %}
                     {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
                     <div class="inline-form">
                       <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>

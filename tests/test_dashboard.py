@@ -1467,7 +1467,9 @@ def test_start_moves_request_to_in_progress_and_records_who(web):
     assert execution.completed_at is None
 
 
-def _seed_in_progress_standard_request(session, *, client_id=1, environment=DeploymentEnvironment.live):
+def _seed_in_progress_standard_request(
+    session, *, client_id=1, environment=DeploymentEnvironment.live, version="V12"
+):
     session.add(Client(id=client_id, name="CRM"))
     make_user(session, id=1, name="Requester", username="requester", password=DEFAULT_TEST_PASSWORD)
     make_user(
@@ -1477,7 +1479,7 @@ def _seed_in_progress_standard_request(session, *, client_id=1, environment=Depl
     session.commit()
     request = DeploymentRequest(
         id=1, request_type=RequestType.standard, client_id=client_id, environment=environment,
-        git_branch="release/v12", commit_hash="a1b2c3d", version="V12", requested_by=1,
+        git_branch="release/v12", commit_hash="a1b2c3d", version=version, requested_by=1,
         status=RequestStatus.in_progress, created_at=datetime.now(timezone.utc),
     )
     session.add(request)
@@ -1501,6 +1503,50 @@ def test_deploy_request_requires_current_version_for_standard_requests(web):
     assert response.status_code == 400
     assert session.get(DeploymentRequest, 1).status == RequestStatus.in_progress
     assert session.query(ClientVersionStatus).count() == 0
+
+
+def test_deploy_request_skips_version_tracking_for_non_v12_requests(web):
+    # The Release Tracker only exists for V12 applications — a V10 (or any other
+    # non-V12) request's "Mark Deployed" stays a bare submit, same as
+    # db_dump_restore/test_local: no current_version requirement, no
+    # ClientVersionStatus row.
+    client, session = web
+    _seed_in_progress_standard_request(session, version="V10")
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
+    assert session.query(ClientVersionStatus).count() == 0
+
+
+def test_deploy_request_version_match_is_case_insensitive(web):
+    client, session = web
+    _seed_in_progress_standard_request(session, version="v12")
+    session.commit()
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    row = session.query(ClientVersionStatus).one()
+    assert row.live_current_version == "2026.34.34"
+
+
+def test_requests_list_hides_deploy_popup_for_non_v12_requests(web):
+    # The template shouldn't wire up the version-confirmation dialog for a V10
+    # (or other non-V12) request — plain "Mark Deployed" submit instead, same as
+    # db_dump_restore/test_local rows.
+    client, session = web
+    _seed_in_progress_standard_request(session, version="V10")
+    login_as(client, "deployer")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert 'data-deploy-request-id="1"' not in response.text
+    assert '<form method="post" action="/requests/1/deploy" class="inline-form">' in response.text
 
 
 def test_deploy_request_creates_client_version_status(web):
