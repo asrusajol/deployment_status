@@ -13,6 +13,7 @@ from app.services.bitbucket_source import BitbucketCloudProvider
 from app.services.reports import users_by_team
 from app.services.sync import (
     sync_bitbucket_main_status,
+    sync_clients,
     sync_deployable_tasks,
     sync_team_leads,
     sync_teams,
@@ -58,6 +59,46 @@ def cmd_sync_teams(_args: argparse.Namespace) -> None:
     db = SessionLocal()
     try:
         _report_sync("teams", sync_teams(db, provider))
+    finally:
+        db.close()
+
+
+def cmd_sync_clients(_args: argparse.Namespace) -> None:
+    settings = get_settings()
+    provider = InHouseTaskSourceProvider(settings)
+    db = SessionLocal()
+    try:
+        _report_sync("clients", sync_clients(db, provider))
+    finally:
+        db.close()
+
+
+def cmd_sync_roster(_args: argparse.Namespace) -> None:
+    """Single daily entry point bundling every roster sync (teams, users, clients) behind
+    one cron trigger, instead of a separate crontab line per sync — see README's crontab
+    section. Teams first, same ordering sync-teams/sync-users already require standalone
+    (Team.leader_user_id resolution needs the lead's team already synced); clients last
+    since it's independent of the other two.
+    """
+    settings = get_settings()
+    provider = InHouseTaskSourceProvider(settings)
+    db = SessionLocal()
+    try:
+        _report_sync("teams", sync_teams(db, provider))
+
+        _report_sync("users", sync_users(db, provider))
+        contact_result = sync_user_contacts(db, provider)
+        print(
+            f"Backfilled contact info for {contact_result.matched} users from the CRM's "
+            f"general Users feed ({contact_result.backfilled} had email/username updated)."
+        )
+        lead_result = sync_team_leads(db, provider)
+        print(
+            f"Matched {lead_result.matched} team leads by custom_id against the CRM's "
+            f"supervisor Users feed ({lead_result.promoted} newly promoted from developer to team_lead)."
+        )
+
+        _report_sync("clients", sync_clients(db, provider))
     finally:
         db.close()
 
@@ -179,6 +220,17 @@ def main() -> None:
         "sync-teams", help="Pull the team/machine-group roster from the CRM API into the local DB"
     )
     sync_teams_parser.set_defaults(func=cmd_sync_teams)
+
+    sync_clients_parser = subparsers.add_parser(
+        "sync-clients", help="Pull the customer/client roster from the CRM API into the local DB"
+    )
+    sync_clients_parser.set_defaults(func=cmd_sync_clients)
+
+    sync_roster_parser = subparsers.add_parser(
+        "sync-roster",
+        help="Run sync-teams, sync-users, and sync-clients in one go — the single daily cron entry point",
+    )
+    sync_roster_parser.set_defaults(func=cmd_sync_roster)
 
     users_by_team_parser = subparsers.add_parser(
         "users-by-team", help="Print all local users grouped by their team"

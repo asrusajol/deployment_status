@@ -5,6 +5,7 @@ import pytest
 
 from app.config import Settings
 from app.services.task_source import (
+    ClientInfo,
     InHouseTaskSourceProvider,
     TeamInfo,
     TeamLeadInfo,
@@ -164,6 +165,41 @@ def test_list_teams_has_no_is_active_filter_and_maps_group_fields():
     assert teams == [
         TeamInfo(id=1, source_system_id="MG-00001", name="Team QA"),
         TeamInfo(id=3, source_system_id="MG-00003", name="Developer"),
+    ]
+
+
+def test_list_clients_filters_active_potential_tester_and_maps_customer_fields():
+    def handler(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "tok-1"})
+        # OData lives at the domain root, NOT under /api — same as Machines/MachineGroups.
+        assert str(request.url).startswith("http://crm.test.local/odata/Customers")
+        assert request.url.path == "/odata/Customers"
+        params = request.url.params
+        assert params["$filter"] == (
+            "is_active eq true and "
+            "(((salesStatus/any(a:a/id eq 14)) or (salesStatus/any(a:a/id eq 7)) or "
+            "(salesStatus/any(a:a/id eq 24)) or (salesStatus/any(a:a/id eq 50)) or "
+            "(salesStatus/any(a:a/id eq 51))))"
+        )
+        assert params["$select"] == "custom_id,name"
+        assert params["$orderby"] == "custom_id asc"
+        return httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"custom_id": "C-00001", "name": "Intercable (ICT)"},
+                    {"custom_id": "C-00002", "name": "Schertech GmbH"},
+                ]
+            },
+        )
+
+    provider = _make_provider(handler)
+    clients = provider.list_clients()
+
+    assert clients == [
+        ClientInfo(source_system_id="C-00001", name="Intercable (ICT)"),
+        ClientInfo(source_system_id="C-00002", name="Schertech GmbH"),
     ]
 
 
