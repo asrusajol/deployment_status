@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.database import Base
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
+from app.models.client_system_url import ClientSystemUrl
 from app.models.client_version_status import ClientVersionStatus
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
@@ -465,6 +466,21 @@ def test_new_request_form_lists_clients_and_deployable_tasks(web):
     assert "requested_by" not in response.text  # no such form field anymore
 
 
+def test_new_request_form_excludes_inactive_clients(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(Client(id=2, name="Deactivated Co", is_active=False))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests/new")
+
+    assert response.status_code == 200
+    assert "CRM" in response.text
+    assert "Deactivated Co" not in response.text
+
+
 def test_new_request_form_only_lists_planned_tasks(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
@@ -581,6 +597,56 @@ def test_create_request_uses_deployable_task_and_logged_in_user(web):
     assert request.client_id == 1
     assert request.requested_by == 1  # the logged-in user, not a form field
     assert request.version == "V12"
+
+
+def test_create_request_stores_selected_server_url(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, label="Line 1", url="http://crm-live.local")
+    )
+    _add_deployable_task(session, id=100, task_id="PR-03045", client_name="CRM", target="live")
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.post(
+        "/requests",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v12",
+            "commit_hash": "a1b2c3d",
+            "version": "V12",
+            "server": "http://crm-live.local",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    request = session.query(DeploymentRequest).one()
+    assert request.server == "http://crm-live.local"
+
+
+def test_new_request_form_embeds_client_system_urls_for_the_server_dropdown(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, label="Line 1", url="http://crm-live.local")
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests/new")
+
+    assert response.status_code == 200
+    assert 'id="server_url"' in response.text
+    assert 'data-client-id="1"' in response.text
+    assert 'data-environment="live"' in response.text
+    assert 'data-label="Line 1"' in response.text
+    assert 'data-url="http://crm-live.local"' in response.text
 
 
 def test_create_request_rejects_unknown_deployable_task(web):
@@ -1086,6 +1152,19 @@ def test_requester_can_view_edit_form_for_own_pending_request(web):
     assert 'value="release/v12"' in response.text
 
 
+def test_edit_form_still_lists_the_requests_own_client_even_if_since_deactivated(web):
+    client, session = web
+    _seed_editable_request(session)
+    session.get(Client, 1).is_active = False
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.get("/requests/1/edit")
+
+    assert response.status_code == 200
+    assert "CRM" in response.text
+
+
 def test_other_user_cannot_view_edit_form(web):
     client, session = web
     _seed_editable_request(session)
@@ -1132,6 +1211,33 @@ def test_requester_can_edit_own_pending_request(web):
     assert request.commit_hash == "e5f6g7h"
     assert request.version == "V13"
     assert request.status == RequestStatus.pending_approval  # editing doesn't change status
+
+
+def test_editing_a_request_stores_selected_server_url(web):
+    client, session = web
+    _seed_editable_request(session)
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://crm-live.local")
+    )
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+            "server": "http://crm-live.local",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).server == "http://crm-live.local"
 
 
 def test_admin_can_edit_any_pending_request(web):

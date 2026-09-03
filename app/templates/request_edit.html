@@ -64,6 +64,21 @@
 
     <div class="form-row">
       <div class="field">
+        <label for="server_url">Server URL <span class="optional">(optional)</span></label>
+        <select id="server_url" name="server">
+          <option value="">Select Client + System above…</option>
+        </select>
+        <datalist id="client_system_urls_data">
+          {% for u in client_system_urls %}
+            <option data-client-id="{{ u.client_id }}" data-environment="{{ u.environment.value }}" data-label="{{ u.label or '' }}" data-url="{{ u.url }}"></option>
+          {% endfor %}
+        </datalist>
+        <p class="hint">Populated from the URLs configured for that client's system on the <a href="/clients">Clients page</a>.</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
         <label for="git_branch">Git branch</label>
         <input type="text" id="git_branch" name="git_branch" required value="{{ deployment_request.git_branch or '' }}">
       </div>
@@ -100,6 +115,10 @@
       var taskOptions = document.querySelectorAll("#deployable_tasks_list option");
       var selectedTasksList = document.getElementById("selected_tasks");
       var errorEl = document.getElementById("task_select_error");
+      var clientSelect = document.getElementById("client_id");
+      var environmentSelect = document.getElementById("environment");
+      var serverUrlSelect = document.getElementById("server_url");
+      var clientSystemUrlOptions = document.querySelectorAll("#client_system_urls_data option");
 
       // {id, clientName, target, label} per task added, in the order they were added.
       // Pre-seeded below from the request's original selection (initial_selected_tasks),
@@ -114,6 +133,68 @@
       function clearError() {
         errorEl.hidden = true;
       }
+
+      // Rebuilds the Server URL dropdown from the embedded client_system_urls_data for
+      // the currently-selected Client + System — see request_form.html for the same
+      // logic on a fresh request. `preserveValue` keeps a specific URL selected across
+      // the rebuild: the request's original `server` value on initial load (even if
+      // it's no longer among that client+system's configured URLs — kept as an extra
+      // "no longer listed" option so editing a request never silently drops it), or ""
+      // when the user actively changes Client/System, so a stale selection doesn't
+      // carry over to a different client+system pair.
+      function updateServerUrlOptions(preserveValue) {
+        var clientId = clientSelect.value;
+        var environment = environmentSelect.value;
+        serverUrlSelect.innerHTML = "";
+
+        var matches = [];
+        if (clientId && clientId !== "{{ new_client_value }}" && environment) {
+          clientSystemUrlOptions.forEach(function (opt) {
+            if (opt.getAttribute("data-client-id") === clientId && opt.getAttribute("data-environment") === environment) {
+              matches.push(opt);
+            }
+          });
+        }
+
+        if (matches.length === 0 && !preserveValue) {
+          var emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = (clientId && environment) ? "No URL configured" : "Select Client + System above…";
+          serverUrlSelect.appendChild(emptyOption);
+          return;
+        }
+
+        var placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select a URL…";
+        serverUrlSelect.appendChild(placeholder);
+
+        var matchedUrls = matches.map(function (opt) { return opt.getAttribute("data-url"); });
+        matches.forEach(function (opt) {
+          var url = opt.getAttribute("data-url");
+          var label = opt.getAttribute("data-label");
+          var option = document.createElement("option");
+          option.value = url;
+          option.textContent = label ? (label + " — " + url) : url;
+          serverUrlSelect.appendChild(option);
+        });
+
+        if (preserveValue && matchedUrls.indexOf(preserveValue) === -1) {
+          var staleOption = document.createElement("option");
+          staleOption.value = preserveValue;
+          staleOption.textContent = preserveValue + " (no longer listed)";
+          serverUrlSelect.appendChild(staleOption);
+        }
+
+        if (preserveValue) {
+          serverUrlSelect.value = preserveValue;
+        } else if (matches.length === 1) {
+          serverUrlSelect.value = matches[0].getAttribute("data-url");
+        }
+      }
+
+      clientSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
+      environmentSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
 
       function renderSelectedTasks() {
         selectedTasksList.innerHTML = "";
@@ -192,6 +273,7 @@
       });
 
       renderSelectedTasks();
+      updateServerUrlOptions({{ (deployment_request.server or "") | tojson }});
     })();
   </script>
 {% endblock %}

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Clients — Deployment Tracker{% endblock %}
+
+{% macro copy_button(value, label) %}
+  {% if value %}
+    <button type="button" class="icon-button mes-url-copy" data-copy="{{ value }}" title="Copy {{ label }} URL" aria-label="Copy {{ label }} URL">
+      <svg class="icon-copy" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="6" y="6" width="8" height="8.5" rx="1.3" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M3.5 10.5V3.3A1.3 1.3 0 0 1 4.8 2h6.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <svg class="icon-check" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M3 8.5l3.2 3.2L13 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  {% endif %}
+{% endmacro %}
+
+{# One system's (test/live) URL list for one client: existing URLs (label — url, copy,
+   delete-if-can_edit) plus an inline "add another" mini-form when can_edit. #}
+{% macro url_list(client, environment, can_edit) %}
+  {% set urls = client.system_urls | selectattr("environment.value", "equalto", environment) | list %}
+  <ul class="mes-url-list">
+    {% for u in urls %}
+      <li>
+        <a href="{{ u.url }}" target="_blank" rel="noopener">{{ u.label ~ " — " ~ u.url if u.label else u.url }}</a>
+        {{ copy_button(u.url, u.label or environment | capitalize) }}
+        {% if can_edit %}
+          <form method="post" action="/clients/{{ client.id }}/urls/{{ u.id }}/delete" class="inline-form">
+            <button type="submit" class="link-button" title="Remove this URL">✕</button>
+          </form>
+        {% endif %}
+      </li>
+    {% else %}
+      <li><span class="muted">No {{ environment }} URLs configured</span></li>
+    {% endfor %}
+  </ul>
+  {% if can_edit %}
+    <form method="post" action="/clients/{{ client.id }}/urls" class="inline-form mes-url-add-form">
+      <input type="hidden" name="environment" value="{{ environment }}">
+      <input type="text" name="label" placeholder="Label (optional)" style="width:8rem">
+      <input type="text" name="url" placeholder="https://…" required style="width:12rem">
+      <button type="submit">Add</button>
+    </form>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+  <h1>Clients</h1>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  {% set can_edit = current_user.role.value in ("admin", "devops") %}
+
+  <div class="filter-field" style="max-width: 20rem; margin-bottom: 1.25rem;">
+    <label for="client-name-filter">Client</label>
+    <input type="text" id="client-name-filter" placeholder="Search client name…" autocomplete="off">
+  </div>
+
+  <div class="table-scroll">
+  <table class="status-table" id="clients-table">
+    <thead>
+      <tr>
+        <th>Client</th>
+        <th>Status</th>
+        <th>Test URLs</th>
+        <th>Live URLs</th>
+        {% if can_edit %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clients %}
+      <tr data-client-name="{{ c.name | lower }}"{% if not c.is_active %} class="muted"{% endif %}>
+        <td>{{ c.name }}</td>
+        <td>
+          {% if c.is_active %}
+            <span class="status status-completed">Active</span>
+          {% else %}
+            <span class="status status-rolled_back">Inactive</span>
+          {% endif %}
+        </td>
+        <td>{{ url_list(c, "test", can_edit) }}</td>
+        <td>{{ url_list(c, "live", can_edit) }}</td>
+        {% if can_edit %}
+          <td>
+            <form method="post" action="/clients/{{ c.id }}/toggle-active" class="inline-form">
+              <button type="submit">{{ "Deactivate" if c.is_active else "Activate" }}</button>
+            </form>
+          </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="subtitle">Deactivating a client hides it from the New Request form's Client picker — it doesn't delete anything, and re-activating brings it back. Active/Inactive and every URL here are local-only; the next CRM sync never touches them.</p>
+
+  <script>
+    // Live client-name filter — client-side only, no reload/round trip: as-you-type
+    // substring match against each row's data-client-name, same idea as the Task ID
+    // type-to-search on the request form (request_form.html), just filtering existing
+    // rows instead of picking from a list.
+    (function () {
+      var input = document.getElementById("client-name-filter");
+      var rows = document.querySelectorAll("#clients-table tbody tr");
+
+      input.addEventListener("input", function () {
+        var typed = input.value.trim().toLowerCase();
+        rows.forEach(function (row) {
+          var name = row.getAttribute("data-client-name") || "";
+          row.hidden = typed.length > 0 && name.indexOf(typed) === -1;
+        });
+      });
+    })();
+
+    // Per-URL copy button — same one-click-copy-with-fallback logic as the shared
+    // changes-modal in base.html (navigator.clipboard when available, a hidden-textarea
+    // select+execCommand fallback otherwise), just scoped to this page's buttons instead
+    // of a single modal's copy target, since there's no "view full text" modal involved
+    // here — the URL is already fully visible in the row.
+    (function () {
+      var resetTimer = null;
+
+      document.addEventListener("click", function (event) {
+        var button = event.target.closest(".mes-url-copy");
+        if (!button) return;
+        var text = button.getAttribute("data-copy") || "";
+        if (resetTimer) clearTimeout(resetTimer);
+
+        function showResult(ok) {
+          button.classList.remove("is-copied", "is-failed");
+          button.classList.add(ok ? "is-copied" : "is-failed");
+          resetTimer = setTimeout(function () {
+            button.classList.remove("is-copied", "is-failed");
+          }, 1500);
+        }
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(function () { showResult(true); }, function () { showResult(false); });
+          return;
+        }
+        var textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        var ok = false;
+        try {
+          ok = document.execCommand("copy");
+        } catch (err) {
+          ok = false;
+        }
+        document.body.removeChild(textarea);
+        showResult(ok);
+      });
+    })();
+  </script>
+{% endblock %}

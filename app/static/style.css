@@ -652,6 +652,29 @@ code {
   flex-shrink: 0;
 }
 
+/* /clients page — one client's Test or Live URL list (app/templates/clients.html),
+   same "chip row" look as .selected-tasks above, plus the small "add another URL"
+   form beneath it. */
+.mes-url-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mes-url-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.mes-url-list li .link-button { color: var(--red); }
+
+.mes-url-add-form input { width: auto; }
+
 /* --- Forms ------------------------------------------------------------------ */
 
 .form {
