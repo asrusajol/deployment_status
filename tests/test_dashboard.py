@@ -1108,7 +1108,10 @@ def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
     assert 'class="branch-commit-cell"' in response.text
     assert 'class="link-button view-detail"' in response.text
     assert 'data-detail-title="Branch Name / Commit"' in response.text
-    assert 'data-detail="release/v12 / a1b2c3d"' in response.text
+    # "||" rather than "/" — branch names routinely contain their own slashes (e.g.
+    # "bugfix/PR-03168-..."), which made "branch / commit" ambiguous about where the
+    # branch ends and the commit begins (see request_list.html's own comment).
+    assert 'data-detail="release/v12 || a1b2c3d"' in response.text
 
 
 def _seed_many_requests(session, count):
