@@ -982,6 +982,30 @@ def test_requests_queue_shows_module_name_and_version_columns(web):
     assert "<td>V12</td>" in response.text
 
 
+def test_requests_queue_shows_url_column_with_copy_button(web):
+    client, session = web
+    request = _seed_pending_request(session)
+    request.server = "http://crm-live.local"
+    session.commit()
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+    assert 'data-copy="http://crm-live.local"' in response.text
+
+
+def test_requests_queue_url_column_shows_dash_when_no_server_set(web):
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "<th>URL</th>" in response.text
+
+
 def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
     # A long branch name used to force the whole table into horizontal scroll — the cell
     # is now truncated with ellipsis (branch-commit-preview, style.css) and this button

@@ -285,15 +285,19 @@ h1 {
 .requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
 .requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
 .requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
-.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 140px; }  /* System */
-.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 80px; }   /* Version */
+/* System and Version trimmed (from 140/80px) to make room for URL below without
+   growing the table further than necessary — System's badge and Version's short
+   value both still fit without wrapping at these widths. */
+.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 100px; }  /* System */
+.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 150px; }  /* URL */
+.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
 /* Trimmed from 260px — confirmed in a real browser this column was the single biggest
    contributor pushing Changes out past the pinned block's overlay point. The cell
    already truncates with ellipsis and a "View" button for the untruncated text
    (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
    information, just wraps/truncates a little sooner. */
-.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 210px; }  /* Branch Name / Commit */
-.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 240px; }  /* Changes */
+.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 210px; }  /* Branch Name / Commit */
+.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 240px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
    Action alone — knowing who asked and what state a row is in matters just as much
@@ -351,20 +355,24 @@ h1 {
 .deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
 .deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
 
-.changes-cell, .branch-commit-cell {
+.changes-cell, .branch-commit-cell, .url-cell {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   max-width: 220px;
 }
 
-.changes-preview, .branch-commit-preview {
+.changes-preview, .branch-commit-preview, .url-preview {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Requests queue's URL column (request_list.html) — the copy button (_copy_button.html)
+   sits right next to the truncated URL, same row layout as .branch-commit-cell above. */
+.url-cell .js-copy-button { flex: none; }
 
 .branch-commit-sep {
   color: var(--fog-dim);
