@@ -342,18 +342,22 @@ h1 {
   table-layout: fixed;
 }
 
-.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 9%; }  /* Client */
-.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 6%; }  /* System */
-.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 7%; }  /* Task ID */
-.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 9%; }  /* Branch */
-.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 7%; }  /* Commit */
-.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 7%; }  /* Version */
-.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 13%; } /* Changes */
-.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 8%; }  /* Requested By */
-.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 8%; }  /* Approved By */
-.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 8%; } /* Deployed By */
-.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
-.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
+/* System/Task ID/Version trimmed slightly (from 6/7/7%) to make room for URL below
+   without pushing every other column's share down too — same "shrink the least
+   content-heavy columns" approach as .requests-table above. */
+.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 10%; } /* Client */
+.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 5%; }  /* System */
+.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 10%; } /* URL */
+.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 6%; }  /* Task ID */
+.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 8%; }  /* Branch */
+.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 6%; }  /* Commit */
+.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 5%; }  /* Version */
+.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 13%; } /* Changes */
+.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 7%; }  /* Requested By */
+.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 7%; } /* Approved By */
+.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 7%; } /* Deployed By */
+.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 8%; } /* Requested At */
+.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 8%; } /* Deployed At */
 
 .changes-cell, .branch-commit-cell, .url-cell {
   display: flex;

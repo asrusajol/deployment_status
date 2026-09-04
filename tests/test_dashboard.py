@@ -361,6 +361,75 @@ def _seed_two_completed_deployments(session):
     session.commit()
 
 
+def test_dashboard_shows_url_column_with_copy_button(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+    assert 'data-copy="http://crm-live.local"' in response.text
+
+
+def test_dashboard_history_shows_url_column(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard/history")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+
+
+def test_dashboard_export_xlsx_includes_url_column(web):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard/export.xlsx")
+
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook.active
+    header_row = [cell.value for cell in sheet[1]]
+    assert header_row[2] == "URL"
+    data_row = [cell.value for cell in sheet[2]]
+    assert data_row[2] == "http://crm-live.local"
+
+
 def test_dashboard_filters_by_client(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)

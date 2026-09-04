@@ -13,6 +13,7 @@ from app.services.dashboard import DeploymentStatusRow
 COLUMNS = [
     ("Client", lambda r: r.client_name),
     ("System", lambda r: r.environment.capitalize() if r.environment else ""),
+    ("URL", lambda r: r.server or ""),
     ("Task ID", lambda r: r.task_id or ""),
     ("Branch", lambda r: r.git_branch or ""),
     ("Commit", lambda r: r.commit_hash or ""),
