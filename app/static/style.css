@@ -285,15 +285,19 @@ h1 {
 .requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
 .requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
 .requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
-.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 140px; }  /* System */
-.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 80px; }   /* Version */
+/* System and Version trimmed (from 140/80px) to make room for URL below without
+   growing the table further than necessary — System's badge and Version's short
+   value both still fit without wrapping at these widths. */
+.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 100px; }  /* System */
+.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 150px; }  /* URL */
+.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
 /* Trimmed from 260px — confirmed in a real browser this column was the single biggest
    contributor pushing Changes out past the pinned block's overlay point. The cell
    already truncates with ellipsis and a "View" button for the untruncated text
    (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
    information, just wraps/truncates a little sooner. */
-.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 210px; }  /* Branch Name / Commit */
-.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 240px; }  /* Changes */
+.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 210px; }  /* Branch Name / Commit */
+.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 240px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
    Action alone — knowing who asked and what state a row is in matters just as much
@@ -338,33 +342,41 @@ h1 {
   table-layout: fixed;
 }
 
-.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 9%; }  /* Client */
-.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 6%; }  /* System */
-.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 7%; }  /* Task ID */
-.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 9%; }  /* Branch */
-.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 7%; }  /* Commit */
-.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 7%; }  /* Version */
-.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 13%; } /* Changes */
-.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 8%; }  /* Requested By */
-.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 8%; }  /* Approved By */
-.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 8%; } /* Deployed By */
-.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
-.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
+/* System/Task ID/Version trimmed slightly (from 6/7/7%) to make room for URL below
+   without pushing every other column's share down too — same "shrink the least
+   content-heavy columns" approach as .requests-table above. */
+.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 10%; } /* Client */
+.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 5%; }  /* System */
+.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 10%; } /* URL */
+.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 6%; }  /* Task ID */
+.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 8%; }  /* Branch */
+.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 6%; }  /* Commit */
+.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 5%; }  /* Version */
+.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 13%; } /* Changes */
+.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 7%; }  /* Requested By */
+.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 7%; } /* Approved By */
+.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 7%; } /* Deployed By */
+.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 8%; } /* Requested At */
+.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 8%; } /* Deployed At */
 
-.changes-cell, .branch-commit-cell {
+.changes-cell, .branch-commit-cell, .url-cell {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   max-width: 220px;
 }
 
-.changes-preview, .branch-commit-preview {
+.changes-preview, .branch-commit-preview, .url-preview {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Requests queue's URL column (request_list.html) — the copy button (_copy_button.html)
+   sits right next to the truncated URL, same row layout as .branch-commit-cell above. */
+.url-cell .js-copy-button { flex: none; }
 
 .branch-commit-sep {
   color: var(--fog-dim);
@@ -651,6 +663,29 @@ code {
   color: var(--red);
   flex-shrink: 0;
 }
+
+/* /clients page — one client's Test or Live URL list (app/templates/clients.html),
+   same "chip row" look as .selected-tasks above, plus the small "add another URL"
+   form beneath it. */
+.mes-url-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mes-url-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.mes-url-list li .link-button { color: var(--red); }
+
+.mes-url-add-form input { width: auto; }
 
 /* --- Forms ------------------------------------------------------------------ */
 

@@ -115,6 +115,25 @@
 
     <div class="form-row">
       <div class="field">
+        <label for="server_url">Server URL <span class="optional">(optional)</span></label>
+        <select id="server_url" name="server">
+          <option value="">Select Client + System above…</option>
+        </select>
+        <!-- Every configured client MES URL (app/routers/clients.py), embedded once and
+             filtered client-side by the JS below as Client/System change — same
+             "embed all the options, filter in JS" approach as the Task ID datalist
+             above, rather than a round trip per selection. -->
+        <datalist id="client_system_urls_data">
+          {% for u in client_system_urls %}
+            <option data-client-id="{{ u.client_id }}" data-environment="{{ u.environment.value }}" data-label="{{ u.label or '' }}" data-url="{{ u.url }}"></option>
+          {% endfor %}
+        </datalist>
+        <p class="hint">Populated from the URLs configured for that client's system on the <a href="/clients">Clients page</a>.</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
         <label for="git_branch">Git branch</label>
         <input type="text" id="git_branch" name="git_branch" required placeholder="e.g. release/v12">
       </div>
@@ -256,6 +275,8 @@
       var clientSelect = document.getElementById("client_id");
       var newClientInput = document.querySelector('input[name="new_client_name"]');
       var environmentSelect = document.getElementById("environment");
+      var serverUrlSelect = document.getElementById("server_url");
+      var clientSystemUrlOptions = document.querySelectorAll("#client_system_urls_data option");
       var taskOptions = document.querySelectorAll("#deployable_tasks_list option");
       var selectedTasksList = document.getElementById("selected_tasks");
       var errorEl = document.getElementById("task_select_error");
@@ -273,6 +294,57 @@
       function clearError() {
         errorEl.hidden = true;
       }
+
+      // Rebuilds the Server URL dropdown from the embedded client_system_urls_data
+      // whenever Client or System changes — matches by the currently-selected
+      // client_id + environment. Auto-selects the URL when there's exactly one match
+      // (still changeable), otherwise leaves it on "No URL configured" / a fresh
+      // dropdown of choices.
+      function updateServerUrlOptions() {
+        var clientId = clientSelect.value;
+        var environment = environmentSelect.value;
+        serverUrlSelect.innerHTML = "";
+
+        var matches = [];
+        if (clientId && clientId !== "{{ new_client_value }}" && environment) {
+          clientSystemUrlOptions.forEach(function (opt) {
+            if (opt.getAttribute("data-client-id") === clientId && opt.getAttribute("data-environment") === environment) {
+              matches.push(opt);
+            }
+          });
+        }
+
+        if (matches.length === 0) {
+          var emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = (clientId && environment) ? "No URL configured" : "Select Client + System above…";
+          serverUrlSelect.appendChild(emptyOption);
+          return;
+        }
+
+        var placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select a URL…";
+        serverUrlSelect.appendChild(placeholder);
+
+        matches.forEach(function (opt) {
+          var url = opt.getAttribute("data-url");
+          var label = opt.getAttribute("data-label");
+          var option = document.createElement("option");
+          option.value = url;
+          option.textContent = label ? (label + " — " + url) : url;
+          serverUrlSelect.appendChild(option);
+        });
+
+        // Exactly one URL for this client+system — just use it, don't make the
+        // requester pick from a dropdown of one.
+        if (matches.length === 1) {
+          serverUrlSelect.value = matches[0].getAttribute("data-url");
+        }
+      }
+
+      clientSelect.addEventListener("change", updateServerUrlOptions);
+      environmentSelect.addEventListener("change", updateServerUrlOptions);
 
       // Convenience auto-fill, not a hard link: adding the first Task ID pre-fills Client
       // and System from that deployable task's own data, but both stay fully editable
@@ -303,6 +375,7 @@
           clientSelect.selectedIndex = 0;
           newClientInput.value = "";
         }
+        updateServerUrlOptions();
       }
 
       function renderSelectedTasks() {

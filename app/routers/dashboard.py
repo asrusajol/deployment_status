@@ -42,6 +42,7 @@ from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
 from app.models.client import Client
+from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
@@ -225,7 +226,9 @@ def _request_form_context(
 ) -> dict:
     return {
         "current_user": current_user,
-        "clients": db.query(Client).order_by(Client.name).all(),
+        # Inactive clients (app/routers/clients.py, admin/devops only) don't clutter this
+        # picker — a new request should never be filed against a deactivated client.
+        "clients": db.query(Client).filter(Client.is_active).order_by(Client.name).all(),
         # Task ID is picked from here, not typed — see create_request() below. Only
         # currently-PLANNED tasks, matching the same convention `deployable-tasks` (the
         # CLI command) already uses.
@@ -238,6 +241,10 @@ def _request_form_context(
         "new_client_value": NEW_CLIENT_VALUE,
         "environments": list(DeploymentEnvironment),
         "test_local_server_suggestions": TEST_LOCAL_SERVER_SUGGESTIONS,
+        # Every configured MES URL, across all clients — the Server URL dropdown
+        # (request_form.html) filters this client-side by the selected Client + System,
+        # same "embed everything, filter in JS" approach as deployable_tasks above.
+        "client_system_urls": db.query(ClientSystemUrl).all(),
         "active_tab": active_tab,
         "error": error,
         "notice": notice,
@@ -402,6 +409,10 @@ def create_request(
     commit_hash: str = Form(...),
     version: str = Form(...),
     changes_description: str = Form(""),
+    # Optional — picked from the Server URL dropdown (request_form.html), sourced from
+    # that client+system's configured ClientSystemUrl rows. Reuses this same column
+    # db_dump_restore/test_local already use for their own free-text server field.
+    server: str = Form(""),
 ):
     def rerender(error: str):
         context = _request_form_context(db, current_user, error)
@@ -420,6 +431,7 @@ def create_request(
             deployable_task_ids=",".join(str(task.id) for task in result.deployable_tasks),
             client_id=result.client.id,
             environment=environment,
+            server=server.strip() or None,
             git_branch=result.git_branch,
             commit_hash=result.commit_hash,
             version=result.version,
@@ -826,10 +838,18 @@ def _edit_request_context(
     for task in original_tasks:
         combined_by_id.setdefault(task.id, task)
 
+    # Same "still show it if it's the original selection" rule as combined_by_id above,
+    # for the Client dropdown: an active clients list, plus this request's own client
+    # even if it's since been deactivated (app/routers/clients.py) — so editing an old
+    # request never makes its own client silently vanish from the picker.
+    clients = db.query(Client).filter(Client.is_active).order_by(Client.name).all()
+    if deployment_request.client is not None and not deployment_request.client.is_active:
+        clients = sorted([*clients, deployment_request.client], key=lambda c: c.name)
+
     return {
         "current_user": current_user,
         "deployment_request": deployment_request,
-        "clients": db.query(Client).order_by(Client.name).all(),
+        "clients": clients,
         "deployable_tasks": list(combined_by_id.values()),
         "initial_selected_tasks": [
             {
@@ -843,6 +863,7 @@ def _edit_request_context(
         ],
         "new_client_value": NEW_CLIENT_VALUE,
         "environments": list(DeploymentEnvironment),
+        "client_system_urls": db.query(ClientSystemUrl).all(),
         "error": error,
     }
 
@@ -875,6 +896,7 @@ def edit_request(
     commit_hash: str = Form(...),
     version: str = Form(...),
     changes_description: str = Form(""),
+    server: str = Form(""),
 ):
     """Lets the original requester (or an admin) fix up a request before it's been decided
     on — only while it's still in EDITABLE_REQUEST_STATUSES (can_edit_request() in
@@ -900,6 +922,7 @@ def edit_request(
     deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
     deployment_request.client_id = result.client.id
     deployment_request.environment = environment
+    deployment_request.server = server.strip() or None
     deployment_request.git_branch = result.git_branch
     deployment_request.commit_hash = result.commit_hash
     deployment_request.version = result.version

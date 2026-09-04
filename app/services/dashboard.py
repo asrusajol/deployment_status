@@ -28,6 +28,11 @@ class DeploymentStatusRow:
     requested_at: datetime | None
     deployed_at: datetime | None
     request_id: int
+    # The MES server URL picked on the request (app/routers/dashboard.py's
+    # create_request/edit_request — the same DeploymentRequest.server column
+    # db_dump_restore/test_local requests already used). Optional: only Standard
+    # requests get it from the Server URL dropdown, and only when one was configured.
+    server: str | None = None
 
 
 def _completed_executions_query(
@@ -82,6 +87,7 @@ def _row_from_execution(execution: DeploymentExecution) -> DeploymentStatusRow:
         requested_at=request.created_at,
         deployed_at=execution.completed_at,
         request_id=execution.request_id,
+        server=request.server,
     )
 
 

@@ -29,6 +29,7 @@
         <a href="/dashboard/history">History</a>
         <a href="/requests">Requests</a>
         <a href="/release-tracker">Release Tracker</a>
+        <a href="/clients">Clients</a>
         {% if current_user.role.value == "admin" %}
           <a href="/admin/users">Admin</a>
         {% endif %}
@@ -150,6 +151,52 @@
       // dialog itself, not its content) closes it too, matching native modal expectations.
       dialog.addEventListener("click", function (event) {
         if (event.target === dialog) dialog.close();
+      });
+    })();
+  </script>
+
+  <!-- Generic "copy to clipboard" button, delegated globally so any page can just drop
+       in the _copy_button.html macro (.js-copy-button, data-copy) without its own
+       script — originally per-page (clients.html), promoted here once the Requests
+       queue's URL column needed the exact same thing. Same clipboard-with-fallback
+       logic as the changes-modal copy button above, just not tied to that modal's
+       single copy target. -->
+  <script>
+    (function () {
+      var resetTimer = null;
+
+      document.addEventListener("click", function (event) {
+        var button = event.target.closest(".js-copy-button");
+        if (!button) return;
+        var text = button.getAttribute("data-copy") || "";
+        if (resetTimer) clearTimeout(resetTimer);
+
+        function showResult(ok) {
+          button.classList.remove("is-copied", "is-failed");
+          button.classList.add(ok ? "is-copied" : "is-failed");
+          resetTimer = setTimeout(function () {
+            button.classList.remove("is-copied", "is-failed");
+          }, 1500);
+        }
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(function () { showResult(true); }, function () { showResult(false); });
+          return;
+        }
+        var textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        var ok = false;
+        try {
+          ok = document.execCommand("copy");
+        } catch (err) {
+          ok = false;
+        }
+        document.body.removeChild(textarea);
+        showResult(ok);
       });
     })();
   </script>
