@@ -859,6 +859,33 @@ code {
   color: var(--paper);
 }
 
+/* Client combobox (_deployment_filter_bar.html) — a custom dropdown list rather than a
+   native <datalist> popup, whose "show every option on focus" behavior turned out
+   unreliable across browsers. */
+.combobox-field { position: relative; }
+.combobox-options {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem 0;
+  list-style: none;
+  background: var(--panel-raised);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.combobox-option {
+  padding: 0.42rem 0.6rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.combobox-option:hover { background: var(--panel); color: var(--teal); }
+
 /* Generic secondary/primary buttons — originally scoped to .filter-bar only, promoted
    to standalone classes once the "Enable Desktop Notifications" button (request_list.html)
    needed the same look outside a filter bar. */

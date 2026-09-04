@@ -457,10 +457,11 @@ def test_dashboard_client_filter_is_a_type_to_search_input_prefilled_when_select
 
     assert response.status_code == 200
     assert 'id="client_name_filter"' in response.text
-    assert 'list="filter_clients_list"' in response.text
+    assert 'id="client_options_list"' in response.text
     assert 'value="CRM"' in response.text  # prefilled from the selected client_id
-    assert 'data-id="1" value="CRM"' in response.text
-    assert 'data-id="2" value="Acme Corp"' in response.text
+    assert '<li class="combobox-option" data-id="1">CRM</li>' in response.text
+    assert '<li class="combobox-option" data-id="2">Acme Corp</li>' in response.text
+    assert '<li class="combobox-option" data-id="">All clients</li>' in response.text
     assert 'type="hidden" name="client_id" id="client_id" value="1"' in response.text
 
 
