@@ -46,9 +46,12 @@
 
   {% set can_edit = current_user.role.value in ("admin", "devops") %}
 
-  <div class="filter-field" style="max-width: 20rem; margin-bottom: 1.25rem;">
-    <label for="client-name-filter">Client</label>
-    <input type="text" id="client-name-filter" placeholder="Search client name…" autocomplete="off">
+  <div style="display: flex; align-items: flex-end; gap: 0.75rem; margin-bottom: 1.25rem;">
+    <div class="filter-field" style="max-width: 20rem;">
+      <label for="client-name-filter">Client</label>
+      <input type="text" id="client-name-filter" placeholder="Search client name…" autocomplete="off">
+    </div>
+    <button type="button" id="client-name-filter-reset" class="button-secondary">Reset</button>
   </div>
 
   <div class="table-scroll">
@@ -186,6 +189,13 @@
           current.filter = input.value;
           saveDraft(current);
         });
+      });
+
+      document.getElementById("client-name-filter-reset").addEventListener("click", function () {
+        input.value = "";
+        applyFilter();
+        persistDraft();
+        input.focus();
       });
     })();
   </script>

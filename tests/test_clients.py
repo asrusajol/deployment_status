@@ -162,6 +162,7 @@ def test_clients_page_renders_filter_input_and_row_name_attributes(web):
 
     assert response.status_code == 200
     assert 'id="client-name-filter"' in response.text
+    assert 'id="client-name-filter-reset"' in response.text
     assert 'data-client-name="intercable (ict)"' in response.text
     assert 'data-client-name="schertech gmbh"' in response.text
 
