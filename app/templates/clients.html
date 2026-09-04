@@ -22,7 +22,13 @@
     {% endfor %}
   </ul>
   {% if can_edit %}
-    <form method="post" action="/clients/{{ client.id }}/urls" class="inline-form mes-url-add-form">
+    <form
+      method="post"
+      action="/clients/{{ client.id }}/urls"
+      class="inline-form mes-url-add-form"
+      data-client-id="{{ client.id }}"
+      data-environment="{{ environment }}"
+    >
       <input type="hidden" name="environment" value="{{ environment }}">
       <input type="text" name="label" placeholder="Label (optional)" style="width:8rem">
       <input type="text" name="url" placeholder="https://…" required style="width:12rem">
@@ -84,19 +90,101 @@
   <p class="subtitle">Deactivating a client hides it from the New Request form's Client picker — it doesn't delete anything, and re-activating brings it back. Active/Inactive and every URL here are local-only; the next CRM sync never touches them.</p>
 
   <script>
-    // Live client-name filter — client-side only, no reload/round trip: as-you-type
-    // substring match against each row's data-client-name, same idea as the Task ID
-    // type-to-search on the request form (request_form.html), just filtering existing
-    // rows instead of picking from a list.
     (function () {
       var input = document.getElementById("client-name-filter");
       var rows = document.querySelectorAll("#clients-table tbody tr");
+      var addForms = document.querySelectorAll(".mes-url-add-form");
 
-      input.addEventListener("input", function () {
+      // Live client-name filter — client-side only, no reload/round trip: as-you-type
+      // substring match against each row's data-client-name, same idea as the Task ID
+      // type-to-search on the request form (request_form.html), just filtering existing
+      // rows instead of picking from a list.
+      function applyFilter() {
         var typed = input.value.trim().toLowerCase();
         rows.forEach(function (row) {
           var name = row.getAttribute("data-client-name") || "";
           row.hidden = typed.length > 0 && name.indexOf(typed) === -1;
+        });
+      }
+      input.addEventListener("input", applyFilter);
+
+      // Adding (or removing) a URL is a real form POST — the whole page reloads, which
+      // on its own would both reset the name filter and wipe out anything typed into a
+      // *different* Test/Live "add another URL" box that hadn't been submitted yet (the
+      // actual bug reported: paste a Test URL and a Live URL, hit Add on Test, and the
+      // still-unsaved Live text used to vanish in the reload). sessionStorage survives
+      // that reload (same tab only, cleared on tab close) without needing to turn these
+      // plain server-rendered forms into an AJAX flow — every write is wrapped in
+      // try/catch since sessionStorage can throw in some private-browsing modes, and
+      // this is a convenience, not something the page should ever break over.
+      var DRAFT_KEY = "clients-page-draft";
+
+      function loadDraft() {
+        try {
+          return JSON.parse(sessionStorage.getItem(DRAFT_KEY)) || {};
+        } catch (err) {
+          return {};
+        }
+      }
+
+      function saveDraft(draft) {
+        try {
+          sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        } catch (err) {
+          // Storage unavailable or full — nothing to do, the page still works without it.
+        }
+      }
+
+      function formKey(form) {
+        return form.getAttribute("data-client-id") + ":" + form.getAttribute("data-environment");
+      }
+
+      // Restore on load: the search text, and whatever was still sitting in any add-URL
+      // box the last time one of these forms was submitted.
+      var draft = loadDraft();
+      if (draft.filter) {
+        input.value = draft.filter;
+        applyFilter();
+      }
+      addForms.forEach(function (form) {
+        var saved = draft.urls && draft.urls[formKey(form)];
+        if (!saved) return;
+        form.querySelector('[name="label"]').value = saved.label || "";
+        form.querySelector('[name="url"]').value = saved.url || "";
+      });
+
+      // Keep the draft continuously up to date — not just at submit time — so it's
+      // accurate no matter which form (or the filter box) ends up triggering the reload.
+      function persistDraft() {
+        var urls = {};
+        addForms.forEach(function (form) {
+          var label = form.querySelector('[name="label"]').value;
+          var url = form.querySelector('[name="url"]').value;
+          if (label || url) {
+            urls[formKey(form)] = { label: label, url: url };
+          }
+        });
+        saveDraft({ filter: input.value, urls: urls });
+      }
+      input.addEventListener("input", persistDraft);
+      addForms.forEach(function (form) {
+        form.querySelectorAll("input[type=text]").forEach(function (fieldInput) {
+          fieldInput.addEventListener("input", persistDraft);
+        });
+      });
+
+      // Once a form is actually submitted, its own text is about to be saved
+      // server-side — drop just that form's draft entry (not the whole draft) so a
+      // reload doesn't keep re-showing text that's already been added, while every
+      // other still-unsaved box (and the filter) is left untouched.
+      addForms.forEach(function (form) {
+        form.addEventListener("submit", function () {
+          var current = loadDraft();
+          if (current.urls) {
+            delete current.urls[formKey(form)];
+          }
+          current.filter = input.value;
+          saveDraft(current);
         });
       });
     })();
