@@ -56,10 +56,23 @@ def _machine_groups(db: Session) -> list[Team]:
     return list(db.scalars(select(Team).order_by(Team.name)))
 
 
+def _machine_group_ids(raw: list[str]) -> list[int]:
+    """Keep only the entries that are real ids.
+
+    A single-select dropdown always submits something — an unselected "All machine
+    groups" sends an empty string, or its own label when the option carries no value
+    attribute — and neither is a machine group. Dropping non-numeric entries here rather
+    than letting FastAPI coerce `list[int]` is what keeps the default filter state from
+    returning a 422, and mirrors how the report's original implementation resolved the
+    same query string.
+    """
+    return [int(value) for value in raw if value.strip().isdigit()]
+
+
 def _parse_report_filters(
     start: str | None,
     end: str | None,
-    machine_group_id: list[int],
+    machine_group_id: list[str],
     overdue_only: bool,
     today: date,
     show_closed: bool = False,
@@ -67,7 +80,7 @@ def _parse_report_filters(
     return ReportFilters.parse(
         start=start or None,
         end=end or None,
-        machine_group_ids=list(machine_group_id),
+        machine_group_ids=_machine_group_ids(machine_group_id),
         overdue_only=overdue_only,
         today=today,
         show_closed=show_closed,
@@ -95,7 +108,7 @@ def order_task_dependency_page(
     settings: Settings = Depends(get_settings),
     start: str | None = None,
     end: str | None = None,
-    machine_group_id: list[int] = Query(default=[]),
+    machine_group_id: list[str] = Query(default=[]),
     overdue_only: bool = False,
     show_closed: bool = False,
 ):
@@ -122,7 +135,7 @@ def order_task_dependency_page(
             "error": error,
             "filters": filters,
             "machine_groups": machine_groups,
-            "selected_machine_group_ids": list(machine_group_id),
+            "selected_machine_group_ids": _machine_group_ids(machine_group_id),
             "start": start or "",
             "end": end or "",
             "overdue_only": overdue_only,
@@ -139,7 +152,7 @@ def order_task_dependency_export_xlsx(
     settings: Settings = Depends(get_settings),
     start: str | None = None,
     end: str | None = None,
-    machine_group_id: list[int] = Query(default=[]),
+    machine_group_id: list[str] = Query(default=[]),
     overdue_only: bool = False,
     show_closed: bool = False,
 ):
@@ -169,7 +182,7 @@ def order_task_dependency_export_pdf(
     settings: Settings = Depends(get_settings),
     start: str | None = None,
     end: str | None = None,
-    machine_group_id: list[int] = Query(default=[]),
+    machine_group_id: list[str] = Query(default=[]),
     overdue_only: bool = False,
     show_closed: bool = False,
 ):

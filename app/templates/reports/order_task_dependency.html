@@ -12,7 +12,7 @@
   <label>To <input type="date" name="end" value="{{ end }}"></label>
   <label>Machine group
     <select name="machine_group_id">
-      <option {% if not selected_machine_group_ids %}selected{% endif %}>All machine groups</option>
+      <option value="" {% if not selected_machine_group_ids %}selected{% endif %}>All machine groups</option>
       {% for team in machine_groups %}
       <option value="{{ team.id }}" {% if team.id in selected_machine_group_ids %}selected{% endif %}>{{ team.name }}</option>
       {% endfor %}

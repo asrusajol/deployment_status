@@ -175,3 +175,40 @@ def test_the_pdf_export_returns_a_pdf(web, report):
 
 def test_the_pdf_export_is_refused_for_a_developer(web, report):
     assert signed_in(web, role=UserRole.developer).get(f"{URL}/export.pdf").status_code == 403
+
+
+def test_the_unselected_options_label_is_not_treated_as_a_machine_group(web, report):
+    # The default <option> has no value attribute, so the browser submits its text
+    # content when the form is applied without changing the dropdown.
+    response = signed_in(web).get(URL, params={"machine_group_id": "All machine groups"})
+
+    assert response.status_code == 200
+    assert report["filters"].machine_group_ids == []
+
+
+def test_an_empty_machine_group_id_is_not_treated_as_a_machine_group(web, report):
+    response = signed_in(web).get(URL, params={"machine_group_id": ""})
+
+    assert response.status_code == 200
+    assert report["filters"].machine_group_ids == []
+
+
+def test_a_real_machine_group_selection_still_works(web, report):
+    response = signed_in(web).get(URL, params={"machine_group_id": "13"})
+
+    assert response.status_code == 200
+    assert report["filters"].machine_group_ids == [13]
+
+
+def test_a_chosen_group_stays_selected_after_apply(web, report):
+    response = signed_in(web).get(URL, params={"machine_group_id": "13"})
+
+    assert response.status_code == 200
+    assert '<option value="13" selected>Team Rajib</option>' in response.text
+
+
+def test_the_excel_export_is_not_broken_by_the_unselected_options_label(web, report):
+    response = signed_in(web).get(f"{URL}/export.xlsx", params={"machine_group_id": "All machine groups"})
+
+    assert response.status_code == 200
+    assert report["filters"].machine_group_ids == []
