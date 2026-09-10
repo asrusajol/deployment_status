@@ -1,3 +1,4 @@
+{% import "_copy_button.html" as copy_btn %}
 {% if rows %}
   <div class="table-scroll">
   <table class="status-table deployment-table">
@@ -5,6 +6,7 @@
       <tr>
         <th>Client</th>
         <th>System</th>
+        <th>URL</th>
         <th>Task ID</th>
         <th>Branch</th>
         <th>Commit</th>
@@ -22,6 +24,20 @@
       <tr>
         <td>{{ row.client_name }}</td>
         <td><span class="badge badge-{{ row.environment }}">{{ row.environment | capitalize }}</span></td>
+        <td>
+          {% if row.server %}
+            <div class="url-cell">
+              {% if row.server.startswith("http://") or row.server.startswith("https://") %}
+                <a href="{{ row.server }}" target="_blank" rel="noopener" class="url-preview">{{ row.server }}</a>
+              {% else %}
+                {# test_local's server is a bare hostname (e.g. "crm.test.local"), not a
+                   full URL — shown as plain text rather than a broken relative link. #}
+                <span class="url-preview">{{ row.server }}</span>
+              {% endif %}
+              {{ copy_btn.copy_button(row.server, "Server URL") }}
+            </div>
+          {% else %}—{% endif %}
+        </td>
         <td>{{ row.task_id or "—" }}</td>
         <td><code>{{ row.git_branch or "—" }}</code></td>
         <td><code>{{ row.commit_hash or "—" }}</code></td>

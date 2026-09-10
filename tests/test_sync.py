@@ -8,18 +8,20 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401 — registers all models on Base.metadata
 from app.database import Base
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
+from app.models.client import Client
 from app.models.deployable_task import DeployableTask
 from app.models.team import Team
 from app.models.user import User, UserRole
 from app.services.sync import (
     sync_bitbucket_main_status,
+    sync_clients,
     sync_deployable_tasks,
     sync_team_leads,
     sync_teams,
     sync_user_contacts,
     sync_users,
 )
-from app.services.task_source import DeployableTaskInfo, TeamInfo, TeamLeadInfo, UserContactInfo, UserInfo
+from app.services.task_source import ClientInfo, DeployableTaskInfo, TeamInfo, TeamLeadInfo, UserContactInfo, UserInfo
 
 
 class FakeBitbucketProvider:
@@ -33,12 +35,13 @@ class FakeBitbucketProvider:
 
 
 class FakeProvider:
-    def __init__(self, users=(), teams=(), team_leads=(), user_contacts=(), deployable_tasks=()):
+    def __init__(self, users=(), teams=(), team_leads=(), user_contacts=(), deployable_tasks=(), clients=()):
         self._users = users
         self._teams = teams
         self._team_leads = team_leads
         self._user_contacts = user_contacts
         self._deployable_tasks = deployable_tasks
+        self._clients = clients
 
     def list_users(self):
         return self._users
@@ -62,7 +65,7 @@ class FakeProvider:
         raise NotImplementedError
 
     def list_clients(self):
-        raise NotImplementedError
+        return self._clients
 
 
 @pytest.fixture()
@@ -164,6 +167,54 @@ def test_sync_teams_updates_existing_without_creating_duplicates(db_session):
     teams = db_session.query(Team).all()
     assert len(teams) == 1
     assert teams[0].name == "Team QA Renamed"
+
+
+def test_sync_clients_creates_new_clients_keyed_by_crm_custom_id(db_session):
+    provider = FakeProvider(
+        clients=[
+            ClientInfo(source_system_id="C-00001", name="Intercable (ICT)"),
+            ClientInfo(source_system_id="C-00002", name="Schertech GmbH"),
+        ]
+    )
+
+    result = sync_clients(db_session, provider)
+
+    assert (result.created, result.updated) == (2, 0)
+    clients = db_session.query(Client).order_by(Client.source_system_id).all()
+    assert [(c.source_system_id, c.name) for c in clients] == [
+        ("C-00001", "Intercable (ICT)"),
+        ("C-00002", "Schertech GmbH"),
+    ]
+    assert clients[0].last_synced_at is not None
+
+
+def test_sync_clients_updates_existing_without_creating_duplicates(db_session):
+    sync_clients(db_session, FakeProvider(clients=[ClientInfo(source_system_id="C-00001", name="Intercable")]))
+
+    result = sync_clients(
+        db_session, FakeProvider(clients=[ClientInfo(source_system_id="C-00001", name="Intercable (ICT)")])
+    )
+
+    assert (result.created, result.updated) == (0, 1)
+    clients = db_session.query(Client).all()
+    assert len(clients) == 1
+    assert clients[0].name == "Intercable (ICT)"
+
+
+def test_sync_clients_matches_an_existing_manually_created_client_by_name(db_session):
+    # A client created by hand via the "+ Add new client" flow on the request form
+    # (app/routers/dashboard.py) has no source_system_id yet — the first sync should
+    # adopt that row (matched by name) rather than creating a duplicate Client with the
+    # same name.
+    db_session.add(Client(name="Intercable (ICT)"))
+    db_session.commit()
+
+    result = sync_clients(db_session, FakeProvider(clients=[ClientInfo(source_system_id="C-00001", name="Intercable (ICT)")]))
+
+    assert (result.created, result.updated) == (0, 1)
+    clients = db_session.query(Client).all()
+    assert len(clients) == 1
+    assert clients[0].source_system_id == "C-00001"
 
 
 def test_sync_team_leads_promotes_matched_developer_and_backfills_contact_info(db_session):

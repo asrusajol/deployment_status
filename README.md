@@ -287,7 +287,23 @@ to run on a schedule for Task ID search to stay useful — it's not triggered by
 the web app itself. Add the cron job from that section on the host (or in a sidecar
 container), pointed at this same `.env`.
 
-### 6. Updating to a new release
+### 6. Keep the roster (users/teams/clients) current
+
+Unlike `deployable-tasks`/`sync-bitbucket-main` above, roster data (employees, teams,
+customers) doesn't need 5-minute freshness — the CRM's customer/team/employee lists
+barely change intraday. Run `sync-roster` (chains `sync-teams` -> `sync-users` ->
+`sync-clients` — see "Importing data from the CRM API" below) once a day instead, e.g.
+before the workday starts:
+
+```cron
+0 6 * * * cd /path/to/Deployment_status && .venv/bin/python -m app.cli sync-roster >> /var/log/roster-sync.log 2>&1
+```
+
+One cron line covers all three roster syncs — don't add separate `sync-users`/
+`sync-teams`/`sync-clients` cron entries alongside it, that just triples the CRM calls
+for no freshness benefit.
+
+### 7. Updating to a new release
 
 ```bash
 cd /opt/deployment-tracker
@@ -302,7 +318,7 @@ migration step, but it does mean a bad migration blocks startup rather than depl
 half-migrated; check `docker compose logs app` if the container doesn't come up after an
 update.
 
-### 7. Backups
+### 8. Backups
 
 Data lives in the `db_data` named volume. A simple logical backup (substitute your own
 `POSTGRES_USER`/`POSTGRES_DB` from `.env` if you changed them from the defaults):
@@ -317,7 +333,7 @@ above on a cron schedule and ship the output somewhere off this host — a lost 
 no off-host copy is a full data loss, including every request/approval/deployment history
 record.
 
-### 8. Logs and monitoring
+### 9. Logs and monitoring
 
 ```bash
 docker compose logs -f app   # follow the app's stdout/stderr
@@ -346,12 +362,30 @@ independent of whatever `DATABASE_URL` is set to, so they don't need Postgres ru
 source .venv/bin/activate
 python -m app.cli sync-users      # pulls employees (Machines), then matches+promotes team leads
 python -m app.cli sync-teams      # pulls teams (MachineGroups) into the local Team table
+python -m app.cli sync-clients    # pulls Active/Potential/Tester customers (/odata/Customers) into Client
+python -m app.cli sync-roster     # runs all three of the above in one go (teams -> users -> clients)
 python -m app.cli users-by-team   # prints every local user grouped by their team
 ```
 
+`sync-roster` is the single entry point meant for a schedule (see "Keeping the roster
+current" below) — it exists so the crontab only needs **one** new line for all three
+roster syncs, instead of one line each. The three commands above still work standalone
+for a one-off/manual run.
+
 Safe to re-run any time — all syncs upsert by the CRM's own id, so re-running never
 creates duplicates, and a manually-assigned role (`devops`/`admin`) or email you've set
-locally is never overwritten by a later sync.
+locally is never overwritten by a later sync. `sync-clients` additionally falls back to
+matching an existing client by name if it has no `source_system_id` yet (e.g. one
+hand-created via the request form's "+ Add new client" before this sync ever ran) — that
+row is adopted rather than duplicated, since `Client.name` is unique.
+
+`sync-clients` deliberately does **not** pull the CRM's full customer list — it's scoped
+server-side to customers whose `salesStatus` is Active, Potential, or Tester
+(`CLIENT_SALES_STATUS_IDS` in `task_source.py`), confirmed by the user. This matters:
+the unfiltered `/odata/Customers` list has 8,478 rows, 41 of which collide on `name`
+across different CRM ids (duplicate/import junk — e.g. `"Linkedin Customer 103"`
+entries) — that would violate `Client.name`'s uniqueness. The filtered set (44 rows as
+of writing) has no collisions.
 
 `sync-users` does two things in one run: pulls the Machines roster, then cross-references
 the CRM's `/odata/Users` feed — expanded with `userGroup` — by `custom_id` and promotes
@@ -425,7 +459,7 @@ app/
   auth.py        Password hashing (bcrypt, not passlib — see requirements.txt) and the
                  require_login/require_admin/require_approver dependencies every
                  protected route uses
-  cli.py         Operational commands: sync-users, sync-teams, users-by-team,
+  cli.py         Operational commands: sync-users, sync-teams, sync-clients, sync-roster, users-by-team,
                  deployable-tasks, create-admin (bootstraps the first admin)
   config.py      Settings, loaded from .env
   database.py    SQLAlchemy engine/session setup
@@ -490,8 +524,9 @@ docker-compose.yml  Postgres + app container, local dev and production alike (se
   instead, so a dangling id just means `user.team is None`, never a broken sync.
   `Team.leader_user_id` is the opposite case: it references `users.id`, a locally-owned,
   app-generated primary key, so it *does* get a real DB-level foreign key.
-- Still needed before Phase 3 is complete: the client-list and task-lookup endpoints
-  (project_plan.md, Section 12).
+- Still needed before Phase 3 is complete: the single-order task-lookup endpoint
+  (`get_task()`/`search_tasks()`, project_plan.md, Section 12). The client-list endpoint
+  (`list_clients()`/`sync-clients`, `/odata/Customers`) is done.
 
 ## Status / what's implemented so far
 
@@ -506,9 +541,10 @@ docker-compose.yml  Postgres + app container, local dev and production alike (se
       backfills email/username, and sets `Team.leader_user_id` for each lead's own team
 - [x] `list_user_contacts()` via `/odata/Users` (unfiltered) — backfills email/username
       for every user, not just supervisors
+- [x] `list_clients()` / `sync-clients` via `/odata/Customers`
 - [x] `list_deployable_tasks()` / `deployable-tasks` via `/get-orders` — lists currently
       PLANNED "Deployment Test/Live system" operations (no QA-gate/readiness signal)
-- [ ] `list_clients()`, `get_task()` (single-order lookup) — waiting on endpoint details
+- [ ] `get_task()` (single-order lookup) — waiting on endpoint details
 - [x] Request form, approval queue (Phase 1) — server-rendered web UI, no separate
       frontend build; see "Using the web UI" above
 - [x] Live deployment-status dashboard per client/system (branch, commit, who/when),

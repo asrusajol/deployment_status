@@ -80,6 +80,14 @@ DEPLOY_OPERATION_TARGETS_BY_NAME = {
 # team leads (confirmed by inspecting live /odata/Users data).
 TEAM_LEAD_USER_GROUP_CUSTOM_ID = "UG-00002"
 
+# salesStatus.id values for the CRM's Active/Potential/Tester customer categories
+# (confirmed by the user) — list_clients() only pulls customers in one of these
+# statuses, not the CRM's full customer list. Every other salesStatus (leads, churned
+# accounts, CRM-side duplicate/import junk like "Linkedin Customer NNN" rows) is
+# excluded — confirmed against live data: the unfiltered customer list has 8,478 rows
+# with 41 colliding names, this filtered set has 44 rows with none.
+CLIENT_SALES_STATUS_IDS = (14, 7, 24, 50, 51)
+
 
 @dataclass
 class DeployableTaskInfo:
@@ -171,10 +179,10 @@ class InHouseTaskSourceProvider:
     `$top`/`$skip`/`$orderby` params, but under {base_url} (like /login), not the domain
     root (unlike Machines/Users/MachineGroups) — see _rest_odata_get_all().
 
-    get_task / search_tasks / list_clients still need real endpoint paths and
-    response shapes from the CRM API before they can be implemented — see
-    project_plan.md, Section 12. list_users(), list_teams(), list_team_leads(),
-    list_user_contacts(), and list_deployable_tasks() are done.
+    get_task / search_tasks still need real endpoint paths and response shapes from the
+    CRM API before they can be implemented — see project_plan.md, Section 12.
+    list_users(), list_teams(), list_team_leads(), list_user_contacts(),
+    list_deployable_tasks(), and list_clients() are done.
     """
 
     def __init__(self, settings: Settings, client: httpx.Client | None = None):
@@ -311,9 +319,30 @@ class InHouseTaskSourceProvider:
         ]
 
     def list_clients(self) -> list[ClientInfo]:
-        raise NotImplementedError(
-            "Need the real client-list endpoint path + response shape from the CRM API."
+        # /odata/Customers, domain root like Machines/MachineGroups — confirmed against
+        # the real endpoint. Scoped to Active/Potential/Tester customers only
+        # (CLIENT_SALES_STATUS_IDS above), same salesStatus/any(...) filter shape
+        # confirmed against the real endpoint (not a plain `eq` — salesStatus is a
+        # to-many navigation property). The CRM exposes far more per-customer fields
+        # (address, contact info, revenue figures, ...) than this app currently needs;
+        # only custom_id/name are pulled here, matching what the local Client table
+        # stores today (app/models/client.py) — widen $select/ClientInfo if a future
+        # feature needs more.
+        status_filter = " or ".join(
+            f"(salesStatus/any(a:a/id eq {status_id}))" for status_id in CLIENT_SALES_STATUS_IDS
         )
+        rows = self._odata_get_all(
+            "/odata/Customers",
+            {
+                "$filter": f"is_active eq true and (({status_filter}))",
+                "$select": "custom_id,name",
+                "$orderby": "custom_id asc",
+            },
+        )
+        return [
+            ClientInfo(source_system_id=str(row["custom_id"]), name=row["name"])
+            for row in rows
+        ]
 
     def list_teams(self) -> list[TeamInfo]:
         # Deliberately no is_active filter, unlike list_users(): users.machine_group_id

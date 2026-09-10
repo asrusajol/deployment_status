@@ -65,6 +65,12 @@ def require_admin(current_user: User = Depends(require_login)) -> User:
     return current_user
 
 
+def require_admin_or_devops(current_user: User = Depends(require_login)) -> User:
+    if current_user.role not in (UserRole.admin, UserRole.devops):
+        raise HTTPException(status_code=403, detail="Admin or DevOps access required")
+    return current_user
+
+
 def _is_deploy_team_member(user: User, settings: Settings) -> bool:
     # The whole app is already scoped to this one team's deploy tasks (deployable-tasks
     # only ever pulls hall/machine-group task_api_deployable_hall_id /

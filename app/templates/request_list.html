@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_copy_button.html" as copy_btn %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
   <div class="queue-header">
@@ -43,6 +44,7 @@
           <th>Module Name</th>
           <th>Client</th>
           <th>System</th>
+          <th>URL</th>
           <th>Version</th>
           <th>Branch Name / Commit</th>
           <th>Changes</th>
@@ -63,6 +65,20 @@
               <span class="badge badge-{{ r.environment.value }}">{{ r.environment.value | capitalize }}</span>
             {% elif r.request_type == RequestType.test_local and r.server %}
               <span class="badge badge-testlocal">{{ r.server }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.server %}
+              <div class="url-cell">
+                {% if r.server.startswith("http://") or r.server.startswith("https://") %}
+                  <a href="{{ r.server }}" target="_blank" rel="noopener" class="url-preview">{{ r.server }}</a>
+                {% else %}
+                  {# test_local's server is a bare hostname (e.g. "crm.test.local"), not
+                     a full URL — shown as plain text rather than a broken relative link. #}
+                  <span class="url-preview">{{ r.server }}</span>
+                {% endif %}
+                {{ copy_btn.copy_button(r.server, "Server URL") }}
+              </div>
             {% else %}—{% endif %}
           </td>
           <td>{{ r.version or "—" }}</td>
