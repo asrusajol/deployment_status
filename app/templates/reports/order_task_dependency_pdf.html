@@ -1,0 +1,53 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4 landscape; margin: 14mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; } }
+    body { font-family: "DejaVu Sans", sans-serif; font-size: 9pt; color: #111; }
+    h1 { font-size: 15pt; margin: 0 0 2mm; }
+    .summary { color: #555; font-size: 8.5pt; margin: 0 0 6mm; }
+    h2 { font-size: 11pt; margin: 6mm 0 1.5mm; page-break-after: avoid; }
+    table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+    th, td { border: 0.4pt solid #bbb; padding: 1.4mm 1.8mm; text-align: left; vertical-align: top; }
+    th { background: #eee; font-weight: bold; }
+    tr { page-break-inside: avoid; }
+    .overdue { background: #fdecea; }
+    .empty { color: #666; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>Order Task Dependency</h1>
+  <p class="summary">{{ summary }} — generated {{ generated_at.strftime("%Y-%m-%d %H:%M UTC") }}</p>
+
+  {% if not groups %}
+  <p class="empty">No orders match these filters.</p>
+  {% endif %}
+
+  {% for group in groups %}
+  <h2>{{ group.order_custom_id }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
+        <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in group.tasks %}
+      <tr {% if task.is_overdue %}class="overdue"{% endif %}>
+        <td>{{ task.item_name or "" }}</td>
+        <td>{{ task.pos or "" }}</td>
+        <td>{{ task.name or "" }}</td>
+        <td>{{ task.machine_name or "" }}</td>
+        <td>{{ task.machine_group_name or "" }}</td>
+        <td>{{ task.status or "" }}</td>
+        <td>{{ task.due_date.strftime("%Y-%m-%d") if task.due_date else "" }}</td>
+        <td>{{ task.blocked_by or "" }}</td>
+        <td>{{ "Yes" if task.is_overdue else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</body>
+</html>

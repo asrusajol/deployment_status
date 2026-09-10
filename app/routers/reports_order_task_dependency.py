@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.services.order_task_dependency import (
     flatten,
     load_report,
 )
+from app.services.report_pdf import render_order_task_dependency_pdf
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
 
@@ -137,5 +138,34 @@ def order_task_dependency_export_xlsx(
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/reports/order-task-dependency/export.pdf")
+def order_task_dependency_export_pdf(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_reports_access),
+    settings: Settings = Depends(get_settings),
+    start: str | None = None,
+    end: str | None = None,
+    machine_group_id: list[int] = Query(default=[]),
+    overdue_only: bool = False,
+):
+    try:
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only)
+        groups = _load_groups(db, settings, filters)
+    except InvalidFilters as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    except Exception:  # noqa: BLE001
+        return PlainTextResponse(CRM_FAILURE_MESSAGE, status_code=502)
+
+    content = render_order_task_dependency_pdf(
+        groups, summary=filters.describe(_group_names(db)), generated_at=datetime.now(timezone.utc)
+    )
+    filename = f"order-task-dependency-{filters.start.isoformat()}-to-{filters.end.isoformat()}.pdf"
+    return Response(
+        content,
+        media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

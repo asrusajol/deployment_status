@@ -144,3 +144,15 @@ def test_the_excel_export_uses_the_same_filters_as_the_page(web, report):
 
 def test_the_excel_export_is_refused_for_a_developer(web, report):
     assert signed_in(web, role=UserRole.developer).get(f"{URL}/export.xlsx").status_code == 403
+
+
+def test_the_pdf_export_returns_a_pdf(web, report):
+    response = signed_in(web).get(f"{URL}/export.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-")
+
+
+def test_the_pdf_export_is_refused_for_a_developer(web, report):
+    assert signed_in(web, role=UserRole.developer).get(f"{URL}/export.pdf").status_code == 403
