@@ -658,12 +658,25 @@ def test_deleted_operations_are_excluded():
 
 def test_overdue_requires_a_past_due_date_and_an_unfinished_operation():
     overdue = flatten(compute([op(1, "0010", "PLANNED")], position_rows=positions(due_date=PAST)))
-    closed = flatten(compute([op(1, "0010", Status.CLOSED.value)], position_rows=positions(due_date=PAST)))
+    # The CLOSED operation needs an open sibling: an order whose tasks are ALL closed is
+    # dropped wholesale, so a lone closed task would leave nothing to assert against.
+    mixed = flatten(
+        compute(
+            [op(1, "0010", Status.CLOSED.value), op(2, "0020", "PLANNED")],
+            position_rows=positions(due_date=PAST),
+        )
+    )
     future = flatten(compute([op(1, "0010", "PLANNED")], position_rows=positions(due_date=FUTURE)))
 
     assert overdue[0].is_overdue is True
-    assert closed[0].is_overdue is False
+    assert mixed[0].is_overdue is False  # closed is never overdue, even past its due date
+    assert mixed[1].is_overdue is True  # open and past due
     assert future[0].is_overdue is False
+
+
+def test_an_order_with_a_single_closed_task_is_dropped_like_any_other_all_closed_order():
+    # Guards against special-casing the one-task case out of the all-closed rule.
+    assert compute([op(1, "0010", Status.CLOSED.value)]) == []
 
 
 def test_a_null_due_date_is_never_overdue():
@@ -1563,7 +1576,10 @@ def test_an_invalid_date_shows_an_error_banner_not_a_500(web, report):
 
 
 def test_a_crm_failure_shows_an_error_banner_not_a_500(web, monkeypatch):
-    def boom(provider, filters, today):
+    # Signature must match how _load_groups calls load_report — including
+    # machine_group_names — or this raises TypeError before the body runs and the test
+    # silently stops exercising a transport failure.
+    def boom(provider, filters, today, machine_group_names=None):
         raise OSError("crm.test.local unreachable")
 
     monkeypatch.setattr(report_module, "load_report", boom)
@@ -1718,7 +1734,7 @@ Create `app/templates/reports/order_task_dependency.html`:
 <h1>Order Task Dependency</h1>
 
 {% if error %}
-<p class="error-banner">{{ error }}</p>
+<p class="error">{{ error }}</p>
 {% endif %}
 
 <form method="get" action="/reports/order-task-dependency" class="filter-bar">
@@ -1745,7 +1761,7 @@ Create `app/templates/reports/order_task_dependency.html`:
 
 {% for group in groups %}
 <h2>{{ group.order_custom_id }}</h2>
-<table class="data-table">
+<table class="status-table">
   <thead>
     <tr>
       <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
@@ -1867,8 +1883,10 @@ def test_order_task_dependency_xlsx_writes_one_flat_row_per_task():
 
     sheet = load_workbook(BytesIO(content)).active
     assert sheet.max_row == 3  # header + 2 tasks
+    # Due Date is None on this fixture: the getter writes "", which openpyxl
+    # round-trips as None on read (the release-tracker test above documents the same).
     assert [cell.value for cell in sheet[2]] == [
-        "PR-00001", "Item A", "0020", "Milling", "M1", "Team Rajib", "PLANNED", "", "Cutting", "Yes",
+        "PR-00001", "Item A", "0020", "Milling", "M1", "Team Rajib", "PLANNED", None, "Cutting", "Yes",
     ]
 
 
@@ -1876,8 +1894,9 @@ def test_order_task_dependency_xlsx_renders_a_non_overdue_task_blank():
     content = order_task_dependency_rows_to_xlsx([_task_row(is_overdue=False, blocked_by=None)], "S")
 
     sheet = load_workbook(BytesIO(content)).active
-    assert sheet["I2"].value == ""
-    assert sheet["J2"].value == ""
+    # Blank, not the string "None" — openpyxl reads an empty-string write back as None.
+    assert sheet["I2"].value is None
+    assert sheet["J2"].value is None
 ```
 
 Add to `tests/test_reports_order_task_dependency.py`:
