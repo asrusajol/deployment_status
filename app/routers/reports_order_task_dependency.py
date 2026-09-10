@@ -7,8 +7,10 @@ about what is currently filtered.
 """
 
 from datetime import date, datetime, timezone
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.team import Team
 from app.models.user import User
+from app.services.export import order_task_dependency_rows_to_xlsx
 from app.services.order_task_dependency import (
     InvalidFilters,
     ReportFilters,
@@ -108,4 +111,31 @@ def order_task_dependency_page(
             "overdue_only": overdue_only,
             "generated_at": datetime.now(timezone.utc),
         },
+    )
+
+
+@router.get("/reports/order-task-dependency/export.xlsx")
+def order_task_dependency_export_xlsx(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_reports_access),
+    settings: Settings = Depends(get_settings),
+    start: str | None = None,
+    end: str | None = None,
+    machine_group_id: list[int] = Query(default=[]),
+    overdue_only: bool = False,
+):
+    try:
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only)
+        groups = _load_groups(db, settings, filters)
+    except InvalidFilters as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    except Exception:  # noqa: BLE001 — never hand back a corrupt workbook
+        return PlainTextResponse(CRM_FAILURE_MESSAGE, status_code=502)
+
+    content = order_task_dependency_rows_to_xlsx(flatten(groups), "Order Task Dependency")
+    filename = f"order-task-dependency-{filters.start.isoformat()}-to-{filters.end.isoformat()}.xlsx"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

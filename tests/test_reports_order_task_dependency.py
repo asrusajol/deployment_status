@@ -130,3 +130,17 @@ def test_an_empty_result_renders_an_empty_state(web, report):
 
     assert response.status_code == 200
     assert "No orders" in response.text
+
+
+def test_the_excel_export_uses_the_same_filters_as_the_page(web, report):
+    response = signed_in(web).get(f"{URL}/export.xlsx", params={"start": "2026-09-01", "overdue_only": "on"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert report["filters"].overdue_only is True
+
+
+def test_the_excel_export_is_refused_for_a_developer(web, report):
+    assert signed_in(web, role=UserRole.developer).get(f"{URL}/export.xlsx").status_code == 403

@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client_version_status import ClientVersionStatus
 from app.services.dashboard import DeploymentStatusRow
+from app.services.order_task_dependency import TaskRow
 
 COLUMNS = [
     ("Client", lambda r: r.client_name),
@@ -76,3 +77,23 @@ def release_tracker_rows_to_xlsx(
     rows: list[ClientVersionStatus], sheet_title: str, main_status: BitbucketMainBranchStatus | None = None
 ) -> bytes:
     return _columns_to_xlsx(rows, _release_tracker_columns(main_status), sheet_title)
+
+
+ORDER_TASK_DEPENDENCY_COLUMNS = [
+    ("Order", lambda r: r.order_custom_id or ""),
+    ("Item", lambda r: r.item_name or ""),
+    ("Pos", lambda r: r.pos or ""),
+    ("Task", lambda r: r.name or ""),
+    ("Machine", lambda r: r.machine_name or ""),
+    ("Machine Group", lambda r: r.machine_group_name or ""),
+    ("Status", lambda r: r.status or ""),
+    ("Due Date", lambda r: r.due_date.strftime("%Y-%m-%d") if r.due_date else ""),
+    ("Blocked By", lambda r: r.blocked_by or ""),
+    ("Overdue", lambda r: "Yes" if r.is_overdue else ""),
+]
+
+
+def order_task_dependency_rows_to_xlsx(rows: list[TaskRow], sheet_title: str) -> bytes:
+    """One flat row per task — the grouping by order is a presentation concern of the
+    HTML/PDF views, not something a spreadsheet should have to unpick."""
+    return _columns_to_xlsx(rows, ORDER_TASK_DEPENDENCY_COLUMNS, sheet_title)

@@ -6,7 +6,8 @@ from openpyxl import load_workbook
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
 from app.models.client_version_status import ClientVersionStatus
-from app.services.export import release_tracker_rows_to_xlsx
+from app.services.export import order_task_dependency_rows_to_xlsx, release_tracker_rows_to_xlsx
+from app.services.order_task_dependency import TaskRow
 
 
 def test_release_tracker_rows_to_xlsx_writes_expected_columns():
@@ -69,3 +70,59 @@ def test_release_tracker_rows_to_xlsx_without_a_bitbucket_sync_yet():
     # openpyxl round-trips an empty-string cell write as None on read — this just
     # confirms it didn't error and didn't write a stray "None" string into the cell.
     assert data_row[-2:] == [None, None]  # Main Version, Main Updated At
+
+
+def _task_row(**overrides):
+    defaults = dict(
+        operation_id=1,
+        order_id=11,
+        order_custom_id="PR-00001",
+        prod_order_pos_id=12,
+        item_name="Item A",
+        pos="0020",
+        name="Milling",
+        machine_name="M1",
+        machine_group_id=13,
+        machine_group_name="Team Rajib",
+        status="PLANNED",
+        start=None,
+        end=None,
+        due_date=None,
+        has_dependency=True,
+        is_blocked=True,
+        blocked_by="Cutting",
+        is_overdue=True,
+    )
+    defaults.update(overrides)
+    return TaskRow(**defaults)
+
+
+def test_order_task_dependency_xlsx_has_the_expected_header_row():
+    content = order_task_dependency_rows_to_xlsx([_task_row()], "Order Task Dependency")
+
+    sheet = load_workbook(BytesIO(content)).active
+    assert [cell.value for cell in sheet[1]] == [
+        "Order", "Item", "Pos", "Task", "Machine", "Machine Group",
+        "Status", "Due Date", "Blocked By", "Overdue",
+    ]
+
+
+def test_order_task_dependency_xlsx_writes_one_flat_row_per_task():
+    content = order_task_dependency_rows_to_xlsx([_task_row(), _task_row(operation_id=2, name="Drilling")], "S")
+
+    sheet = load_workbook(BytesIO(content)).active
+    assert sheet.max_row == 3  # header + 2 tasks
+    # Due Date is None on this fixture: the getter writes "", which openpyxl
+    # round-trips as None on read (the release-tracker test above documents the same).
+    assert [cell.value for cell in sheet[2]] == [
+        "PR-00001", "Item A", "0020", "Milling", "M1", "Team Rajib", "PLANNED", None, "Cutting", "Yes",
+    ]
+
+
+def test_order_task_dependency_xlsx_renders_a_non_overdue_task_blank():
+    content = order_task_dependency_rows_to_xlsx([_task_row(is_overdue=False, blocked_by=None)], "S")
+
+    sheet = load_workbook(BytesIO(content)).active
+    # Blank, not the string "None" — openpyxl reads an empty-string write back as None.
+    assert sheet["I2"].value is None
+    assert sheet["J2"].value is None
