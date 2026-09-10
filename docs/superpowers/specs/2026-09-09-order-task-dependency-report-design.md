@@ -1,153 +1,226 @@
 # Order Task Dependency Report — Design
 
-Status: approved by user in chat, pending written-spec review.
-Author: Claude (session brainstorm with the user), 2026-09-09.
+Status: revised after the live-availability constraint surfaced; approved in
+chat, pending written-spec review.
+Author: Claude (session brainstorm with the user), 2026-09-09, revised 2026-09-10.
 
 ## Problem
 
-A dev on the `shopfloor-suite` team built an "Order Task Dependency" report there
-(branch `order-dependency-crm`): per production order, it walks each order
-position's operations in sequence and flags which ones are blocked by an
-unfinished predecessor, which are overdue against the position's due date, and
-lets a user filter by machine group and date range, viewing results as a grid or
-exporting a PDF. The user wants this same report reachable from
-`deployment_status` instead, so DevOps/leads don't have to open the separate
-shopfloor-suite (v12) frontend just to check it.
+A dev on the `shopfloor-suite` team built an "Order Task Dependency" report
+there (branch `order-dependency-crm`): per production order, it walks each order
+position's operations in sequence, flags which ones are blocked by an unfinished
+predecessor and which are overdue against the position's due date, filters by
+machine group and date range, and exports a PDF. The user wants that same report
+reachable from `deployment_status`, so DevOps/leads don't have to open the
+separate shopfloor-suite (v12) frontend just to check it — and they need a PDF
+for submission.
 
-`deployment_status` has no local concept of production orders/operations — but it
-already treats the shopfloor-suite instance (`crm.test.local` / `crm.schertech.com`)
-as an external system it authenticates against and pulls data from
-(`InHouseTaskSourceProvider` in `app/services/task_source.py`, used today for
-`/get-orders` → `deployable_tasks`). That existing feed is a flat, name- and
-status-filtered slice with no dependency/sequence data — rebuilding the
-blocked/overdue logic from it in Python would duplicate business logic
-shopfloor-suite already computes server-side.
+`deployment_status` has no local concept of production orders/operations, but it
+already authenticates against the shopfloor-suite instance (`crm.test.local` /
+`crm.schertech.com`, referred to throughout this app as "the CRM") and pulls data
+from it via `InHouseTaskSourceProvider` (`app/services/task_source.py`).
 
-Instead: shopfloor-suite's own `GET /report-visu/order-task-dependency` endpoint
-(`ReportController::getOrderTaskDependencyReport`, added in the same branch)
-already returns exactly the shape needed — orders → tasks, each carrying
-`has_dependency`, `is_blocked`, `blocked_by`, `is_overdue`, `machine`,
-`machine_group_id`/`machine_group_name`, `due_date` — pre-computed. It sits
-behind plain `auth:sanctum` with no extra permission check, so the same
-service-account bearer-token login `InHouseTaskSourceProvider` already performs
-for `/get-orders` can call it directly. This design proxies that endpoint rather
-than re-deriving its logic.
+### The constraint that shapes this design
+
+The obvious approach — proxy shopfloor-suite's own
+`GET /report-visu/order-task-dependency` endpoint, which already returns
+`is_blocked`/`blocked_by`/`is_overdue` pre-computed — **is not viable**. That
+endpoint lives only on the `order-dependency-crm` feature branch, and the user
+has confirmed that backend work will **permanently never ship to the live
+system**. Verified directly against the live branch:
+
+| Checked on `crm-master` (the live branch) | Result |
+|---|---|
+| `backend/routes/api.php` → `order-task-dependency` routes | **absent** |
+| `backend/app/Services/Reports/OrderTaskDependencyReportService.php` | **absent** |
+| `Lodata::discover(ProdOrder / ProdOrderPos / ProdOrderPosOperation / Machine / MachineGroup)` | **all present** |
+| Operation fields `pos`, `name`, `start`, `end`, `status`, `machine_id`, `prod_order_pos_id` | **all present** |
+| Position fields `due_date`, `name`, `prod_order_id` | **all present** |
+| `ProdOrderPosOperationStatus` enum incl. `CLOSED`, `DELETED` | **present** |
+
+So the report's *pre-computed output* is unavailable on live, but every piece of
+*raw data* it is derived from is already exposed on live through generic OData
+entity sets that predate the feature branch and are not going anywhere.
+
+**Therefore: deployment_status reads the raw OData entity sets and computes the
+dependency/overdue logic itself, in Python.** Nothing in this design depends on
+`order-dependency-crm` merging, and the report behaves identically against
+`crm.test.local` and `crm.schertech.com`.
+
+### Note on the OData-vs-REST house rule
+
+`shopfloor-suite`'s own CLAUDE.md tells its developers to build **new endpoints
+as custom REST, never OData**. That rule governs writing new code *inside*
+shopfloor-suite. It does not apply here: this design adds nothing to
+shopfloor-suite, and OData is the only interface that carries this data on the
+live system. This is a deliberate, constraint-driven choice, not an oversight —
+please don't "fix" it later by pointing this at a REST endpoint that only exists
+on a branch.
 
 ## Scope
 
 **In scope:**
-- A new **Reports** tab in `deployment_status`, structured to hold more than one
-  report type over time (this is the first).
-- One report under it: **Order Task Dependency**, live/on-demand (no local
-  caching or history table — matches how the source report itself works: pick
-  filters, view results).
-- Filters: date range (start/end) and machine group — mirroring the
-  shopfloor-suite endpoint's own query params (`start`, `end`, `machineGroups`)
-  and defaults (no `end` → today; no `start` → one month before `end`).
-- An "Overdue only" filter, replicated client-side (in the new Python route) over
-  the fetched JSON — mirrors what shopfloor-suite's PDF export does
-  (`filterOverdueEligible`), since the JSON endpoint itself doesn't filter it.
-- Excel export of the currently-filtered view, following the existing
-  `_columns_to_xlsx` pattern.
-- Access restricted to `admin`, `devops`, and `team_lead` roles only.
+- A new **Reports** tab, structured to hold more than one report type over time
+  (this is the first).
+- One report under it: **Order Task Dependency** — live/on-demand, no local
+  caching or history table (matching how the source report works: pick filters,
+  view results).
+- Filters: date range (start/end), machine group, and "overdue only".
+- Three outputs from one filtered row set: HTML view, Excel export, PDF export.
+- Access restricted to `admin`, `devops`, and `team_lead`.
 
 **Out of scope:**
 - Any local persistence/history of report results.
-- Modifying shopfloor-suite's backend — the endpoint this relies on already
-  exists on the `order-dependency-crm` branch and needs no changes.
-- Any report type other than Order Task Dependency (the Reports tab is just
-  structured to not block adding more later).
+- Any change to `shopfloor-suite` (this design requires none, on any branch).
+- Any report type other than Order Task Dependency.
+
+## Data sourcing (OData)
+
+New methods on `InHouseTaskSourceProvider` (`app/services/task_source.py`),
+reusing the existing `_login()`/`_request()`/`_odata_get_all()` helpers — same
+host, same bearer token, same 401-retry, same `$top`/`$skip` pagination the
+`Machines`/`Users`/`MachineGroups` calls already use. OData lives at the domain
+root (`_odata_base_url`), not under `/api` — `_odata_get_all()` already handles
+that distinction.
+
+Two-stage fetch, mirroring how the Laravel service's `whereHas(...)` +
+eager-load pair works:
+
+1. **Qualifying stage** — find which orders belong in the report:
+   `GET /odata/ProdOrderPosOperations` filtered to `start` before the range end,
+   `status ne DELETED`, the parent position's `due_date` on/after the range
+   start, and (when the filter is set) the operation's machine's machine group.
+   Expanded into `prodOrderPos`→`prodOrder` and `machine`→`machineGroup`.
+   Collect the distinct parent order ids.
+2. **Display stage** — for those order ids, fetch **all** their non-deleted
+   operations (not just the date-qualifying ones), because the source report
+   shows an order's full task chain once the order qualifies. Same expands.
+
+**Validate before relying on it:** Lodata's support for `$filter` across
+navigation properties (`prodOrderPos/due_date ge ...`,
+`machine/machineGroup/id eq ...`) and for the `in` operator on a batch of order
+ids needs empirical confirmation against a real instance — Lodata has gaps here.
+This is the first implementation task (see Plan note below). **Fallback if
+unsupported:** filter on what OData does accept (the operation's own `start` and
+`status`), fetch the parent position/order/machine data via `$expand`, and apply
+the remaining predicates in Python. Correctness is identical; only the volume
+transferred differs.
+
+## Computation (port of the Laravel service)
+
+A new pure module — `app/services/order_task_dependency.py` — takes the fetched
+operations and produces the report rows. This is a direct port of
+`OrderTaskDependencyReportService::mapOrder()`:
+
+- Group operations by `prod_order_pos_id`; within each position, sort by
+  `int(pos)`.
+- Walk that sorted sequence keeping the previous operation as `predecessor`:
+  - `has_dependency` — true when a predecessor exists.
+  - `is_blocked` — true when a predecessor exists **and** its status is not
+    `CLOSED`.
+  - `blocked_by` — the predecessor's `name` when blocked, else null.
+- `is_overdue` — the position's `due_date` is before today (date-level
+  comparison), and the operation itself is not `CLOSED`. Null due date → not
+  overdue.
+- Drop orders with no tasks, and orders where every task is `CLOSED`
+  (the source's `hasOpenTask` gate).
+- "Overdue only", when set, keeps orders having at least one overdue task that
+  also matches the machine-group filter — mirroring `filterOverdueEligible()`,
+  which shopfloor-suite applies to its PDF only. Here it applies to **all three
+  outputs**, so the HTML view, Excel, and PDF can never disagree.
+
+**On `pos` as the sequence key:** `pos` codes are not stable *across* orders
+(this app already avoids matching deploy operations by `pos` for that reason —
+see `DEPLOY_OPERATION_TARGETS_BY_NAME`). That does not conflict with using `pos`
+to order operations *within a single position*, which is exactly what
+shopfloor-suite's own service does (`sortBy((int) $operation->pos)`). Keep it.
+
+**Status values are enums, not string literals** (both repos' standing rule): add
+a `ProdOrderPosOperationStatus` enum to `deployment_status` mirroring the CRM's
+values actually used here (`CLOSED`, `DELETED`), in the same style as the
+existing `UserRole`/`DeploymentEnvironment` enums. No bare `"CLOSED"` anywhere,
+tests included.
+
+## Timezone handling
+
+The CRM returns operation `start`/`end` as UTC ISO-8601 and `due_date` as a
+date. shopfloor-suite's rule is store-UTC/display-local. This app renders
+server-side, so: keep everything UTC internally, convert only when formatting
+for the HTML/Excel/PDF output, following whatever `app/templates` and
+`app/services/export.py` already do for `DeploymentRequest` timestamps —
+consistency with this app's existing columns beats inventing a second
+convention.
 
 ## Reports tab structure
 
 To avoid every future report needing its own top-level nav entry:
 
-- New nav item **`<a href="/reports">Reports</a>`** in `base.html`, gated the
-  same way as the rest of the new surface (see Access control) — placed near
-  `Release Tracker`.
-- **`GET /reports`** — a landing page listing available report types (just
-  "Order Task Dependency" today) as simple links/cards, driven by a small
-  in-code registry so adding a report later means adding one entry + one router
-  module, not touching this one.
-- Each report type gets its own sub-route: **`GET /reports/order-task-dependency`**
-  (HTML view) and **`GET /reports/order-task-dependency/export.xlsx`**.
+- New nav item **`<a href="/reports">Reports</a>`** in `base.html`, near
+  `Release Tracker`, conditioned on the same role check as the routes.
+- **`GET /reports`** — landing page listing available report types (one today)
+  as links/cards, driven by a small in-code registry, so adding a report later
+  means one registry entry + one router module.
+- Per-report sub-routes:
+  - `GET /reports/order-task-dependency` (HTML)
+  - `GET /reports/order-task-dependency/export.xlsx`
+  - `GET /reports/order-task-dependency/export.pdf`
 
 File layout:
 ```
-app/routers/reports.py                      # GET /reports (landing + registry)
-app/routers/reports_order_task_dependency.py  # GET /reports/order-task-dependency (+ export.xlsx)
+app/routers/reports.py                        # GET /reports (landing + registry)
+app/routers/reports_order_task_dependency.py  # the three routes above
+app/services/order_task_dependency.py         # fetch orchestration + the ported logic
 app/templates/reports_index.html
 app/templates/reports/order_task_dependency.html
+app/templates/reports/order_task_dependency_pdf.html
 ```
-(exact module/template names may be adjusted at implementation time to match
-whatever `dashboard.py`'s current size/conventions suggest.)
+(names may be adjusted at implementation time to match `dashboard.py`'s
+conventions.)
 
-## New adapter method
-
-`app/services/task_source.py`, `InHouseTaskSourceProvider`:
-
-```python
-def get_order_task_dependency_report(
-    self, start: str | None, end: str | None, machine_groups: list[int] | None
-) -> list[dict]:
-    ...
-```
-
-- Reuses the existing `_login()` / `_request()` bearer-auth helpers — same host
-  (`settings.task_api_base_url`), same token/401-retry behavior.
-- Calls `GET /report-visu/order-task-dependency` with query params
-  `start`, `end`, `machineGroups` (comma-joined ids) exactly as shopfloor-suite's
-  `OrderTaskDependencyFilter::tryMake()` expects. This is a plain custom-REST
-  call (not OData, not `$top`/`$skip` paginated) — a single direct `_request()`
-  call, no pagination helper needed.
-- Returns the parsed JSON array of orders as-is (list of dicts) — no new
-  dataclass wrapping needed at the adapter layer; the router maps fields
-  directly into the export/template row shape.
-- On a non-2xx response (e.g. a 422 for a malformed date range, or a network
-  failure), let `httpx`'s `raise_for_status()` propagate — the router catches it
-  (see Error handling).
-
-Not added to the `TaskSourceProvider` Protocol as a required method for every
-implementation for now — follow whatever the Protocol's current convention is at
-implementation time (the existing Protocol already lists all adapter methods,
-so this should be added there too for consistency, with a test double updated to
-match).
+All three routes share one filter-parsing helper — same principle as
+`_parse_filters`/`_filter_context` in `dashboard.py` — so the view and both
+exports can never disagree on what is "currently filtered".
 
 ## Machine group filter options
 
-The machine-group dropdown reuses the already-synced `teams` table (mirrors CRM
-`MachineGroups`, kept fresh by the existing team sync job) rather than making a
-second CRM call just to populate a dropdown.
+The machine-group dropdown reads the already-synced local `teams` table (mirrors
+CRM `MachineGroups`, kept fresh by the existing team sync job) rather than making
+another CRM call just to populate a dropdown.
 
-## Route behavior
+## PDF export
 
-`app/routers/reports_order_task_dependency.py`:
+shopfloor-suite's PDF endpoint is branch-only too, so the PDF is generated
+locally. `deployment_status` has no PDF capability today (`openpyxl` only).
 
-- `GET /reports/order-task-dependency` — query params `start`, `end`,
-  `machine_group_id` (repeatable or comma-list, matching this app's existing
-  filter param conventions), `overdue_only` (bool). Calls the new adapter
-  method, applies the overdue filter in-memory if requested, renders the
-  template with orders/tasks flattened for display (one row per task, grouped
-  visually by order).
-- `GET /reports/order-task-dependency/export.xlsx` — same filter parsing and
-  fetch, reusing `_columns_to_xlsx` from `app/services/export.py` with a new
-  column spec: Order, Item, Task/Operation, Machine, Machine Group, Status, Due
-  Date, Blocked By, Overdue — one row per task (flat), not per order.
-- Both routes share one filter-parsing helper, same principle as
-  `_parse_filters`/`_filter_context` in `dashboard.py`, so the HTML view and the
-  export can never disagree on what's "currently filtered."
+- **Library: WeasyPrint** (HTML/CSS → PDF). Chosen so the PDF is a Jinja
+  template rendered through the same row set as the HTML view — matching the
+  order-sectioned layout of shopfloor-suite's Blade PDF — rather than
+  hand-positioned output (reportlab). Added to `requirements.txt`; its system
+  deps (cairo/pango) added to the `Dockerfile`.
+- Layout mirrors the source PDF: sectioned per order rather than one flat table,
+  with a one-line summary of the active filters near the top.
+- Served as a `Response` with `media_type="application/pdf"` and a
+  `Content-Disposition` filename including the date range.
+- "Download PDF" button next to "Export to Excel" on the report page.
+
+## Excel export
+
+`GET /reports/order-task-dependency/export.xlsx`, reusing `_columns_to_xlsx`
+from `app/services/export.py` with a new column spec — one flat row per task:
+Order, Item, Task/Operation, Machine, Machine Group, Status, Due Date, Blocked
+By, Overdue.
 
 ## Error handling
 
-If the adapter call fails (CRM unreachable, non-2xx, or a malformed date range
-rejected by shopfloor-suite's own 422), the route catches it and renders the
-report page with an inline error banner instead of a 500 — consistent with how
-this app already tolerates CRM sync failures elsewhere (a broken CRM call
-degrades gracefully, it doesn't crash the page).
+If the CRM call fails (unreachable, non-2xx, auth failure) or a filter is
+malformed, the route renders the report page with an inline error banner rather
+than a 500 — consistent with how this app already tolerates CRM sync failures
+elsewhere. The Excel/PDF routes surface the same failure as an error response
+rather than a corrupt file.
 
 ## Access control
 
-`app/auth.py` gains a new guard:
+`app/auth.py` gains:
 
 ```python
 def require_reports_access(current_user: User = Depends(require_login)) -> User:
@@ -156,43 +229,45 @@ def require_reports_access(current_user: User = Depends(require_login)) -> User:
     return current_user
 ```
 
-modeled directly on the existing `require_deploy_team_member`/admin-or-devops
-patterns already in that file. This is a flat role check — unlike
-`can_approve_deployment_request`, it is **not** scoped by team/`machine_group_id`;
-any user with one of these three roles sees all reports.
-
-Applied as a `Depends(require_reports_access)` on every route under `/reports*`
-(landing page, the order-task-dependency page, and its export). The nav link in
-`base.html` is also conditioned on the same role check (`developer` accounts
-don't see the "Reports" link at all, matching how `Admin` is already hidden from
-non-admins there).
+modeled on the existing admin/devops guards in that file. This is a flat role
+check — unlike `can_approve_deployment_request`, it is **not** scoped by
+team/`machine_group_id`. Applied to every `/reports*` route including both
+exports; the nav link is conditioned on the same check, so `developer` accounts
+don't see it (matching how `Admin` is already hidden from non-admins).
 
 ## Testing
 
-Following this repo's existing pattern (`tests/test_task_source.py`,
+Following this repo's existing patterns (`tests/test_task_source.py`,
 `tests/test_dashboard.py`, `tests/test_export.py`):
 
-- `get_order_task_dependency_report`: unit test against a mocked `httpx`
-  transport (same `_make_provider`/`httpx.MockTransport` style as
-  `test_task_source.py`) — correct query params sent, response parsed, 401
-  triggers one re-login-and-retry, a non-2xx propagates as an exception.
-- `require_reports_access`: admin/devops/team_lead pass; `developer` gets 403.
-- `/reports` route: renders the landing page listing the one report; hidden/403
-  for a `developer` role.
-- `/reports/order-task-dependency`: renders with mocked adapter data; filters
-  (date range, machine group, overdue-only) passed through correctly; an
-  adapter exception renders the error banner instead of a 500.
-- `/reports/order-task-dependency/export.xlsx`: same filtered row set as the
-  HTML view produces a workbook with the expected columns (mirrors
-  `test_export.py`'s existing xlsx-content assertions).
+- **Adapter**: mocked `httpx.MockTransport` (same `_make_provider` style) —
+  correct OData URL/params built, pagination followed, 401 triggers one
+  re-login-and-retry, non-2xx propagates.
+- **Ported logic** (the highest-value tests, pure functions, no HTTP): first
+  operation in a position has no dependency; a successor of a non-`CLOSED`
+  predecessor is blocked with the right `blocked_by`; a successor of a `CLOSED`
+  predecessor is not; `DELETED` operations are excluded; ordering is by numeric
+  `pos`, not string (so `10` sorts after `9`); overdue requires a past
+  `due_date` **and** a non-`CLOSED` operation; null `due_date` is never overdue;
+  an all-`CLOSED` order is dropped; overdue-only respects the machine-group
+  filter.
+- **Access**: admin/devops/team_lead pass; `developer` gets 403 on every
+  `/reports*` route.
+- **Routes**: `/reports` lists the report; the report page renders with mocked
+  data; filters pass through; an adapter exception renders the error banner, not
+  a 500.
+- **Exports**: xlsx has the expected columns over the same filtered rows
+  (mirrors `test_export.py`'s existing assertions); pdf returns
+  `application/pdf` with non-empty content.
 
-## Open items requiring confirmation before implementation can fully complete
+## Open items
 
-- None blocking — the shopfloor-suite endpoint this relies on already exists on
-  `order-dependency-crm` and needs no changes; the service-account credentials
-  `InHouseTaskSourceProvider` already uses for `/get-orders` should already have
-  whatever access this endpoint needs, since the route carries no extra
-  permission middleware. Worth a quick sanity check against the real
-  `crm.test.local` instance once code is running locally, to confirm the
-  service account isn't blocked by something outside `routes/api.php` (e.g. a
-  frontend-only guard that doesn't apply here anyway).
+- **Lodata `$filter`-across-navigation-properties support** — must be confirmed
+  against a real instance before the two-stage fetch is finalized; the Python
+  fallback above covers it if unsupported. This is the first implementation
+  task, and its outcome may adjust query shape (not the design).
+- **Service-account access** — the credentials `InHouseTaskSourceProvider`
+  already uses must be able to read the `ProdOrders`/`ProdOrderPos`/
+  `ProdOrderPosOperations` entity sets, not just `Machines`/`Users`/
+  `MachineGroups`. Worth confirming against `crm.test.local` early, since a
+  permissions gap here would be a blocker rather than a code change.
