@@ -284,7 +284,7 @@ class InHouseTaskSourceProvider:
         while True:
             page_params = {**params, "take": page_size, "skip": skip}
             response = self._request("GET", path, params=page_params)
-            page = _odata_json(response).get("value", [])
+            page = response.json().get("value", [])
             items.extend(page)
             if len(page) < page_size:
                 return items
@@ -302,7 +302,7 @@ class InHouseTaskSourceProvider:
         while True:
             page_params = {**params, "$top": page_size, "$skip": skip}
             response = self._request("GET", path, params=page_params)
-            page = _odata_json(response).get("value", [])
+            page = response.json().get("value", [])
             items.extend(page)
             if len(page) < page_size:
                 return items
