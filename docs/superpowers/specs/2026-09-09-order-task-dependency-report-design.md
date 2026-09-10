@@ -83,28 +83,57 @@ host, same bearer token, same 401-retry, same `$top`/`$skip` pagination the
 root (`_odata_base_url`), not under `/api` — `_odata_get_all()` already handles
 that distinction.
 
-Two-stage fetch, mirroring how the Laravel service's `whereHas(...)` +
-eager-load pair works:
+### What this OData surface actually supports (probed against `crm.test.local`, 2026-09-10)
 
-1. **Qualifying stage** — find which orders belong in the report:
-   `GET /odata/ProdOrderPosOperations` filtered to `start` before the range end,
-   `status ne DELETED`, the parent position's `due_date` on/after the range
-   start, and (when the filter is set) the operation's machine's machine group.
-   Expanded into `prodOrderPos`→`prodOrder` and `machine`→`machineGroup`.
-   Collect the distinct parent order ids.
-2. **Display stage** — for those order ids, fetch **all** their non-deleted
-   operations (not just the date-qualifying ones), because the source report
-   shows an order's full task chain once the order qualifies. Same expands.
+Confirmed empirically, not assumed. **Two of these are correctness traps** —
+read this section before changing any query.
 
-**Validate before relying on it:** Lodata's support for `$filter` across
-navigation properties (`prodOrderPos/due_date ge ...`,
-`machine/machineGroup/id eq ...`) and for the `in` operator on a batch of order
-ids needs empirical confirmation against a real instance — Lodata has gaps here.
-This is the first implementation task (see Plan note below). **Fallback if
-unsupported:** filter on what OData does accept (the operation's own `start` and
-`status`), fetch the parent position/order/machine data via `$expand`, and apply
-the remaining predicates in Python. Correctness is identical; only the volume
-transferred differs.
+| Capability | Result |
+|---|---|
+| Service account can read `ProdOrders`, `ProdOrderPos`, `ProdOrderPosOperations`, `Machines`, `MachineGroups` | ✅ works |
+| `$filter` on the entity's **own** fields (`start lt …`, `status ne 'DELETED'`) | ✅ works, genuinely filters (verified: `start ge 2099-01-01` → 0 rows) |
+| `$select`, `$orderby`, `$top`/`$skip` paging | ✅ all work |
+| `in (…)` operator (`machine_id in (1,2,3)`) | ✅ works, lists of 500+ ids fine |
+| `$expand`, including nested (`prodOrderPos($expand=prodOrder)`) | ✅ works |
+| `$count=true` | ❌ **not supported** — returns no `@odata.count`; page until a short page |
+| `$filter` across a nav property to a *different* field name (`prodOrderPos/due_date ge …`) | ❌ **parser error** (`expression_parser_error`) |
+| `$filter` across a nav property to a *same-named* field (`machine/machine_group_id eq …`) | ⚠️ **SILENT TRAP — returns 200 and wrong rows** |
+
+**The `machine/machine_group_id` trap, in detail.** That filter looks like it
+works — it returns 200 and a plausible, non-empty, apparently-filtered result
+set. It is actually resolving to the operation's **own** `machine_group_id`
+column (operations carry one too), ignoring the `machine/` prefix entirely.
+Those two values genuinely differ in real data — 5 mismatched operations turned
+up within the first 1,200 rows scanned on test. Verified on operation `460`
+(own group `9`, its machine's group `1`): filtering by the machine's real group
+`1` returned **0 rows**, filtering by `9` returned it. The Laravel service
+filters by the **machine's** group (`whereHas('machine', …)`), so using this
+would have silently produced a subtly wrong report — no error, no empty page,
+just the wrong operations. **Never filter through a nav path here.**
+
+### The fetch strategy this supports
+
+1. **Lookup tables, fetched whole (they're tiny — 54 machines / 14 groups on
+   test):** `Machines` (`$select=id,machine_group_id,name,custom_id`) and
+   `MachineGroups` (`$select=id,name`). This gives the machine → group mapping
+   in Python, which is what makes the next step correct.
+2. **Qualifying stage** — `GET /odata/ProdOrderPosOperations` with only
+   push-down-safe predicates: `start lt {range end}`, `status ne 'DELETED'`,
+   and — when the machine-group filter is set — `machine_id in (…)`, where the
+   id list is resolved from step 1. This is the correct server-side equivalent
+   of the Laravel `whereHas('machine', …)`, verified to return only operations
+   whose machine really is in the requested group.
+3. **Positions** — fetch the referenced `ProdOrderPos` via `id in (…)`
+   (`$select=id,name,due_date,prod_order_id`), batched. The `due_date >= {range
+   start}` predicate is applied **in Python**, since it cannot be expressed in
+   this OData dialect.
+4. **Display stage** — for the orders that qualified, fetch **all** their
+   non-deleted operations (not just the date-qualifying ones), because the
+   source report shows an order's full task chain once the order qualifies.
+5. **Orders** — `ProdOrders` via `id in (…)` for `custom_id`.
+
+Every stage pages with `$top`/`$skip` + a stable `$orderby=id`, looping until a
+short page, since `$count` is unavailable.
 
 ## Computation (port of the Laravel service)
 
@@ -212,11 +241,23 @@ By, Overdue.
 
 ## Error handling
 
-If the CRM call fails (unreachable, non-2xx, auth failure) or a filter is
-malformed, the route renders the report page with an inline error banner rather
-than a 500 — consistent with how this app already tolerates CRM sync failures
-elsewhere. The Excel/PDF routes surface the same failure as an error response
-rather than a corrupt file.
+**An OData error arrives as HTTP 200 with a corrupt body.** Probed and
+confirmed: a bad filter returns `200`, `content-type: application/json`, and a
+body with an `OData-error: {...}` blob spliced into the middle of the JSON, so
+`.json()` raises `JSONDecodeError`. `raise_for_status()` sees nothing wrong.
+
+The adapter must therefore treat a response as failed when **either** the body
+contains the `OData-error` marker **or** JSON parsing fails — raising a
+dedicated exception with the parsed OData `code`/`message` where available.
+Skipping this would let a malformed query surface as an empty report rather
+than an error, which is the same class of silent-wrong-data problem as the nav
+filter trap above.
+
+Beyond that: if the CRM call fails (unreachable, non-2xx, auth failure) or a
+filter is malformed, the route renders the report page with an inline error
+banner rather than a 500 — consistent with how this app already tolerates CRM
+sync failures elsewhere. The Excel/PDF routes surface the same failure as an
+error response rather than a corrupt file.
 
 ## Access control
 
@@ -262,12 +303,21 @@ Following this repo's existing patterns (`tests/test_task_source.py`,
 
 ## Open items
 
-- **Lodata `$filter`-across-navigation-properties support** — must be confirmed
-  against a real instance before the two-stage fetch is finalized; the Python
-  fallback above covers it if unsupported. This is the first implementation
-  task, and its outcome may adjust query shape (not the design).
-- **Service-account access** — the credentials `InHouseTaskSourceProvider`
-  already uses must be able to read the `ProdOrders`/`ProdOrderPos`/
-  `ProdOrderPosOperations` entity sets, not just `Machines`/`Users`/
-  `MachineGroups`. Worth confirming against `crm.test.local` early, since a
-  permissions gap here would be a blocker rather than a code change.
+Both original open items are now **closed** by the probe against
+`crm.test.local` (2026-09-10):
+
+- ~~Lodata `$filter`-across-navigation-properties support~~ — answered: nav-path
+  filters are either a parser error or a silent trap; the fetch strategy above
+  avoids them entirely. See the capability table.
+- ~~Service-account access~~ — confirmed: the existing credentials read all five
+  required entity sets.
+
+Remaining, to check during implementation:
+
+- **Live data volume.** The test instance holds ~3,400 operations total, so
+  paging cost is trivial there. Live will be larger, and the `due_date`
+  predicate cannot be pushed down — so the qualifying stage transfers every
+  non-deleted operation starting before the range end, then narrows in Python.
+  Measure against live-like volume; if it's slow, the mitigation is a tighter
+  default date window and `$select`-trimmed payloads (both already in the
+  design), not a schema change.
