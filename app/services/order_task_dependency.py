@@ -9,8 +9,9 @@ Everything in this module is pure: rows in, rows out, no HTTP and no clock of it
 (`today` is always passed in), which is what makes the sequencing rules cheap to test.
 """
 
+import calendar
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.enums import ProdOrderPosOperationStatus
 from app.services.task_source import MachineInfo, OperationInfo, OrderInfo, PositionInfo
@@ -166,3 +167,120 @@ def filter_overdue_eligible(
 
 def flatten(groups: list[OrderGroup]) -> list[TaskRow]:
     return [task for group in groups for task in group.tasks]
+
+
+class InvalidFilters(ValueError):
+    """The submitted filter values cannot produce a report (bad or reversed dates)."""
+
+
+def _minus_one_month(value: date) -> date:
+    """One calendar month earlier, clamped to the shorter month (31 Mar -> 28 Feb).
+
+    Mirrors Carbon's subMonth() without pulling in dateutil for one call.
+    """
+    year = value.year - 1 if value.month == 1 else value.year
+    month = 12 if value.month == 1 else value.month - 1
+    return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
+
+
+@dataclass(frozen=True)
+class ReportFilters:
+    start: date
+    end: date
+    machine_group_ids: list[int]
+    overdue_only: bool
+
+    @classmethod
+    def parse(
+        cls,
+        start: str | None,
+        end: str | None,
+        machine_group_ids: list[int],
+        overdue_only: bool,
+        today: date,
+    ) -> "ReportFilters":
+        """Resolve the query string. Defaults are deliberately asymmetric, matching the
+        source report: a missing end means today, a missing start means one month before
+        whatever end resolved to."""
+        try:
+            resolved_end = date.fromisoformat(end) if end else today
+            resolved_start = date.fromisoformat(start) if start else _minus_one_month(resolved_end)
+        except ValueError as exc:
+            raise InvalidFilters("Enter each date as YYYY-MM-DD.") from exc
+        if resolved_start > resolved_end:
+            raise InvalidFilters("The start date must fall before the end date.")
+        return cls(
+            start=resolved_start,
+            end=resolved_end,
+            machine_group_ids=machine_group_ids,
+            overdue_only=overdue_only,
+        )
+
+    def describe(self, machine_group_names: dict[int, str]) -> str:
+        parts = [f"{self.start.isoformat()} to {self.end.isoformat()}"]
+        if self.machine_group_ids:
+            named = [machine_group_names.get(i, str(i)) for i in self.machine_group_ids]
+            parts.append("Machine groups: " + ", ".join(named))
+        else:
+            parts.append("All machine groups")
+        if self.overdue_only:
+            parts.append("Overdue only")
+        return " · ".join(parts)
+
+
+def load_report(
+    provider,
+    filters: ReportFilters,
+    today: date,
+    machine_group_names: dict[int, str] | None = None,
+) -> list[OrderGroup]:
+    """Fetch and compute the report.
+
+    Two stages, mirroring the source service's whereHas() + eager-load pair: find the
+    orders that qualify, then load each qualifying order's FULL task chain (an order
+    earns its place on one matching operation, but is displayed in full).
+
+    The due-date predicate is applied here rather than in the query because this OData
+    dialect cannot filter across a navigation property — see the spec.
+    """
+    machines = provider.list_machines()
+    machine_ids = None
+    if filters.machine_group_ids:
+        wanted = set(filters.machine_group_ids)
+        machine_ids = sorted(m.id for m in machines if m.machine_group_id in wanted)
+
+    end_exclusive = datetime.combine(filters.end, time.min, tzinfo=timezone.utc) + timedelta(days=1)
+    candidates = provider.list_operations_started_before(end_exclusive, machine_ids)
+    candidate_position_ids = sorted({o.prod_order_pos_id for o in candidates if o.prod_order_pos_id})
+    if not candidate_position_ids:
+        return []
+
+    candidate_positions = provider.list_positions_by_id(candidate_position_ids)
+    qualifying_order_ids = sorted(
+        {
+            position.prod_order_id
+            for position in candidate_positions
+            if position.prod_order_id and _due_on_or_after(position.due_date, filters.start)
+        }
+    )
+    if not qualifying_order_ids:
+        return []
+
+    positions = provider.list_positions_by_order(qualifying_order_ids)
+    operations = provider.list_operations_by_position([p.id for p in positions])
+    orders = provider.list_orders_by_id(qualifying_order_ids)
+
+    groups = compute_order_groups(
+        operations=operations,
+        positions=positions,
+        orders=orders,
+        machines=machines,
+        machine_group_names=machine_group_names or {},
+        today=today,
+    )
+    return filter_overdue_eligible(groups, filters.machine_group_ids, filters.overdue_only)
+
+
+def _due_on_or_after(due_date: str | None, start: date) -> bool:
+    parsed = _parse(due_date)
+    return parsed is not None and parsed.date() >= start
