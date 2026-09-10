@@ -57,7 +57,12 @@ def _machine_groups(db: Session) -> list[Team]:
 
 
 def _parse_report_filters(
-    start: str | None, end: str | None, machine_group_id: list[int], overdue_only: bool, today: date
+    start: str | None,
+    end: str | None,
+    machine_group_id: list[int],
+    overdue_only: bool,
+    today: date,
+    show_closed: bool = False,
 ) -> ReportFilters:
     return ReportFilters.parse(
         start=start or None,
@@ -65,6 +70,7 @@ def _parse_report_filters(
         machine_group_ids=list(machine_group_id),
         overdue_only=overdue_only,
         today=today,
+        show_closed=show_closed,
     )
 
 
@@ -91,6 +97,7 @@ def order_task_dependency_page(
     end: str | None = None,
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
+    show_closed: bool = False,
 ):
     today = datetime.now(timezone.utc).date()
     machine_groups = _machine_groups(db)
@@ -98,7 +105,7 @@ def order_task_dependency_page(
     error = None
     filters = None
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today, show_closed)
         groups = _load_groups(db, settings, filters, today, machine_groups)
     except InvalidFilters as exc:
         error = str(exc)
@@ -119,6 +126,7 @@ def order_task_dependency_page(
             "start": start or "",
             "end": end or "",
             "overdue_only": overdue_only,
+            "show_closed": show_closed,
             "generated_at": datetime.now(timezone.utc),
         },
     )
@@ -133,11 +141,12 @@ def order_task_dependency_export_xlsx(
     end: str | None = None,
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
+    show_closed: bool = False,
 ):
     today = datetime.now(timezone.utc).date()
     machine_groups = _machine_groups(db)
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today, show_closed)
         groups = _load_groups(db, settings, filters, today, machine_groups)
         content = order_task_dependency_rows_to_xlsx(flatten(groups), "Order Task Dependency")
     except InvalidFilters as exc:
@@ -162,11 +171,12 @@ def order_task_dependency_export_pdf(
     end: str | None = None,
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
+    show_closed: bool = False,
 ):
     today = datetime.now(timezone.utc).date()
     machine_groups = _machine_groups(db)
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today, show_closed)
         groups = _load_groups(db, settings, filters, today, machine_groups)
         content = render_order_task_dependency_pdf(
             groups, summary=filters.describe(_group_names(machine_groups)), generated_at=datetime.now(timezone.utc)

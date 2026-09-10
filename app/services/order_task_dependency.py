@@ -37,6 +37,7 @@ class TaskRow:
     is_blocked: bool
     blocked_by: str | None
     is_overdue: bool
+    is_scheduled_past_due: bool
 
 
 @dataclass(frozen=True)
@@ -140,6 +141,7 @@ def compute_order_groups(
                     is_blocked=is_blocked,
                     blocked_by=predecessor.name if is_blocked else None,
                     is_overdue=_is_overdue(operation, due_date, today),
+                    is_scheduled_past_due=_is_scheduled_past_due(operation, due_date),
                 )
             )
             predecessor = operation
@@ -156,6 +158,21 @@ def _is_overdue(operation: OperationInfo, due_date: datetime | None, today: date
     if due_date is None or _is_closed(operation.status):
         return False
     return due_date.date() < today
+
+
+def _is_scheduled_past_due(operation: OperationInfo, due_date: datetime | None) -> bool:
+    """The task is scheduled to finish after the date it is due.
+
+    This is the report's whole point: when planners push an order's operations out but
+    the position's due_date never follows, the operation reads as overdue while the work
+    around it sits on new dates. Comparing the operation's OWN schedule against its due
+    date is what makes that visible per row. Falls back to `start` when `end` is unset
+    (an operation that is scheduled to begin after it is due is already past due).
+    """
+    scheduled = _parse(operation.end) or _parse(operation.start)
+    if due_date is None or scheduled is None:
+        return False
+    return scheduled.date() > due_date.date()
 
 
 def filter_overdue_eligible(
@@ -177,6 +194,25 @@ def filter_overdue_eligible(
             for task in group.tasks
         )
     ]
+
+
+def hide_closed_tasks(groups: list[OrderGroup], show_closed: bool) -> list[OrderGroup]:
+    """Drop CLOSED tasks from what is displayed, keeping the computed chain intact.
+
+    Applied only after compute_order_groups(): the sequencing and blocked_by of the
+    remaining tasks are derived from the FULL chain, closed predecessors included, so
+    hiding them here changes what is shown without changing what was computed. A task is
+    only ever blocked by a non-closed predecessor, so this can never leave a task
+    pointing at a blocker the reader cannot see. Orders left with no visible task drop out.
+    """
+    if show_closed:
+        return groups
+    kept = []
+    for group in groups:
+        tasks = [task for task in group.tasks if not _is_closed(task.status)]
+        if tasks:
+            kept.append(OrderGroup(order_id=group.order_id, order_custom_id=group.order_custom_id, tasks=tasks))
+    return kept
 
 
 def flatten(groups: list[OrderGroup]) -> list[TaskRow]:
@@ -203,6 +239,7 @@ class ReportFilters:
     end: date
     machine_group_ids: list[int]
     overdue_only: bool
+    show_closed: bool = False
 
     @classmethod
     def parse(
@@ -212,6 +249,7 @@ class ReportFilters:
         machine_group_ids: list[int],
         overdue_only: bool,
         today: date,
+        show_closed: bool = False,
     ) -> "ReportFilters":
         """Resolve the query string. Defaults are deliberately asymmetric, matching the
         source report: a missing end means today, a missing start means one month before
@@ -228,6 +266,7 @@ class ReportFilters:
             end=resolved_end,
             machine_group_ids=machine_group_ids,
             overdue_only=overdue_only,
+            show_closed=show_closed,
         )
 
     def describe(self, machine_group_names: dict[int, str]) -> str:
@@ -239,6 +278,8 @@ class ReportFilters:
             parts.append("All machine groups")
         if self.overdue_only:
             parts.append("Overdue only")
+        if self.show_closed:
+            parts.append("Including closed tasks")
         return " · ".join(parts)
 
 
@@ -292,7 +333,8 @@ def load_report(
         machine_group_names=machine_group_names or {},
         today=today,
     )
-    return filter_overdue_eligible(groups, filters.machine_group_ids, filters.overdue_only)
+    groups = filter_overdue_eligible(groups, filters.machine_group_ids, filters.overdue_only)
+    return hide_closed_tasks(groups, filters.show_closed)
 
 
 def _due_on_or_after(due_date: str | None, start: date) -> bool:

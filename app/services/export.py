@@ -84,12 +84,15 @@ ORDER_TASK_DEPENDENCY_COLUMNS = [
     ("Item", lambda r: r.item_name or ""),
     ("Pos", lambda r: r.pos or ""),
     ("Task", lambda r: r.name or ""),
+    ("Start", lambda r: r.start.strftime("%Y-%m-%d") if r.start else ""),
+    ("End", lambda r: r.end.strftime("%Y-%m-%d") if r.end else ""),
     ("Machine", lambda r: r.machine_name or ""),
     ("Machine Group", lambda r: r.machine_group_name or ""),
     ("Status", lambda r: r.status or ""),
     ("Due Date", lambda r: r.due_date.strftime("%Y-%m-%d") if r.due_date else ""),
     ("Blocked By", lambda r: r.blocked_by or ""),
     ("Overdue", lambda r: "Yes" if r.is_overdue else ""),
+    ("Past Due", lambda r: "Yes" if r.is_scheduled_past_due else ""),
 ]
 
 

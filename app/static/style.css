@@ -160,6 +160,16 @@ a { color: inherit; }
 
 .button-link:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
+/* .button-link was written for <a>; a <button> wearing it still carries the browser's
+   default border, background and font, so Apply and Reset rendered differently. */
+button.button-link {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 /* --- Page shell ------------------------------------------------------------ */
 
 .page {

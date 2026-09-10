@@ -24,6 +24,7 @@ def _task(**overrides):
         is_blocked=True,
         blocked_by="Cutting",
         is_overdue=True,
+        is_scheduled_past_due=False,
     )
     defaults.update(overrides)
     return TaskRow(**defaults)

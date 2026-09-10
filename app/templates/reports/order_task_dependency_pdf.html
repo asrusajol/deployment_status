@@ -28,8 +28,8 @@
   <table>
     <thead>
       <tr>
-        <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
-        <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th>
+        <th>Item</th><th>Pos</th><th>Task</th><th>Start</th><th>End</th><th>Machine</th><th>Machine Group</th>
+        <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th><th>Past Due</th>
       </tr>
     </thead>
     <tbody>
@@ -38,12 +38,15 @@
         <td>{{ task.item_name or "" }}</td>
         <td>{{ task.pos or "" }}</td>
         <td>{{ task.name or "" }}</td>
+        <td>{{ task.start.strftime("%Y-%m-%d") if task.start else "" }}</td>
+        <td>{{ task.end.strftime("%Y-%m-%d") if task.end else "" }}</td>
         <td>{{ task.machine_name or "" }}</td>
         <td>{{ task.machine_group_name or "" }}</td>
         <td>{{ task.status or "" }}</td>
         <td>{{ task.due_date.strftime("%Y-%m-%d") if task.due_date else "" }}</td>
         <td>{{ task.blocked_by or "" }}</td>
         <td>{{ "Yes" if task.is_overdue else "" }}</td>
+        <td>{{ "⚠ Past due" if task.is_scheduled_past_due else "" }}</td>
       </tr>
       {% endfor %}
     </tbody>

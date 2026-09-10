@@ -31,6 +31,7 @@ def task(**overrides):
         is_blocked=True,
         blocked_by="Cutting",
         is_overdue=True,
+        is_scheduled_past_due=False,
     )
     defaults.update(overrides)
     return TaskRow(**defaults)
@@ -101,6 +102,18 @@ def test_filters_are_passed_through_to_the_loader(web, report):
     assert filters.end == date(2026, 9, 30)
     assert filters.machine_group_ids == [13]
     assert filters.overdue_only is True
+
+
+def test_show_closed_reaches_the_loader_when_the_checkbox_is_submitted(web, report):
+    signed_in(web).get(URL, params={"show_closed": "on"})
+
+    assert report["filters"].show_closed is True
+
+
+def test_show_closed_reaches_the_loader_as_false_when_absent(web, report):
+    signed_in(web).get(URL)
+
+    assert report["filters"].show_closed is False
 
 
 def test_an_invalid_date_shows_an_error_banner_not_a_500(web, report):

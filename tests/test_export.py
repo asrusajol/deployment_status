@@ -92,6 +92,7 @@ def _task_row(**overrides):
         is_blocked=True,
         blocked_by="Cutting",
         is_overdue=True,
+        is_scheduled_past_due=False,
     )
     defaults.update(overrides)
     return TaskRow(**defaults)
@@ -102,8 +103,8 @@ def test_order_task_dependency_xlsx_has_the_expected_header_row():
 
     sheet = load_workbook(BytesIO(content)).active
     assert [cell.value for cell in sheet[1]] == [
-        "Order", "Item", "Pos", "Task", "Machine", "Machine Group",
-        "Status", "Due Date", "Blocked By", "Overdue",
+        "Order", "Item", "Pos", "Task", "Start", "End", "Machine", "Machine Group",
+        "Status", "Due Date", "Blocked By", "Overdue", "Past Due",
     ]
 
 
@@ -115,7 +116,7 @@ def test_order_task_dependency_xlsx_writes_one_flat_row_per_task():
     # Due Date is None on this fixture: the getter writes "", which openpyxl
     # round-trips as None on read (the release-tracker test above documents the same).
     assert [cell.value for cell in sheet[2]] == [
-        "PR-00001", "Item A", "0020", "Milling", "M1", "Team Rajib", "PLANNED", None, "Cutting", "Yes",
+        "PR-00001", "Item A", "0020", "Milling", None, None, "M1", "Team Rajib", "PLANNED", None, "Cutting", "Yes", None,
     ]
 
 
@@ -124,5 +125,5 @@ def test_order_task_dependency_xlsx_renders_a_non_overdue_task_blank():
 
     sheet = load_workbook(BytesIO(content)).active
     # Blank, not the string "None" — openpyxl reads an empty-string write back as None.
-    assert sheet["I2"].value is None
-    assert sheet["J2"].value is None
+    assert sheet["K2"].value is None  # Blocked By
+    assert sheet["L2"].value is None  # Overdue

@@ -7,6 +7,7 @@ from app.services.order_task_dependency import (
     compute_order_groups,
     filter_overdue_eligible,
     flatten,
+    hide_closed_tasks,
 )
 from app.services.task_source import MachineInfo, OperationInfo, OrderInfo, PositionInfo
 
@@ -15,15 +16,15 @@ FUTURE = "2026-12-01T00:00:00+00:00"
 PAST = "2026-01-01T00:00:00+00:00"
 
 
-def op(id, pos, status, *, position=12, name=None, machine_id=44):
+def op(id, pos, status, *, position=12, name=None, machine_id=44, start="2026-09-01T00:00:00+00:00", end=None):
     return OperationInfo(
         id=id,
         prod_order_pos_id=position,
         pos=pos,
         name=name or f"op-{id}",
         status=status,
-        start="2026-09-01T00:00:00+00:00",
-        end=None,
+        start=start,
+        end=end,
         machine_id=machine_id,
     )
 
@@ -127,6 +128,61 @@ def test_a_null_due_date_is_never_overdue():
     assert tasks[0].is_overdue is False
 
 
+def test_a_task_scheduled_to_end_after_its_due_date_is_scheduled_past_due():
+    tasks = flatten(
+        compute(
+            [op(1, "0010", "PLANNED", end="2026-09-20T00:00:00+00:00")],
+            position_rows=positions(due_date="2026-09-10T00:00:00+00:00"),
+        )
+    )
+
+    assert tasks[0].is_scheduled_past_due is True
+
+
+def test_a_task_scheduled_to_end_before_its_due_date_is_not_scheduled_past_due():
+    tasks = flatten(
+        compute(
+            [op(1, "0010", "PLANNED", end="2026-09-01T00:00:00+00:00")],
+            position_rows=positions(due_date="2026-09-10T00:00:00+00:00"),
+        )
+    )
+
+    assert tasks[0].is_scheduled_past_due is False
+
+
+def test_a_null_due_date_is_never_scheduled_past_due():
+    tasks = flatten(
+        compute(
+            [op(1, "0010", "PLANNED", end="2026-09-20T00:00:00+00:00")],
+            position_rows=positions(due_date=None),
+        )
+    )
+
+    assert tasks[0].is_scheduled_past_due is False
+
+
+def test_a_fully_unscheduled_task_is_never_scheduled_past_due():
+    tasks = flatten(
+        compute(
+            [op(1, "0010", "PLANNED", start=None, end=None)],
+            position_rows=positions(due_date="2026-09-10T00:00:00+00:00"),
+        )
+    )
+
+    assert tasks[0].is_scheduled_past_due is False
+
+
+def test_a_task_with_no_end_falls_back_to_start_for_scheduled_past_due():
+    tasks = flatten(
+        compute(
+            [op(1, "0010", "PLANNED", start="2026-09-20T00:00:00+00:00", end=None)],
+            position_rows=positions(due_date="2026-09-10T00:00:00+00:00"),
+        )
+    )
+
+    assert tasks[0].is_scheduled_past_due is True
+
+
 def test_an_order_whose_tasks_are_all_closed_is_dropped():
     groups = compute([op(1, "0010", Status.CLOSED.value), op(2, "0020", Status.CLOSED.value)])
 
@@ -201,3 +257,50 @@ def test_parse_still_treats_an_absent_timestamp_as_none():
 
     assert _parse(None) is None
     assert _parse("") is None
+
+
+def test_hide_closed_tasks_drops_only_the_closed_tasks_in_a_mixed_order():
+    groups = compute([op(1, "0010", Status.CLOSED.value), op(2, "0020", "PLANNED")])
+
+    visible = hide_closed_tasks(groups, show_closed=False)
+
+    assert len(visible) == 1
+    assert [t.status for t in visible[0].tasks] == ["PLANNED"]
+
+
+def test_hide_closed_tasks_preserves_the_full_chains_computed_dependency_fields():
+    # op 1 CLOSED, op 2 PLANNED depends on op 1 (not blocked, since predecessor closed).
+    groups = compute([op(1, "0010", Status.CLOSED.value, name="Cutting"), op(2, "0020", "PLANNED")])
+    full_chain_task = flatten(groups)[1]
+
+    visible = hide_closed_tasks(groups, show_closed=False)
+    surviving_task = visible[0].tasks[0]
+
+    assert surviving_task.operation_id == 2
+    assert surviving_task.has_dependency == full_chain_task.has_dependency == True
+    assert surviving_task.is_blocked == full_chain_task.is_blocked == False
+    assert surviving_task.blocked_by == full_chain_task.blocked_by is None
+
+
+def test_hide_closed_tasks_drops_an_order_whose_visible_tasks_all_disappear():
+    # Two positions in one order; one position's only task is closed.
+    operations = [
+        op(1, "0010", Status.CLOSED.value, position=12),
+        op(2, "0010", "PLANNED", position=13),
+    ]
+    rows = [
+        PositionInfo(id=12, prod_order_id=11, name="Item A", due_date=FUTURE),
+        PositionInfo(id=13, prod_order_id=11, name="Item B", due_date=FUTURE),
+    ]
+    groups = compute(operations, position_rows=rows)
+
+    visible = hide_closed_tasks(groups, show_closed=False)
+
+    assert len(visible) == 1
+    assert [t.operation_id for t in visible[0].tasks] == [2]
+
+
+def test_hide_closed_tasks_with_show_closed_true_removes_nothing():
+    groups = compute([op(1, "0010", Status.CLOSED.value), op(2, "0020", "PLANNED")])
+
+    assert hide_closed_tasks(groups, show_closed=True) == groups

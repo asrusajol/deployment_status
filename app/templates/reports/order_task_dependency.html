@@ -11,14 +11,16 @@
   <label>From <input type="date" name="start" value="{{ start }}"></label>
   <label>To <input type="date" name="end" value="{{ end }}"></label>
   <label>Machine group
-    <select name="machine_group_id" multiple size="4">
+    <select name="machine_group_id">
+      <option {% if not selected_machine_group_ids %}selected{% endif %}>All machine groups</option>
       {% for team in machine_groups %}
       <option value="{{ team.id }}" {% if team.id in selected_machine_group_ids %}selected{% endif %}>{{ team.name }}</option>
       {% endfor %}
     </select>
   </label>
   <label><input type="checkbox" name="overdue_only" {% if overdue_only %}checked{% endif %}> Overdue only</label>
-  <button type="submit">Apply</button>
+  <label><input type="checkbox" name="show_closed" {% if show_closed %}checked{% endif %}> Show closed tasks</label>
+  <button type="submit" class="button-link">Apply</button>
   <a class="button-link" href="/reports/order-task-dependency">Reset</a>
 </form>
 
@@ -34,8 +36,8 @@
 <table class="status-table">
   <thead>
     <tr>
-      <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
-      <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th>
+      <th>Item</th><th>Pos</th><th>Task</th><th>Start</th><th>End</th><th>Machine</th><th>Machine Group</th>
+      <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th><th>Past Due</th>
     </tr>
   </thead>
   <tbody>
@@ -44,12 +46,15 @@
       <td>{{ task.item_name or "" }}</td>
       <td>{{ task.pos or "" }}</td>
       <td>{{ task.name or "" }}</td>
+      <td>{{ task.start.strftime("%Y-%m-%d") if task.start else "" }}</td>
+      <td>{{ task.end.strftime("%Y-%m-%d") if task.end else "" }}</td>
       <td>{{ task.machine_name or "" }}</td>
       <td>{{ task.machine_group_name or "" }}</td>
       <td>{{ task.status or "" }}</td>
       <td>{{ task.due_date.strftime("%Y-%m-%d") if task.due_date else "" }}</td>
       <td>{{ task.blocked_by or "" }}</td>
       <td>{{ "Yes" if task.is_overdue else "" }}</td>
+      <td>{{ "⚠ Past due" if task.is_scheduled_past_due else "" }}</td>
     </tr>
     {% endfor %}
   </tbody>
