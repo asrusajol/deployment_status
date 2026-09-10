@@ -65,6 +65,17 @@ def require_admin(current_user: User = Depends(require_login)) -> User:
     return current_user
 
 
+def require_reports_access(current_user: User = Depends(require_login)) -> User:
+    """Reports are readable by admin, devops and team leads.
+
+    A flat role check, deliberately unlike can_approve_deployment_request(): there is no
+    per-team scoping here — a lead who can see reports sees all of them.
+    """
+    if current_user.role not in (UserRole.admin, UserRole.devops, UserRole.team_lead):
+        raise HTTPException(status_code=403, detail="Reports access requires admin, devops or team lead")
+    return current_user
+
+
 def require_admin_or_devops(current_user: User = Depends(require_login)) -> User:
     if current_user.role not in (UserRole.admin, UserRole.devops):
         raise HTTPException(status_code=403, detail="Admin or DevOps access required")

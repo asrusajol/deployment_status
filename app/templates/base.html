@@ -30,6 +30,9 @@
         <a href="/requests">Requests</a>
         <a href="/release-tracker">Release Tracker</a>
         <a href="/clients">Clients</a>
+        {% if current_user.role.value in ["admin", "devops", "team_lead"] %}
+          <a href="/reports">Reports</a>
+        {% endif %}
         {% if current_user.role.value == "admin" %}
           <a href="/admin/users">Admin</a>
         {% endif %}

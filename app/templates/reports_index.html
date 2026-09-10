@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+<div class="report-cards">
+  {% for report in reports %}
+  <a class="report-card" href="/reports/{{ report.slug }}">
+    <h2>{{ report.title }}</h2>
+    <p>{{ report.description }}</p>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

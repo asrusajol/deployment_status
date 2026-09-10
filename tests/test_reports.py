@@ -66,3 +66,54 @@ def test_users_by_team_sorts_unassigned_last(db_session):
     grouped = users_by_team(db_session)
 
     assert list(grouped.keys()) == ["Zebra Team", UNASSIGNED_LABEL]
+
+
+# Tests for the Reports tab web interface
+from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
+
+
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.devops, UserRole.team_lead])
+def test_allowed_roles_can_open_the_reports_tab(web, role):
+    client, session = web
+    make_user(session, id=1, name="U", role=role, username="u", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "u")
+
+    response = client.get("/reports")
+
+    assert response.status_code == 200
+    assert "Order Task Dependency" in response.text
+
+
+def test_a_developer_is_refused(web):
+    client, session = web
+    make_user(session, id=1, name="D", role=UserRole.developer, username="d", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "d")
+
+    assert client.get("/reports").status_code == 403
+
+
+def test_the_nav_link_is_hidden_from_a_developer(web):
+    client, session = web
+    make_user(session, id=1, name="D", role=UserRole.developer, username="d", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "d")
+
+    assert 'href="/reports"' not in client.get("/dashboard").text
+
+
+def test_the_nav_link_is_shown_to_devops(web):
+    client, session = web
+    make_user(session, id=1, name="O", role=UserRole.devops, username="o", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "o")
+
+    assert 'href="/reports"' in client.get("/dashboard").text
+
+
+def test_anonymous_access_redirects_to_login(client):
+    response = client.get("/reports", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
