@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -288,7 +289,159 @@ def test_list_user_contacts_covers_everyone_active_with_no_supervisor_filter():
     ]
 
 
-from app.services.task_source import OdataError, _odata_json
+from app.services.task_source import (
+    MachineInfo,
+    OperationInfo,
+    OrderInfo,
+    PositionInfo,
+    OdataError,
+    _odata_json,
+)
+
+
+def _odata_handler(routes):
+    """Build a MockTransport handler serving /login plus a {path: [rows]} map."""
+
+    def handler(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "1|fake"})
+        rows = routes.get(request.url.path)
+        if rows is None:
+            raise AssertionError(f"unexpected path {request.url.path} ({request.url.query!r})")
+        skip = int(request.url.params.get("$skip", 0))
+        top = int(request.url.params.get("$top", 100))
+        return httpx.Response(200, json={"value": rows[skip : skip + top]})
+
+    return handler
+
+
+def test_list_machines_returns_the_group_mapping():
+    handler = _odata_handler(
+        {"/odata/Machines": [{"id": 44, "name": "Rajib", "custom_id": "101088", "machine_group_id": 13}]}
+    )
+
+    machines = _make_provider(handler).list_machines()
+
+    assert machines == [MachineInfo(id=44, name="Rajib", custom_id="101088", machine_group_id=13)]
+
+
+def test_list_operations_filters_on_own_fields_only_and_never_a_nav_path():
+    captured = {}
+
+    def handler(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "1|fake"})
+        captured["filter"] = request.url.params.get("$filter")
+        return httpx.Response(200, json={"value": []})
+
+    provider = _make_provider(handler)
+    provider.list_operations_started_before(datetime(2026, 9, 30, tzinfo=timezone.utc), machine_ids=[44, 45])
+
+    flt = captured["filter"]
+    assert "start lt 2026-09-30T00:00:00Z" in flt
+    assert "status ne 'DELETED'" in flt
+    assert "machine_id in (44,45)" in flt
+    # The trap: filtering through a nav path silently returns the wrong rows.
+    assert "machine/" not in flt
+    assert "prodOrderPos/" not in flt
+
+
+def test_list_operations_omits_the_machine_clause_when_no_group_filter():
+    captured = {}
+
+    def handler(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "1|fake"})
+        captured["filter"] = request.url.params.get("$filter")
+        return httpx.Response(200, json={"value": []})
+
+    provider = _make_provider(handler)
+    provider.list_operations_started_before(datetime(2026, 9, 30, tzinfo=timezone.utc), machine_ids=None)
+
+    assert "machine_id in" not in captured["filter"]
+
+
+def test_list_operations_maps_rows_to_operation_info():
+    handler = _odata_handler(
+        {
+            "/odata/ProdOrderPosOperations": [
+                {
+                    "id": 3363,
+                    "prod_order_pos_id": 12,
+                    "pos": "0070",
+                    "name": "Deployment Test system",
+                    "status": "PLANNED",
+                    "start": "2026-09-03T04:00:00+00:00",
+                    "end": None,
+                    "machine_id": 44,
+                }
+            ]
+        }
+    )
+
+    operations = _make_provider(handler).list_operations_started_before(
+        datetime(2026, 9, 30, tzinfo=timezone.utc), machine_ids=None
+    )
+
+    assert operations == [
+        OperationInfo(
+            id=3363,
+            prod_order_pos_id=12,
+            pos="0070",
+            name="Deployment Test system",
+            status="PLANNED",
+            start="2026-09-03T04:00:00+00:00",
+            end=None,
+            machine_id=44,
+        )
+    ]
+
+
+def test_list_positions_by_id_batches_the_in_clause():
+    seen = []
+
+    def handler(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "1|fake"})
+        seen.append(request.url.params.get("$filter"))
+        return httpx.Response(200, json={"value": []})
+
+    provider = _make_provider(handler)
+    provider.list_positions_by_id(list(range(1, 251)), batch_size=100)
+
+    assert len(seen) == 3
+    assert seen[0].startswith("id in (1,2,")
+    assert "250" in seen[-1]
+
+
+def test_list_positions_by_id_returns_nothing_without_querying_for_an_empty_input():
+    def handler(request):
+        raise AssertionError("should not have issued a request")
+
+    provider = _make_provider(handler)
+    assert provider.list_positions_by_id([]) == []
+
+
+def test_list_positions_by_order_maps_rows():
+    handler = _odata_handler(
+        {
+            "/odata/ProdOrderPos": [
+                {"id": 12, "prod_order_id": 11, "name": "Deployment Volaplast", "due_date": "2026-04-06T00:00:00+00:00"}
+            ]
+        }
+    )
+
+    positions = _make_provider(handler).list_positions_by_order([11])
+
+    assert positions == [
+        PositionInfo(id=12, prod_order_id=11, name="Deployment Volaplast", due_date="2026-04-06T00:00:00+00:00")
+    ]
+
+
+def test_list_orders_by_id_maps_rows():
+    handler = _odata_handler({"/odata/ProdOrders": [{"id": 11, "custom_id": "PR-00001"}]})
+
+    assert _make_provider(handler).list_orders_by_id([11]) == [OrderInfo(id=11, custom_id="PR-00001")]
 
 
 def test_odata_json_raises_on_error_marker_inside_a_200():

@@ -13,11 +13,13 @@ response shapes are available (see project_plan.md, Section 12 — open inputs n
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 import httpx
 
 from app.config import Settings
+from app.enums import ProdOrderPosOperationStatus
 
 
 @dataclass
@@ -87,6 +89,48 @@ TEAM_LEAD_USER_GROUP_CUSTOM_ID = "UG-00002"
 # excluded — confirmed against live data: the unfiltered customer list has 8,478 rows
 # with 41 colliding names, this filtered set has 44 rows with none.
 CLIENT_SALES_STATUS_IDS = (14, 7, 24, 50, 51)
+
+
+@dataclass(frozen=True)
+class MachineInfo:
+    """A CRM Machine, used only for its machine_group_id.
+
+    The machine's OWN group is the one that matters: an operation also carries a
+    machine_group_id column, and the two genuinely differ in real data — filtering
+    through the nav path `machine/machine_group_id` silently returns the operation's
+    column instead, which is why group filtering resolves machine ids here first.
+    """
+
+    id: int
+    name: str | None
+    custom_id: str | None
+    machine_group_id: int | None
+
+
+@dataclass(frozen=True)
+class OperationInfo:
+    id: int
+    prod_order_pos_id: int | None
+    pos: str | None
+    name: str | None
+    status: str | None
+    start: str | None  # UTC ISO-8601 as returned by the CRM
+    end: str | None
+    machine_id: int | None
+
+
+@dataclass(frozen=True)
+class PositionInfo:
+    id: int
+    prod_order_id: int | None
+    name: str | None
+    due_date: str | None
+
+
+@dataclass(frozen=True)
+class OrderInfo:
+    id: int
+    custom_id: str | None
 
 
 @dataclass
@@ -510,3 +554,119 @@ class InHouseTaskSourceProvider:
                 )
             )
         return results
+
+    # --- Order Task Dependency report ---------------------------------------
+    #
+    # Only ever filters on an entity's OWN fields. Nav-path filters are unusable here:
+    # `prodOrderPos/due_date ge ...` is a parser error, and `machine/machine_group_id`
+    # silently resolves to the operation's own column and returns the wrong rows.
+    # See docs/superpowers/specs/2026-09-09-order-task-dependency-report-design.md.
+
+    _OPERATION_SELECT = "id,prod_order_pos_id,pos,name,status,start,end,machine_id"
+    _POSITION_SELECT = "id,prod_order_id,name,due_date"
+
+    def list_machines(self) -> list[MachineInfo]:
+        rows = self._odata_get_all(
+            "/odata/Machines",
+            {"$select": "id,name,custom_id,machine_group_id", "$orderby": "id"},
+            page_size=200,
+        )
+        return [
+            MachineInfo(
+                id=row["id"],
+                name=row.get("name"),
+                custom_id=row.get("custom_id"),
+                machine_group_id=row.get("machine_group_id"),
+            )
+            for row in rows
+        ]
+
+    def list_operations_started_before(
+        self, end: datetime, machine_ids: list[int] | None
+    ) -> list[OperationInfo]:
+        clauses = [
+            f"start lt {end.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+            f"status ne '{ProdOrderPosOperationStatus.DELETED.value}'",
+        ]
+        if machine_ids is not None:
+            if not machine_ids:
+                return []
+            clauses.append(f"machine_id in ({','.join(str(i) for i in machine_ids)})")
+        rows = self._odata_get_all(
+            "/odata/ProdOrderPosOperations",
+            {"$select": self._OPERATION_SELECT, "$filter": " and ".join(clauses), "$orderby": "id"},
+            page_size=200,
+        )
+        return [self._operation(row) for row in rows]
+
+    def list_operations_by_position(self, position_ids: list[int]) -> list[OperationInfo]:
+        rows = self._in_batches(
+            "/odata/ProdOrderPosOperations",
+            "prod_order_pos_id",
+            position_ids,
+            self._OPERATION_SELECT,
+            extra_clause=f"status ne '{ProdOrderPosOperationStatus.DELETED.value}'",
+        )
+        return [self._operation(row) for row in rows]
+
+    def list_positions_by_id(self, position_ids: list[int], batch_size: int = 100) -> list[PositionInfo]:
+        rows = self._in_batches(
+            "/odata/ProdOrderPos", "id", position_ids, self._POSITION_SELECT, batch_size=batch_size
+        )
+        return [self._position(row) for row in rows]
+
+    def list_positions_by_order(self, order_ids: list[int]) -> list[PositionInfo]:
+        rows = self._in_batches("/odata/ProdOrderPos", "prod_order_id", order_ids, self._POSITION_SELECT)
+        return [self._position(row) for row in rows]
+
+    def list_orders_by_id(self, order_ids: list[int]) -> list[OrderInfo]:
+        rows = self._in_batches("/odata/ProdOrders", "id", order_ids, "id,custom_id")
+        return [OrderInfo(id=row["id"], custom_id=row.get("custom_id")) for row in rows]
+
+    def _in_batches(
+        self,
+        path: str,
+        field: str,
+        ids: list[int],
+        select: str,
+        extra_clause: str | None = None,
+        batch_size: int = 100,
+    ) -> list[dict]:
+        """Fetch `path` where `field` is in `ids`, in url-length-safe batches.
+
+        The `in (...)` operator is supported here (unlike nav-path filters); batching is
+        only about keeping the query string sane, not a server limitation.
+        """
+        rows: list[dict] = []
+        unique = sorted(set(ids))
+        for offset in range(0, len(unique), batch_size):
+            chunk = unique[offset : offset + batch_size]
+            clause = f"{field} in ({','.join(str(i) for i in chunk)})"
+            if extra_clause:
+                clause = f"{clause} and {extra_clause}"
+            rows.extend(
+                self._odata_get_all(path, {"$select": select, "$filter": clause, "$orderby": "id"}, page_size=200)
+            )
+        return rows
+
+    @staticmethod
+    def _operation(row: dict) -> OperationInfo:
+        return OperationInfo(
+            id=row["id"],
+            prod_order_pos_id=row.get("prod_order_pos_id"),
+            pos=row.get("pos"),
+            name=row.get("name"),
+            status=row.get("status"),
+            start=row.get("start"),
+            end=row.get("end"),
+            machine_id=row.get("machine_id"),
+        )
+
+    @staticmethod
+    def _position(row: dict) -> PositionInfo:
+        return PositionInfo(
+            id=row["id"],
+            prod_order_id=row.get("prod_order_id"),
+            name=row.get("name"),
+            due_date=row.get("due_date"),
+        )
