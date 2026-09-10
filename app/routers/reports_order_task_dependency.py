@@ -9,6 +9,7 @@ about what is currently filtered.
 from datetime import date, datetime, timezone
 from io import BytesIO
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -22,13 +23,14 @@ from app.models.team import Team
 from app.models.user import User
 from app.services.export import order_task_dependency_rows_to_xlsx
 from app.services.order_task_dependency import (
+    InvalidCrmTimestamp,
     InvalidFilters,
     ReportFilters,
     flatten,
     load_report,
 )
 from app.services.report_pdf import render_order_task_dependency_pdf
-from app.services.task_source import InHouseTaskSourceProvider
+from app.services.task_source import InHouseTaskSourceProvider, OdataError
 from app.static_version import STATIC_VERSION
 
 router = APIRouter()
@@ -36,6 +38,11 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
 
 CRM_FAILURE_MESSAGE = "The report could not be loaded from the CRM. Try again, or check that the CRM is reachable."
+
+# Failures that mean "the CRM did not give us usable data" — these degrade to a banner.
+# Anything else (TypeError, KeyError, a bug in the computation) is a real defect and must
+# surface as a 500 rather than be disguised as a connectivity problem.
+CRM_FAILURES = (httpx.HTTPError, OSError, OdataError, InvalidCrmTimestamp)
 
 
 def build_provider(settings: Settings) -> InHouseTaskSourceProvider:
@@ -50,27 +57,27 @@ def _machine_groups(db: Session) -> list[Team]:
 
 
 def _parse_report_filters(
-    start: str | None, end: str | None, machine_group_id: list[int], overdue_only: bool
+    start: str | None, end: str | None, machine_group_id: list[int], overdue_only: bool, today: date
 ) -> ReportFilters:
     return ReportFilters.parse(
         start=start or None,
         end=end or None,
         machine_group_ids=list(machine_group_id),
         overdue_only=overdue_only,
-        today=date.today(),
+        today=today,
     )
 
 
-def _group_names(db: Session) -> dict[int, str]:
-    return {team.id: team.name for team in _machine_groups(db)}
+def _group_names(machine_groups: list[Team]) -> dict[int, str]:
+    return {team.id: team.name for team in machine_groups}
 
 
-def _load_groups(db: Session, settings: Settings, filters: ReportFilters):
+def _load_groups(db: Session, settings: Settings, filters: ReportFilters, today: date, machine_groups: list[Team]):
     return load_report(
         build_provider(settings),
         filters,
-        today=date.today(),
-        machine_group_names=_group_names(db),
+        today=today,
+        machine_group_names=_group_names(machine_groups),
     )
 
 
@@ -85,16 +92,18 @@ def order_task_dependency_page(
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
 ):
+    today = datetime.now(timezone.utc).date()
+    machine_groups = _machine_groups(db)
     groups: list = []
     error = None
     filters = None
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only)
-        groups = _load_groups(db, settings, filters)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        groups = _load_groups(db, settings, filters, today, machine_groups)
     except InvalidFilters as exc:
         error = str(exc)
-    except Exception:  # noqa: BLE001 — any CRM/transport failure degrades to a banner
-        error = CRM_FAILURE_MESSAGE
+    except CRM_FAILURES as exc:  # any CRM/transport failure degrades to a banner
+        error = f"{CRM_FAILURE_MESSAGE} ({exc})"
 
     return templates.TemplateResponse(
         request,
@@ -105,7 +114,7 @@ def order_task_dependency_page(
             "tasks": flatten(groups),
             "error": error,
             "filters": filters,
-            "machine_groups": _machine_groups(db),
+            "machine_groups": machine_groups,
             "selected_machine_group_ids": list(machine_group_id),
             "start": start or "",
             "end": end or "",
@@ -125,15 +134,17 @@ def order_task_dependency_export_xlsx(
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
 ):
+    today = datetime.now(timezone.utc).date()
+    machine_groups = _machine_groups(db)
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only)
-        groups = _load_groups(db, settings, filters)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        groups = _load_groups(db, settings, filters, today, machine_groups)
+        content = order_task_dependency_rows_to_xlsx(flatten(groups), "Order Task Dependency")
     except InvalidFilters as exc:
         return PlainTextResponse(str(exc), status_code=400)
-    except Exception:  # noqa: BLE001 — never hand back a corrupt workbook
-        return PlainTextResponse(CRM_FAILURE_MESSAGE, status_code=502)
+    except CRM_FAILURES as exc:  # never hand back a corrupt workbook
+        return PlainTextResponse(f"{CRM_FAILURE_MESSAGE} ({exc})", status_code=502)
 
-    content = order_task_dependency_rows_to_xlsx(flatten(groups), "Order Task Dependency")
     filename = f"order-task-dependency-{filters.start.isoformat()}-to-{filters.end.isoformat()}.xlsx"
     return StreamingResponse(
         BytesIO(content),
@@ -152,17 +163,19 @@ def order_task_dependency_export_pdf(
     machine_group_id: list[int] = Query(default=[]),
     overdue_only: bool = False,
 ):
+    today = datetime.now(timezone.utc).date()
+    machine_groups = _machine_groups(db)
     try:
-        filters = _parse_report_filters(start, end, machine_group_id, overdue_only)
-        groups = _load_groups(db, settings, filters)
+        filters = _parse_report_filters(start, end, machine_group_id, overdue_only, today)
+        groups = _load_groups(db, settings, filters, today, machine_groups)
+        content = render_order_task_dependency_pdf(
+            groups, summary=filters.describe(_group_names(machine_groups)), generated_at=datetime.now(timezone.utc)
+        )
     except InvalidFilters as exc:
         return PlainTextResponse(str(exc), status_code=400)
-    except Exception:  # noqa: BLE001
-        return PlainTextResponse(CRM_FAILURE_MESSAGE, status_code=502)
+    except CRM_FAILURES as exc:
+        return PlainTextResponse(f"{CRM_FAILURE_MESSAGE} ({exc})", status_code=502)
 
-    content = render_order_task_dependency_pdf(
-        groups, summary=filters.describe(_group_names(db)), generated_at=datetime.now(timezone.utc)
-    )
     filename = f"order-task-dependency-{filters.start.isoformat()}-to-{filters.end.isoformat()}.pdf"
     return Response(
         content,

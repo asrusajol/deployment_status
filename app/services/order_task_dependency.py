@@ -46,13 +46,27 @@ class OrderGroup:
     tasks: list[TaskRow]
 
 
+class InvalidCrmTimestamp(ValueError):
+    """A CRM timestamp could not be parsed.
+
+    Deliberately loud. Returning None here instead would silently un-flag an overdue
+    task, or empty the whole report via _due_on_or_after — the same class of
+    confidently-wrong output this module already guards against elsewhere. An absent
+    value is legitimate and still returns None; only a present-but-unparseable one raises.
+    """
+
+
 def _parse(timestamp: str | None) -> datetime | None:
     if not timestamp:
         return None
+    # Python 3.10's fromisoformat rejects a trailing "Z"; live data currently sends
+    # "+00:00", but the CRM is not uniform across endpoints (see sync.py, which parses
+    # a third format), so normalise rather than trust one observation.
+    normalised = timestamp[:-1] + "+00:00" if timestamp.endswith("Z") else timestamp
     try:
-        return datetime.fromisoformat(timestamp)
-    except ValueError:
-        return None
+        return datetime.fromisoformat(normalised)
+    except ValueError as exc:
+        raise InvalidCrmTimestamp(f"CRM sent an unparseable timestamp: {timestamp!r}") from exc
 
 
 def _pos_key(pos: str | None) -> int:
@@ -92,7 +106,7 @@ def compute_order_groups(
         by_position.setdefault(operation.prod_order_pos_id, []).append(operation)
 
     tasks_by_order: dict[int, list[TaskRow]] = {}
-    for position_id, position_operations in by_position.items():
+    for position_id, position_operations in sorted(by_position.items()):
         position = positions_by_id[position_id]
         order = orders_by_id.get(position.prod_order_id)
         if order is None:

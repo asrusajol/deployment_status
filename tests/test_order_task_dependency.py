@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from app.enums import ProdOrderPosOperationStatus as Status
 from app.services.order_task_dependency import (
     compute_order_groups,
@@ -179,3 +181,23 @@ def test_overdue_only_respects_the_machine_group_filter():
 
     assert filter_overdue_eligible(groups, machine_group_ids=[13], overdue_only=True) == groups
     assert filter_overdue_eligible(groups, machine_group_ids=[99], overdue_only=True) == []
+
+
+def test_parse_accepts_the_z_suffix_python_310_rejects():
+    from app.services.order_task_dependency import _parse
+
+    assert _parse("2026-04-06T00:00:00Z") == _parse("2026-04-06T00:00:00+00:00")
+
+
+def test_parse_raises_on_a_present_but_unparseable_timestamp():
+    from app.services.order_task_dependency import InvalidCrmTimestamp, _parse
+
+    with pytest.raises(InvalidCrmTimestamp):
+        _parse("06/04/2026 garbage")
+
+
+def test_parse_still_treats_an_absent_timestamp_as_none():
+    from app.services.order_task_dependency import _parse
+
+    assert _parse(None) is None
+    assert _parse("") is None

@@ -47,3 +47,17 @@ def test_renders_with_no_orders():
     content = render_order_task_dependency_pdf([], summary="No filters", generated_at=GENERATED_AT)
 
     assert content.startswith(b"%PDF-")
+
+
+def test_pdf_template_renders_the_task_rows():
+    from app.services.report_pdf import _env
+
+    html = _env.get_template("reports/order_task_dependency_pdf.html").render(
+        groups=[OrderGroup(order_id=11, order_custom_id="PR-00001", tasks=[_task()])],
+        summary="filters",
+        generated_at=GENERATED_AT,
+    )
+
+    assert "PR-00001" in html
+    assert "Milling" in html
+    assert "Cutting" in html  # blocked_by must reach the document
