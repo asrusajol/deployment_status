@@ -111,7 +111,7 @@ def test_an_invalid_date_shows_an_error_banner_not_a_500(web, report):
 
 
 def test_a_crm_failure_shows_an_error_banner_not_a_500(web, monkeypatch):
-    def boom(provider, filters, today):
+    def boom(provider, filters, today, machine_group_names=None):
         raise OSError("crm.test.local unreachable")
 
     monkeypatch.setattr(report_module, "load_report", boom)

@@ -1053,3 +1053,54 @@ code {
   font-family: var(--font-body);
   font-weight: 500;
 }
+
+/* Reports tab: the landing page's report list, and the Order Task Dependency table. */
+.report-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.report-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  text-decoration: none;
+  transition: background-color 0.12s ease;
+}
+
+.report-card:hover {
+  background: var(--panel-raised);
+}
+
+.report-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.report-card p {
+  margin: 0;
+  color: var(--fog);
+  font-size: 0.85rem;
+}
+
+.filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--fog);
+  font-size: 0.85rem;
+}
+
+/* Overdue rows need to stay tinted through :hover, which .status-table sets on every
+   row — hence the matching hover rule rather than a single background declaration. */
+.status-table tbody tr.row-overdue {
+  background: var(--red-dim);
+}
+
+.status-table tbody tr.row-overdue:hover {
+  background: var(--red-dim);
+}

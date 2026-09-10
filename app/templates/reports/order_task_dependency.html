@@ -4,7 +4,7 @@
 <h1>Order Task Dependency</h1>
 
 {% if error %}
-<p class="error-banner">{{ error }}</p>
+<p class="error">{{ error }}</p>
 {% endif %}
 
 <form method="get" action="/reports/order-task-dependency" class="filter-bar">
@@ -31,7 +31,7 @@
 
 {% for group in groups %}
 <h2>{{ group.order_custom_id }}</h2>
-<table class="data-table">
+<table class="status-table">
   <thead>
     <tr>
       <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
