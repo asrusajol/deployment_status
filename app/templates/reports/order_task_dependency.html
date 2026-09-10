@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Order Task Dependency{% endblock %}
+{% block content %}
+<h1>Order Task Dependency</h1>
+
+{% if error %}
+<p class="error-banner">{{ error }}</p>
+{% endif %}
+
+<form method="get" action="/reports/order-task-dependency" class="filter-bar">
+  <label>From <input type="date" name="start" value="{{ start }}"></label>
+  <label>To <input type="date" name="end" value="{{ end }}"></label>
+  <label>Machine group
+    <select name="machine_group_id" multiple size="4">
+      {% for team in machine_groups %}
+      <option value="{{ team.id }}" {% if team.id in selected_machine_group_ids %}selected{% endif %}>{{ team.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="overdue_only" {% if overdue_only %}checked{% endif %}> Overdue only</label>
+  <button type="submit">Apply</button>
+  <a class="button-link" href="/reports/order-task-dependency">Reset</a>
+</form>
+
+{% if groups %}
+<p class="filter-summary">
+  {{ tasks|length }} task{{ '' if tasks|length == 1 else 's' }} across {{ groups|length }} order{{ '' if groups|length == 1 else 's' }}
+  <a class="button-link" href="/reports/order-task-dependency/export.xlsx?{{ request.url.query }}">Export to Excel</a>
+  <a class="button-link" href="/reports/order-task-dependency/export.pdf?{{ request.url.query }}">Download PDF</a>
+</p>
+
+{% for group in groups %}
+<h2>{{ group.order_custom_id }}</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Item</th><th>Pos</th><th>Task</th><th>Machine</th><th>Machine Group</th>
+      <th>Status</th><th>Due Date</th><th>Blocked By</th><th>Overdue</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in group.tasks %}
+    <tr {% if task.is_overdue %}class="row-overdue"{% endif %}>
+      <td>{{ task.item_name or "" }}</td>
+      <td>{{ task.pos or "" }}</td>
+      <td>{{ task.name or "" }}</td>
+      <td>{{ task.machine_name or "" }}</td>
+      <td>{{ task.machine_group_name or "" }}</td>
+      <td>{{ task.status or "" }}</td>
+      <td>{{ task.due_date.strftime("%Y-%m-%d") if task.due_date else "" }}</td>
+      <td>{{ task.blocked_by or "" }}</td>
+      <td>{{ "Yes" if task.is_overdue else "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+{% elif not error %}
+<p class="empty-state">No orders match these filters.</p>
+{% endif %}
+{% endblock %}
