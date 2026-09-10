@@ -132,7 +132,7 @@ def compute_order_groups(
     groups = [
         OrderGroup(order_id=order_id, order_custom_id=orders_by_id[order_id].custom_id, tasks=tasks)
         for order_id, tasks in tasks_by_order.items()
-        if tasks and (len(tasks) <= 1 or any(not _is_closed(task.status) for task in tasks))
+        if tasks and any(not _is_closed(task.status) for task in tasks)
     ]
     return sorted(groups, key=lambda g: g.order_custom_id or "")
 

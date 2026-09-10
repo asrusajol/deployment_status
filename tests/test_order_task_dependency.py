@@ -103,11 +103,19 @@ def test_deleted_operations_are_excluded():
 
 def test_overdue_requires_a_past_due_date_and_an_unfinished_operation():
     overdue = flatten(compute([op(1, "0010", "PLANNED")], position_rows=positions(due_date=PAST)))
-    closed = flatten(compute([op(1, "0010", Status.CLOSED.value)], position_rows=positions(due_date=PAST)))
+    # The CLOSED operation needs an open sibling: an order whose tasks are ALL closed is
+    # dropped wholesale, so a lone closed task would leave nothing to assert against.
+    mixed = flatten(
+        compute(
+            [op(1, "0010", Status.CLOSED.value), op(2, "0020", "PLANNED")],
+            position_rows=positions(due_date=PAST),
+        )
+    )
     future = flatten(compute([op(1, "0010", "PLANNED")], position_rows=positions(due_date=FUTURE)))
 
     assert overdue[0].is_overdue is True
-    assert closed[0].is_overdue is False
+    assert mixed[0].is_overdue is False  # closed is never overdue, even past its due date
+    assert mixed[1].is_overdue is True  # open and past due
     assert future[0].is_overdue is False
 
 
@@ -121,6 +129,11 @@ def test_an_order_whose_tasks_are_all_closed_is_dropped():
     groups = compute([op(1, "0010", Status.CLOSED.value), op(2, "0020", Status.CLOSED.value)])
 
     assert groups == []
+
+
+def test_an_order_with_a_single_closed_task_is_dropped_like_any_other_all_closed_order():
+    # Guards against special-casing the one-task case out of the all-closed rule.
+    assert compute([op(1, "0010", Status.CLOSED.value)]) == []
 
 
 def test_machine_and_group_are_resolved_from_the_machine_not_the_operation():
