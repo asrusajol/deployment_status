@@ -153,6 +153,28 @@ def _extract_token(payload: dict) -> str:
     return token
 
 
+class OdataError(RuntimeError):
+    """An OData request failed.
+
+    The CRM reports OData failures as HTTP 200 with `application/json` and an
+    "OData-error" blob spliced into the middle of the body, which leaves the JSON
+    unparseable — raise_for_status() sees a perfectly good response. Every OData read
+    goes through _odata_json() so a bad query surfaces as this exception instead of an
+    empty result set (a silently empty report is indistinguishable from "no data").
+    """
+
+
+def _odata_json(response: httpx.Response) -> dict:
+    text = response.text
+    if "OData-error" in text:
+        detail = text[text.index("OData-error") :][:300]
+        raise OdataError(f"CRM returned an OData error: {detail}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise OdataError(f"CRM response could not be parsed as JSON: {text[:200]!r}") from exc
+
+
 class InHouseTaskSourceProvider:
     """Talks to the in-house CRM API at settings.task_api_base_url.
 
@@ -243,7 +265,7 @@ class InHouseTaskSourceProvider:
         while True:
             page_params = {**params, "$top": page_size, "$skip": skip}
             response = self._request("GET", url, params=page_params)
-            page = response.json().get("value", [])
+            page = _odata_json(response).get("value", [])
             items.extend(page)
             if len(page) < page_size:
                 return items
@@ -262,7 +284,7 @@ class InHouseTaskSourceProvider:
         while True:
             page_params = {**params, "take": page_size, "skip": skip}
             response = self._request("GET", path, params=page_params)
-            page = response.json().get("value", [])
+            page = _odata_json(response).get("value", [])
             items.extend(page)
             if len(page) < page_size:
                 return items
@@ -280,7 +302,7 @@ class InHouseTaskSourceProvider:
         while True:
             page_params = {**params, "$top": page_size, "$skip": skip}
             response = self._request("GET", path, params=page_params)
-            page = response.json().get("value", [])
+            page = _odata_json(response).get("value", [])
             items.extend(page)
             if len(page) < page_size:
                 return items

@@ -288,6 +288,36 @@ def test_list_user_contacts_covers_everyone_active_with_no_supervisor_filter():
     ]
 
 
+from app.services.task_source import OdataError, _odata_json
+
+
+def test_odata_json_raises_on_error_marker_inside_a_200():
+    # The real CRM returns 200 + application/json with an OData-error blob spliced
+    # into the middle of the body, so raise_for_status() sees nothing wrong.
+    body = (
+        '{"@context":"http://crm.test.local/odata/$metadata#ProdOrderPosOperations",'
+        '"value":[OData-error: {"code":"expression_parser_error",'
+        '"message":"Encountered an invalid symbol at: >b<ogus eq 1"}'
+    )
+    response = httpx.Response(200, text=body, headers={"content-type": "application/json"})
+
+    with pytest.raises(OdataError, match="expression_parser_error"):
+        _odata_json(response)
+
+
+def test_odata_json_raises_on_unparseable_body_without_a_marker():
+    response = httpx.Response(200, text="<html>gateway timeout</html>")
+
+    with pytest.raises(OdataError, match="could not be parsed"):
+        _odata_json(response)
+
+
+def test_odata_json_returns_the_payload_when_healthy():
+    response = httpx.Response(200, json={"value": [{"id": 1}]})
+
+    assert _odata_json(response) == {"value": [{"id": 1}]}
+
+
 def test_rest_get_all_pages_via_take_skip_not_odata_style():
     all_rows = [{"id": i} for i in range(5)]
 
