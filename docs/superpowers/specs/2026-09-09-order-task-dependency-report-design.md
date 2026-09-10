@@ -318,6 +318,5 @@ Remaining, to check during implementation:
   paging cost is trivial there. Live will be larger, and the `due_date`
   predicate cannot be pushed down — so the qualifying stage transfers every
   non-deleted operation starting before the range end, then narrows in Python.
-  Measure against live-like volume; if it's slow, the mitigation is a tighter
-  default date window and `$select`-trimmed payloads (both already in the
-  design), not a schema change.
+  Measured on `crm.test.local` 2026-09-10: 100 orders / 654 tasks in 19.7s for the default
+  one-month window. Re-measure against live volume before relying on it there.

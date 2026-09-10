@@ -146,6 +146,17 @@ forced to `/change-password` before you can do anything else (see below).
   This is also the only way `devops`/`admin` roles get assigned today — CRM sync only
   ever promotes `developer` → `team_lead` (see `sync_team_leads()` below), so before this
   page existed those two roles were permanently unreachable.
+- **`/reports`** — the Reports tab (admin, devops and team leads only). Today it holds
+  one report, **Order Task Dependency** (`/reports/order-task-dependency`): per
+  production order, which tasks are blocked by an unfinished predecessor and which are
+  overdue, filterable by date range, machine group and overdue-only, with Excel and PDF
+  export. It reads the CRM live on each request — there is no local table behind it, and
+  nothing is cached. The dependency/overdue logic is computed here rather than by the
+  CRM: the CRM's own version of this report exists only on a feature branch that will
+  never reach the live system, so this app derives it from the raw OData entity sets that
+  do exist there. See
+  `docs/superpowers/specs/2026-09-09-order-task-dependency-report-design.md` — in
+  particular the two OData traps documented there before changing any query.
 - **`/change-password`** — available any time from the nav, not just when forced.
 
 This is a simplified one-step "mark deployed" flow rather than the full
