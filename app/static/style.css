@@ -285,10 +285,19 @@ h1 {
 .requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
 .requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
 .requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
-/* System and Version trimmed (from 140/80px) to make room for URL below without
-   growing the table further than necessary — System's badge and Version's short
-   value both still fit without wrapping at these widths. */
-.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 100px; }  /* System */
+/* System holds a badge, and for a test.local request that badge is the full hostname
+   (e.g. "orga.test.local") in a monospace face — ~15 characters at 0.72rem plus badge
+   and cell padding, so it needs ~155px. An earlier pass trimmed this to 100px to make
+   room for the URL column, on the assumption the badge still fit; that only held for the
+   short "Test"/"Live" badges. At 100px the hostname badge overflowed its cell and ran
+   into the neighbouring column. The width taken back here comes off Changes below, so
+   the table is no wider than before. Check a *.test.local row, not a Test/Live one,
+   before trimming this again. */
+.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 155px; }  /* System */
+/* Belt and braces for the column above: table-layout: fixed does NOT clip an oversized
+   cell, it lets the content spill over the next column. Clipping keeps any future
+   longer-than-expected hostname contained in its own cell instead of overlapping URL. */
+.requests-table td:nth-child(5) { overflow: hidden; }
 .requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 150px; }  /* URL */
 .requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
 /* Trimmed from 260px — confirmed in a real browser this column was the single biggest
@@ -297,7 +306,10 @@ h1 {
    (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
    information, just wraps/truncates a little sooner. */
 .requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 210px; }  /* Branch Name / Commit */
-.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 240px; }  /* Changes */
+/* 240px -> 185px funds the System column's restored width above, keeping the table's
+   total unchanged. Same reasoning as Branch/Commit: this cell truncates with ellipsis and
+   a "View" button for the full text, so it loses no information by being narrower. */
+.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 185px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
    Action alone — knowing who asked and what state a row is in matters just as much
