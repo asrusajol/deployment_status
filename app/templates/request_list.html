@@ -68,13 +68,15 @@
             {% else %}—{% endif %}
           </td>
           <td>
-            {% if r.server %}
+            {# test_local rows deliberately show nothing here: their `server` is the bare
+               hostname the System column already renders as its badge, so printing it
+               again put the same value twice side by side, and the two ran into each
+               other. Every other request type keeps the URL cell. #}
+            {% if r.server and r.request_type != RequestType.test_local %}
               <div class="url-cell">
                 {% if r.server.startswith("http://") or r.server.startswith("https://") %}
                   <a href="{{ r.server }}" target="_blank" rel="noopener" class="url-preview">{{ r.server }}</a>
                 {% else %}
-                  {# test_local's server is a bare hostname (e.g. "crm.test.local"), not
-                     a full URL — shown as plain text rather than a broken relative link. #}
                   <span class="url-preview">{{ r.server }}</span>
                 {% endif %}
                 {{ copy_btn.copy_button(r.server, "Server URL") }}

@@ -2228,6 +2228,31 @@ def test_create_db_dump_restore_request_rejects_neither_restore_nor_share(web):
 # --- Test.local deployment requests (no approval required) ---------------------------
 
 
+def test_requests_queue_does_not_repeat_the_hostname_in_the_url_column(web):
+    """A test.local request's hostname belongs to the System badge only.
+
+    It used to render in the URL column as well, putting the same value twice in adjacent
+    cells, where the two visibly ran into each other.
+    """
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+    client.post(
+        "/requests/test-local",
+        data={"server": "ict.test.local", "git_branch": "feature/x", "version": "V12"},
+        follow_redirects=False,
+    )
+
+    body = client.get("/requests").text
+
+    # The System badge keeps it; the URL cell must not print it a second time.
+    # (Counting occurrences in the whole page would also match the hidden
+    # active-requests JSON that feeds the desktop-notification script.)
+    assert '<span class="badge badge-testlocal">ict.test.local</span>' in body
+    assert '<span class="url-preview">ict.test.local</span>' not in body
+
+
 def test_create_test_local_request_skips_approval(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
