@@ -382,6 +382,77 @@ def test_dashboard_shows_url_column_with_copy_button(web):
     assert 'data-copy="http://crm-live.local"' in response.text
 
 
+def _client_with_two_urls(session, environment=DeploymentEnvironment.live):
+    session.add(Client(id=1, name="CRM"))
+    session.add(ClientSystemUrl(client_id=1, environment=environment, label="Line 1", url="http://line1.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=environment, label="Line 2", url="http://line2.local"))
+
+
+def test_dashboard_lists_every_url_a_client_has_for_that_system(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    _client_with_two_urls(session)
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard").text
+
+    # Both listed, each with its own copy button and its label.
+    assert 'href="http://line1.local"' in body
+    assert 'href="http://line2.local"' in body
+    assert 'data-copy="http://line1.local"' in body
+    assert 'data-copy="http://line2.local"' in body
+    assert "Line 1" in body and "Line 2" in body
+
+
+def test_history_does_not_list_every_client_url(web):
+    """History rows describe one past deployment — listing every candidate URL would
+    imply the deploy went to all of them."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://line2.local"
+    _client_with_two_urls(session)
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard/history").text
+
+    assert 'href="http://line2.local"' in body  # the one actually recorded
+    assert 'href="http://line1.local"' not in body
+
+
+def test_dashboard_keeps_the_single_url_layout_when_a_client_has_one(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    session.add(Client(id=1, name="CRM"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://only.local"))
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard").text
+
+    assert 'href="http://only.local"' in body
+    assert "url-stack" not in body
+
+
 def test_dashboard_history_shows_url_column(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)

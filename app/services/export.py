@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Callable
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
@@ -38,8 +39,21 @@ def _columns_to_xlsx(rows: list, columns: list[tuple[str, Callable]], sheet_titl
     for row in rows:
         sheet.append([getter(row) for _, getter in columns])
 
+    # A getter may return several lines in one value (the Dashboard's URL column lists
+    # every URL a client has for that system). Excel shows the extra lines only when the
+    # cell wraps, so wrap those cells — without this the second URL is invisible until
+    # the reader widens the row by hand.
+    for excel_row in sheet.iter_rows(min_row=2):
+        for cell in excel_row:
+            if isinstance(cell.value, str) and "\n" in cell.value:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
     for index, (header, getter) in enumerate(columns, start=1):
-        widest = max([len(header)] + [len(str(getter(row))) for row in rows])
+        # Measure the longest LINE, not the whole value — a multi-line cell would
+        # otherwise size its column to the sum of its lines and push everything else
+        # off the screen.
+        lengths = [len(line) for row in rows for line in str(getter(row)).split("\n")]
+        widest = max([len(header)] + lengths)
         sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
 
     buffer = BytesIO()
@@ -47,8 +61,25 @@ def _columns_to_xlsx(rows: list, columns: list[tuple[str, Callable]], sheet_titl
     return buffer.getvalue()
 
 
-def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
-    return _columns_to_xlsx(rows, COLUMNS, sheet_title)
+def _all_client_urls(row: DeploymentStatusRow) -> str:
+    """Every URL for this row's client + system, one per line in a single cell.
+
+    Mirrors what the Dashboard shows on screen. Labelled where a label is set, since
+    "Line 1" / "Line 2" is what tells two production lines apart.
+    """
+    if not row.client_urls:
+        return row.server or ""
+    return "\n".join(f"{label}: {url}" if label else url for label, url in row.client_urls)
+
+
+def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str, all_client_urls: bool = False) -> bytes:
+    """`all_client_urls` mirrors the on-screen split: the Dashboard lists every URL for
+    a client+system, History shows only the one recorded against that deployment (see
+    _deployment_table.html for why listing candidates against a past event misleads)."""
+    columns = COLUMNS
+    if all_client_urls:
+        columns = [(header, _all_client_urls if header == "URL" else getter) for header, getter in COLUMNS]
+    return _columns_to_xlsx(rows, columns, sheet_title)
 
 
 def _release_tracker_columns(main_status: BitbucketMainBranchStatus | None) -> list[tuple[str, Callable]]:

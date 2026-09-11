@@ -25,7 +25,23 @@
         <td>{{ row.client_name }}</td>
         <td><span class="badge badge-{{ row.environment }}">{{ row.environment | capitalize }}</span></td>
         <td>
-          {% if row.server %}
+          {# Only the Dashboard (show_all_client_urls) lists every URL a client has for
+             this system, and only when there are several. Its rows are one per
+             client+system, so all of them are what the row is about. History rows
+             describe one past deployment, where listing every candidate would imply the
+             deploy went to all of them — that view keeps showing the single recorded
+             (or inferred) `server` below. #}
+          {% if show_all_client_urls and row.client_urls | length > 1 %}
+            <div class="url-stack">
+              {% for label, url in row.client_urls %}
+                <div class="url-cell">
+                  {% if label %}<span class="url-label">{{ label }}</span>{% endif %}
+                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
+                  {{ copy_btn.copy_button(url, "Server URL") }}
+                </div>
+              {% endfor %}
+            </div>
+          {% elif row.server %}
             <div class="url-cell">
               {% if row.server.startswith("http://") or row.server.startswith("https://") %}
                 <a href="{{ row.server }}" target="_blank" rel="noopener" class="url-preview">{{ row.server }}</a>

@@ -69,3 +69,64 @@ def test_release_tracker_rows_to_xlsx_without_a_bitbucket_sync_yet():
     # openpyxl round-trips an empty-string cell write as None on read — this just
     # confirms it didn't error and didn't write a stray "None" string into the cell.
     assert data_row[-2:] == [None, None]  # Main Version, Main Updated At
+
+
+def test_dashboard_export_lists_every_client_url_in_one_wrapped_cell():
+    from openpyxl.utils import get_column_letter
+
+    from app.services.dashboard import DeploymentStatusRow
+    from app.services.export import rows_to_xlsx
+
+    row = DeploymentStatusRow(
+        client_name="VolaPlast",
+        environment="test",
+        git_branch="main",
+        commit_hash="abc1234",
+        version="V12",
+        task_id="PR-1",
+        changes_description=None,
+        requested_by=None,
+        approved_by=None,
+        deployed_by=None,
+        requested_at=None,
+        deployed_at=None,
+        request_id=1,
+        server="http://line1.local",
+        client_urls=[("Line 1", "http://line1.local"), ("Line 2", "http://line2.local")],
+    )
+
+    sheet = load_workbook(BytesIO(rows_to_xlsx([row], "Current Status", all_client_urls=True))).active
+
+    url_cell = sheet["C2"]
+    assert url_cell.value == "Line 1: http://line1.local\nLine 2: http://line2.local"
+    # Without wrapping, Excel hides every line after the first.
+    assert url_cell.alignment.wrap_text is True
+    # Column sized to the longest LINE, not the joined length of both.
+    assert sheet.column_dimensions[get_column_letter(3)].width < 40
+
+
+def test_history_export_keeps_only_the_recorded_url():
+    from app.services.dashboard import DeploymentStatusRow
+    from app.services.export import rows_to_xlsx
+
+    row = DeploymentStatusRow(
+        client_name="VolaPlast",
+        environment="test",
+        git_branch="main",
+        commit_hash="abc1234",
+        version="V12",
+        task_id="PR-1",
+        changes_description=None,
+        requested_by=None,
+        approved_by=None,
+        deployed_by=None,
+        requested_at=None,
+        deployed_at=None,
+        request_id=1,
+        server="http://line2.local",
+        client_urls=[("Line 1", "http://line1.local"), ("Line 2", "http://line2.local")],
+    )
+
+    sheet = load_workbook(BytesIO(rows_to_xlsx([row], "Deployment History"))).active
+
+    assert sheet["C2"].value == "http://line2.local"

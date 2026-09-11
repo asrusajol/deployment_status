@@ -11,5 +11,9 @@
   {% include "_deployment_filter_bar.html" %}
 
   {% set empty_message = "No deployments have completed yet. Once a request is submitted, approved, and marked deployed, it'll show up here." if not selected_client_id and not selected_environment and not selected_task_id else "No deployments match this filter." %}
+  {# Dashboard only: a row here is one client+system, so every URL that client has for
+     it belongs in the cell. dashboard_history.html deliberately leaves this unset —
+     its rows are individual deployments. #}
+  {% set show_all_client_urls = true %}
   {% include "_deployment_table.html" %}
 {% endblock %}
