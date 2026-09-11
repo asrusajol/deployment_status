@@ -175,7 +175,9 @@ def export_dashboard_xlsx(
 ):
     parsed_client_id, parsed_environment, parsed_task_id = _parse_filters(client_id, environment, task_id)
     rows = current_deployment_status(db, parsed_client_id, parsed_environment, parsed_task_id)
-    content = rows_to_xlsx(rows, "Current Status")
+    # all_client_urls matches what /dashboard shows on screen; the history export below
+    # deliberately keeps the single recorded URL per deployment.
+    content = rows_to_xlsx(rows, "Current Status", all_client_urls=True)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
