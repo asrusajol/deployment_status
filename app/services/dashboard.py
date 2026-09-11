@@ -2,7 +2,7 @@
 current per-client/system status, and the full filterable history both are drawn from.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy.orm import Query, Session, joinedload
@@ -33,6 +33,21 @@ class DeploymentStatusRow:
     # db_dump_restore/test_local requests already used). Optional: only Standard
     # requests get it from the Server URL dropdown, and only when one was configured.
     server: str | None = None
+    # Every URL configured for this row's client + system, as (label, url) pairs — a
+    # client can have one per production line. Only the Dashboard renders these: its
+    # rows are one-per-client+system, so listing them all is simply what that row is
+    # about. History rows describe a single past deployment, where listing every
+    # candidate would imply the deploy went to all of them, so that view keeps showing
+    # `server` alone.
+    client_urls: list[tuple[str | None, str]] = field(default_factory=list)
+
+
+def _client_urls(request: DeploymentRequest) -> list[tuple[str | None, str]]:
+    if request.client is None or request.environment is None:
+        return []
+    matching = [u for u in request.client.system_urls if u.environment == request.environment]
+    # By id so the order is stable across renders and matches the Clients page.
+    return [(u.label, u.url) for u in sorted(matching, key=lambda u: u.id)]
 
 
 def _completed_executions_query(
@@ -90,6 +105,7 @@ def _row_from_execution(execution: DeploymentExecution) -> DeploymentStatusRow:
         # Not request.server directly — see DeploymentRequest.effective_server for why a
         # request predating per-client URLs falls back to the client's configured one.
         server=request.effective_server,
+        client_urls=_client_urls(request),
     )
 
 

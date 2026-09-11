@@ -390,6 +390,23 @@ h1 {
    sits right next to the truncated URL, same row layout as .branch-commit-cell above. */
 .url-cell .js-copy-button { flex: none; }
 
+/* Dashboard only: a client can have several URLs for one system (one per production
+   line), and that row is about the client+system rather than a single deployment, so
+   all of them are listed. Each keeps its own copy button — one shared button would be
+   ambiguous about which URL it copies. */
+.url-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.url-label {
+  flex: none;
+  color: var(--fog);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+
 .branch-commit-sep {
   color: var(--fog-dim);
   font-family: var(--font-mono);
