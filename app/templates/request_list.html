@@ -72,14 +72,18 @@
                hostname the System column already renders as its badge, so printing it
                again put the same value twice side by side, and the two ran into each
                other. Every other request type keeps the URL cell. #}
-            {% if r.server and r.request_type != RequestType.test_local %}
+            {# effective_server, not server: a request created before per-client URLs
+               existed has none stored, and falls back to the client's configured URL
+               for its system (see DeploymentRequest.effective_server). #}
+            {% set url = r.effective_server %}
+            {% if url and r.request_type != RequestType.test_local %}
               <div class="url-cell">
-                {% if r.server.startswith("http://") or r.server.startswith("https://") %}
-                  <a href="{{ r.server }}" target="_blank" rel="noopener" class="url-preview">{{ r.server }}</a>
+                {% if url.startswith("http://") or url.startswith("https://") %}
+                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
                 {% else %}
-                  <span class="url-preview">{{ r.server }}</span>
+                  <span class="url-preview">{{ url }}</span>
                 {% endif %}
-                {{ copy_btn.copy_button(r.server, "Server URL") }}
+                {{ copy_btn.copy_button(url, "Server URL") }}
               </div>
             {% else %}—{% endif %}
           </td>

@@ -87,7 +87,9 @@ def _row_from_execution(execution: DeploymentExecution) -> DeploymentStatusRow:
         requested_at=request.created_at,
         deployed_at=execution.completed_at,
         request_id=execution.request_id,
-        server=request.server,
+        # Not request.server directly — see DeploymentRequest.effective_server for why a
+        # request predating per-client URLs falls back to the client's configured one.
+        server=request.effective_server,
     )
 
 
