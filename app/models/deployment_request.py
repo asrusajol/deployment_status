@@ -134,3 +134,27 @@ class DeploymentRequest(Base):
     requester = relationship("User", foreign_keys=[requested_by])
     approvals = relationship("Approval", back_populates="request")
     executions = relationship("DeploymentExecution", back_populates="request")
+
+    @property
+    def effective_server(self) -> str | None:
+        """The server URL to display for this request, recorded or inferred.
+
+        `server` is snapshotted onto the request at creation, so every request made
+        before per-client URLs existed has none and showed a bare dash forever. Falling
+        back to the client's configured URL for this system fills those in WITHOUT
+        rewriting the stored audit record — nothing is persisted, and the value stays
+        correct by itself if the client's URL changes later.
+
+        Deliberately only falls back when the client has exactly ONE url for that
+        system. A client can have several (one per production line, say — see
+        ClientSystemUrl), and there is no way to know which one a historical request
+        went to; picking one would assert something untrue about a past deployment,
+        which is exactly what this tool exists not to do. With several configured, an
+        old request keeps showing nothing.
+        """
+        if self.server:
+            return self.server
+        if self.client is None or self.environment is None:
+            return None
+        urls = [u.url for u in self.client.system_urls if u.environment == self.environment]
+        return urls[0] if len(urls) == 1 else None

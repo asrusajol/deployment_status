@@ -2225,6 +2225,98 @@ def test_create_db_dump_restore_request_rejects_neither_restore_nor_share(web):
     assert session.query(DeploymentRequest).count() == 0
 
 
+# --- Historical requests falling back to the client's configured URL -----------------
+
+
+def _legacy_request(session, *, client_id=1, environment=DeploymentEnvironment.test):
+    """A request from before per-client URLs existed: no `server` of its own."""
+    request = DeploymentRequest(
+        request_type=RequestType.standard,
+        task_id="PR-OLD",
+        client_id=client_id,
+        environment=environment,
+        server=None,
+        git_branch="main",
+        commit_hash="abc1234",
+        version="V12",
+        requested_by=1,
+        status=RequestStatus.pending_approval,
+        created_at=datetime(2026, 1, 1),
+    )
+    session.add(request)
+    session.commit()
+    return request
+
+
+def test_a_request_without_a_stored_url_falls_back_to_the_clients_single_url(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://ict-test.local"))
+    request = _legacy_request(session)
+
+    assert request.effective_server == "http://ict-test.local"
+
+
+def test_a_stored_url_always_wins_over_the_clients_current_one(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://new.local"))
+    request = _legacy_request(session)
+    request.server = "http://recorded-at-the-time.local"
+    session.commit()
+
+    # The recorded value is what actually happened; the client's current URL must not
+    # override it even if the client has since been repointed.
+    assert request.effective_server == "http://recorded-at-the-time.local"
+
+
+def test_no_fallback_when_the_client_has_several_urls_for_that_system(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://line1.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://line2.local"))
+    request = _legacy_request(session)
+
+    # Guessing which line an old deployment went to would assert something untrue.
+    assert request.effective_server is None
+
+
+def test_fallback_matches_the_requests_own_environment(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://test.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://live.local"))
+    request = _legacy_request(session, environment=DeploymentEnvironment.live)
+
+    assert request.effective_server == "http://live.local"
+
+
+def test_no_fallback_when_the_client_has_no_url_configured(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    request = _legacy_request(session)
+
+    assert request.effective_server is None
+
+
+def test_requests_queue_renders_the_fallback_url_for_a_historical_request(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://ict-test.local"))
+    _legacy_request(session)
+    login_as(client, "rajib")
+
+    body = client.get("/requests").text
+
+    assert "http://ict-test.local" in body
+
+
 # --- Test.local deployment requests (no approval required) ---------------------------
 
 
