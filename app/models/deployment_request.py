@@ -136,6 +136,17 @@ class DeploymentRequest(Base):
     executions = relationship("DeploymentExecution", back_populates="request")
 
     @property
+    def current_executor(self) -> "User | None":
+        """Who's actually handling this request right now, if anyone.
+
+        `executions` has at most one row (DeploymentExecution.request_id is unique —
+        a request can only ever be claimed once, see that model). Used by
+        request_list.html to show "Handling: <name>" under the status/rail cell for
+        in_progress requests, without needing a caller-supplied join.
+        """
+        return self.executions[0].executor if self.executions else None
+
+    @property
     def effective_server(self) -> str | None:
         """The server URL to display for this request, recorded or inferred.
 
