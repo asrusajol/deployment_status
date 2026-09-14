@@ -142,13 +142,20 @@
           <td>{{ r.requester.name if r.requester else "—" }}</td>
           <td>
             {% set rail = rail_stages[r.status] %}
-            <span class="rail" aria-hidden="true">
-              {% for i in range(4) %}
-                <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
-                {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
-              {% endfor %}
-            </span>
-            <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+            <div class="status-cell">
+              <span class="rail" aria-hidden="true">
+                {% for i in range(4) %}
+                  <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
+                  {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
+                {% endfor %}
+              </span>
+              <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+            </div>
+            {% if r.status == RequestStatus.in_progress and r.current_executor %}
+              <div class="status-handler">Handling: {{ r.current_executor.name }}</div>
+            {% elif r.status == RequestStatus.completed and r.current_executor %}
+              <div class="status-handler">Deployed by: {{ r.current_executor.name }}</div>
+            {% endif %}
           </td>
           <td>
             <div class="actions-inner">

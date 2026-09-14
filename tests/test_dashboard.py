@@ -1785,6 +1785,55 @@ def _seed_in_progress_standard_request(
     return request
 
 
+def test_requests_queue_shows_who_is_handling_an_in_progress_request(web):
+    # Once a deploy-team member hits "Start Deployment", the requester (and everyone
+    # else looking at the queue) should be able to tell who actually picked it up —
+    # rendered under the status/rail cell, not as a new column (see
+    # _seed_in_progress_standard_request: executed_by=3 is "Deployer").
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    login_as(client, "deployer")
+
+    response = client.get("/requests")
+
+    assert "Handling: Deployer" in response.text
+
+
+def test_requests_queue_shows_who_deployed_a_completed_request(web):
+    # Once "Mark Deployed" is hit the request moves to completed, but the same
+    # DeploymentExecution row (now ExecutionStatus.completed) still names who did it —
+    # worded "Deployed by:" rather than "Handling:" since the work is finished, not
+    # in flight (see current_executor on DeploymentRequest).
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert "Deployed by: Rajib Ahamad" in response.text
+    assert "Handling: Rajib Ahamad" not in response.text
+
+
+def test_requests_queue_does_not_show_handler_before_deployment_starts(web):
+    # No DeploymentExecution row exists yet for a merely-approved request, so there's
+    # no one to attribute it to — the "Handling:" line must not appear at all.
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "Handling:" not in response.text
+
+
 def test_deploy_request_requires_current_version_for_standard_requests(web):
     client, session = web
     _seed_in_progress_standard_request(session)

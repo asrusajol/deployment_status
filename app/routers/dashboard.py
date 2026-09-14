@@ -29,7 +29,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import (
     can_approve_deployment_request,
@@ -578,6 +578,9 @@ def list_requests(
 
     requests_ = (
         db.query(DeploymentRequest)
+        # Feeds current_executor (request_list.html's "Handling: <name>" line) without
+        # an N+1 query per in_progress row on the page.
+        .options(joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor))
         .order_by(DeploymentRequest.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)

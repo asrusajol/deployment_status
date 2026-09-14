@@ -571,6 +571,22 @@ code {
 .status-rejected, .status-failed { color: var(--red); }
 .status-rolled_back { color: var(--fog); }
 
+/* Who's currently handling an in_progress request (request_list.html) — sits under the
+   rail + status row inside the same cell, no extra column/row. .status-cell keeps the
+   rail and label on one line; .status-handler is a plain block below it, left-aligned
+   with the rail's own start (not indented under the label) — matches the design's
+   "starts from the progress bar" placement. */
+.status-cell {
+  display: flex;
+  align-items: center;
+}
+
+.status-handler {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--fog);
+}
+
 /* --- Pipeline Rail ----------------------------------------------------------
    The signature element: a literal rendering of the request's own state
    machine (Submitted -> Approved -> Deployed, project_plan.md Section 4),
