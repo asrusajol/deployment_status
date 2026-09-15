@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.database import Base
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
+from app.models.client_system_url import ClientSystemUrl
 from app.models.client_version_status import ClientVersionStatus
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
@@ -360,6 +361,146 @@ def _seed_two_completed_deployments(session):
     session.commit()
 
 
+def test_dashboard_shows_url_column_with_copy_button(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+    assert 'data-copy="http://crm-live.local"' in response.text
+
+
+def _client_with_two_urls(session, environment=DeploymentEnvironment.live):
+    session.add(Client(id=1, name="CRM"))
+    session.add(ClientSystemUrl(client_id=1, environment=environment, label="Line 1", url="http://line1.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=environment, label="Line 2", url="http://line2.local"))
+
+
+def test_dashboard_lists_every_url_a_client_has_for_that_system(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    _client_with_two_urls(session)
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard").text
+
+    # Both listed, each with its own copy button and its label.
+    assert 'href="http://line1.local"' in body
+    assert 'href="http://line2.local"' in body
+    assert 'data-copy="http://line1.local"' in body
+    assert 'data-copy="http://line2.local"' in body
+    assert "Line 1" in body and "Line 2" in body
+
+
+def test_history_does_not_list_every_client_url(web):
+    """History rows describe one past deployment — listing every candidate URL would
+    imply the deploy went to all of them."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://line2.local"
+    _client_with_two_urls(session)
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard/history").text
+
+    assert 'href="http://line2.local"' in body  # the one actually recorded
+    assert 'href="http://line1.local"' not in body
+
+
+def test_dashboard_keeps_the_single_url_layout_when_a_client_has_one(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    session.add(Client(id=1, name="CRM"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://only.local"))
+    session.commit()
+    login_as(client, "rajib")
+
+    body = client.get("/dashboard").text
+
+    assert 'href="http://only.local"' in body
+    assert "url-stack" not in body
+
+
+def test_dashboard_history_shows_url_column(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard/history")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+
+
+def test_dashboard_export_xlsx_includes_url_column(web):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    request.server = "http://crm-live.local"
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard/export.xlsx")
+
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook.active
+    header_row = [cell.value for cell in sheet[1]]
+    assert header_row[2] == "URL"
+    data_row = [cell.value for cell in sheet[2]]
+    assert data_row[2] == "http://crm-live.local"
+
+
 def test_dashboard_filters_by_client(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
@@ -374,6 +515,25 @@ def test_dashboard_filters_by_client(web):
     # (branch/task id), not the client name, to actually confirm the table is filtered.
     assert "release/v12" in response.text
     assert "develop" not in response.text
+
+
+def test_dashboard_client_filter_is_a_type_to_search_input_prefilled_when_selected(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_two_completed_deployments(session)
+    login_as(client, "rajib")
+
+    response = client.get("/dashboard", params={"client_id": "1"})
+
+    assert response.status_code == 200
+    assert 'id="client_name_filter"' in response.text
+    assert 'id="client_options_list"' in response.text
+    assert 'value="CRM"' in response.text  # prefilled from the selected client_id
+    assert '<li class="combobox-option" data-id="1">CRM</li>' in response.text
+    assert '<li class="combobox-option" data-id="2">Acme Corp</li>' in response.text
+    assert '<li class="combobox-option" data-id="">All clients</li>' in response.text
+    assert 'type="hidden" name="client_id" id="client_id" value="1"' in response.text
 
 
 def test_dashboard_filters_by_task_id_substring(web):
@@ -463,6 +623,21 @@ def test_new_request_form_lists_clients_and_deployable_tasks(web):
     assert "+ Add new client" in response.text
     assert "Rajib Ahamad" in response.text  # static "Requested by" field, not a dropdown
     assert "requested_by" not in response.text  # no such form field anymore
+
+
+def test_new_request_form_excludes_inactive_clients(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(Client(id=2, name="Deactivated Co", is_active=False))
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests/new")
+
+    assert response.status_code == 200
+    assert "CRM" in response.text
+    assert "Deactivated Co" not in response.text
 
 
 def test_new_request_form_only_lists_planned_tasks(web):
@@ -581,6 +756,56 @@ def test_create_request_uses_deployable_task_and_logged_in_user(web):
     assert request.client_id == 1
     assert request.requested_by == 1  # the logged-in user, not a form field
     assert request.version == "V12"
+
+
+def test_create_request_stores_selected_server_url(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, label="Line 1", url="http://crm-live.local")
+    )
+    _add_deployable_task(session, id=100, task_id="PR-03045", client_name="CRM", target="live")
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.post(
+        "/requests",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v12",
+            "commit_hash": "a1b2c3d",
+            "version": "V12",
+            "server": "http://crm-live.local",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    request = session.query(DeploymentRequest).one()
+    assert request.server == "http://crm-live.local"
+
+
+def test_new_request_form_embeds_client_system_urls_for_the_server_dropdown(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, label="Line 1", url="http://crm-live.local")
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests/new")
+
+    assert response.status_code == 200
+    assert 'id="server_url"' in response.text
+    assert 'data-client-id="1"' in response.text
+    assert 'data-environment="live"' in response.text
+    assert 'data-label="Line 1"' in response.text
+    assert 'data-url="http://crm-live.local"' in response.text
 
 
 def test_create_request_rejects_unknown_deployable_task(web):
@@ -916,6 +1141,30 @@ def test_requests_queue_shows_module_name_and_version_columns(web):
     assert "<td>V12</td>" in response.text
 
 
+def test_requests_queue_shows_url_column_with_copy_button(web):
+    client, session = web
+    request = _seed_pending_request(session)
+    request.server = "http://crm-live.local"
+    session.commit()
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "<th>URL</th>" in response.text
+    assert 'href="http://crm-live.local"' in response.text
+    assert 'data-copy="http://crm-live.local"' in response.text
+
+
+def test_requests_queue_url_column_shows_dash_when_no_server_set(web):
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "<th>URL</th>" in response.text
+
+
 def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
     # A long branch name used to force the whole table into horizontal scroll — the cell
     # is now truncated with ellipsis (branch-commit-preview, style.css) and this button
@@ -930,7 +1179,10 @@ def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
     assert 'class="branch-commit-cell"' in response.text
     assert 'class="link-button view-detail"' in response.text
     assert 'data-detail-title="Branch Name / Commit"' in response.text
-    assert 'data-detail="release/v12 / a1b2c3d"' in response.text
+    # "||" rather than "/" — branch names routinely contain their own slashes (e.g.
+    # "bugfix/PR-03168-..."), which made "branch / commit" ambiguous about where the
+    # branch ends and the commit begins (see request_list.html's own comment).
+    assert 'data-detail="release/v12 || a1b2c3d"' in response.text
 
 
 def _seed_many_requests(session, count):
@@ -1086,6 +1338,19 @@ def test_requester_can_view_edit_form_for_own_pending_request(web):
     assert 'value="release/v12"' in response.text
 
 
+def test_edit_form_still_lists_the_requests_own_client_even_if_since_deactivated(web):
+    client, session = web
+    _seed_editable_request(session)
+    session.get(Client, 1).is_active = False
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.get("/requests/1/edit")
+
+    assert response.status_code == 200
+    assert "CRM" in response.text
+
+
 def test_other_user_cannot_view_edit_form(web):
     client, session = web
     _seed_editable_request(session)
@@ -1132,6 +1397,33 @@ def test_requester_can_edit_own_pending_request(web):
     assert request.commit_hash == "e5f6g7h"
     assert request.version == "V13"
     assert request.status == RequestStatus.pending_approval  # editing doesn't change status
+
+
+def test_editing_a_request_stores_selected_server_url(web):
+    client, session = web
+    _seed_editable_request(session)
+    session.add(
+        ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://crm-live.local")
+    )
+    session.commit()
+    login_as(client, "requester")
+
+    response = client.post(
+        "/requests/1/edit",
+        data={
+            "deployable_task_ids": "100",
+            "client_id": "1",
+            "environment": "live",
+            "git_branch": "release/v13",
+            "commit_hash": "e5f6g7h",
+            "version": "V13",
+            "server": "http://crm-live.local",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).server == "http://crm-live.local"
 
 
 def test_admin_can_edit_any_pending_request(web):
@@ -1467,7 +1759,9 @@ def test_start_moves_request_to_in_progress_and_records_who(web):
     assert execution.completed_at is None
 
 
-def _seed_in_progress_standard_request(session, *, client_id=1, environment=DeploymentEnvironment.live):
+def _seed_in_progress_standard_request(
+    session, *, client_id=1, environment=DeploymentEnvironment.live, version="V12"
+):
     session.add(Client(id=client_id, name="CRM"))
     make_user(session, id=1, name="Requester", username="requester", password=DEFAULT_TEST_PASSWORD)
     make_user(
@@ -1477,7 +1771,7 @@ def _seed_in_progress_standard_request(session, *, client_id=1, environment=Depl
     session.commit()
     request = DeploymentRequest(
         id=1, request_type=RequestType.standard, client_id=client_id, environment=environment,
-        git_branch="release/v12", commit_hash="a1b2c3d", version="V12", requested_by=1,
+        git_branch="release/v12", commit_hash="a1b2c3d", version=version, requested_by=1,
         status=RequestStatus.in_progress, created_at=datetime.now(timezone.utc),
     )
     session.add(request)
@@ -1491,6 +1785,55 @@ def _seed_in_progress_standard_request(session, *, client_id=1, environment=Depl
     return request
 
 
+def test_requests_queue_shows_who_is_handling_an_in_progress_request(web):
+    # Once a deploy-team member hits "Start Deployment", the requester (and everyone
+    # else looking at the queue) should be able to tell who actually picked it up —
+    # rendered under the status/rail cell, not as a new column (see
+    # _seed_in_progress_standard_request: executed_by=3 is "Deployer").
+    client, session = web
+    _seed_in_progress_standard_request(session)
+    login_as(client, "deployer")
+
+    response = client.get("/requests")
+
+    assert "Handling: Deployer" in response.text
+
+
+def test_requests_queue_shows_who_deployed_a_completed_request(web):
+    # Once "Mark Deployed" is hit the request moves to completed, but the same
+    # DeploymentExecution row (now ExecutionStatus.completed) still names who did it —
+    # worded "Deployed by:" rather than "Handling:" since the work is finished, not
+    # in flight (see current_executor on DeploymentRequest).
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    _completed_request(
+        session, client_id=1, environment=DeploymentEnvironment.live,
+        git_branch="release/v12", commit_hash="a1b2c3d", requester_id=1,
+        completed_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert "Deployed by: Rajib Ahamad" in response.text
+    assert "Handling: Rajib Ahamad" not in response.text
+
+
+def test_requests_queue_does_not_show_handler_before_deployment_starts(web):
+    # No DeploymentExecution row exists yet for a merely-approved request, so there's
+    # no one to attribute it to — the "Handling:" line must not appear at all.
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    response = client.get("/requests")
+
+    assert "Handling:" not in response.text
+
+
 def test_deploy_request_requires_current_version_for_standard_requests(web):
     client, session = web
     _seed_in_progress_standard_request(session)
@@ -1501,6 +1844,50 @@ def test_deploy_request_requires_current_version_for_standard_requests(web):
     assert response.status_code == 400
     assert session.get(DeploymentRequest, 1).status == RequestStatus.in_progress
     assert session.query(ClientVersionStatus).count() == 0
+
+
+def test_deploy_request_skips_version_tracking_for_non_v12_requests(web):
+    # The Release Tracker only exists for V12 applications — a V10 (or any other
+    # non-V12) request's "Mark Deployed" stays a bare submit, same as
+    # db_dump_restore/test_local: no current_version requirement, no
+    # ClientVersionStatus row.
+    client, session = web
+    _seed_in_progress_standard_request(session, version="V10")
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert session.get(DeploymentRequest, 1).status == RequestStatus.completed
+    assert session.query(ClientVersionStatus).count() == 0
+
+
+def test_deploy_request_version_match_is_case_insensitive(web):
+    client, session = web
+    _seed_in_progress_standard_request(session, version="v12")
+    session.commit()
+    login_as(client, "deployer")
+
+    response = client.post("/requests/1/deploy", data={"current_version": "2026.34.34"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    row = session.query(ClientVersionStatus).one()
+    assert row.live_current_version == "2026.34.34"
+
+
+def test_requests_list_hides_deploy_popup_for_non_v12_requests(web):
+    # The template shouldn't wire up the version-confirmation dialog for a V10
+    # (or other non-V12) request — plain "Mark Deployed" submit instead, same as
+    # db_dump_restore/test_local rows.
+    client, session = web
+    _seed_in_progress_standard_request(session, version="V10")
+    login_as(client, "deployer")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert 'data-deploy-request-id="1"' not in response.text
+    assert '<form method="post" action="/requests/1/deploy" class="inline-form">' in response.text
 
 
 def test_deploy_request_creates_client_version_status(web):
@@ -1518,8 +1905,6 @@ def test_deploy_request_creates_client_version_status(web):
     assert row.client_id == 1
     assert row.live_current_version == "2026.34.34"  # _seed_in_progress_standard_request uses live
     assert row.live_previous_version is None
-    assert row.main_version == "2026.34.40"
-    assert row.main_pr_number == 1234
     assert row.live_deployment_request_id == 1
     assert row.live_recorded_by == 3
 
@@ -1545,8 +1930,9 @@ def test_deploy_request_fills_previous_version_from_prior_status(web):
 
 
 def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
-    # No BitbucketMainBranchStatus row at all — main_version/main_pr_number just
-    # come through null rather than erroring.
+    # No BitbucketMainBranchStatus row at all — deploy confirmation doesn't touch or
+    # depend on it at all now (Main Version is a live read at render time, in
+    # release_tracker.py, not something the deploy path snapshots).
     client, session = web
     _seed_in_progress_standard_request(session)
     login_as(client, "deployer")
@@ -1555,9 +1941,7 @@ def test_deploy_request_works_without_a_bitbucket_sync_yet(web):
 
     assert response.status_code == 303
     row = session.query(ClientVersionStatus).one()
-    assert row.main_version is None
-    assert row.main_pr_number is None
-    assert row.main_updated_at is None
+    assert row.live_current_version == "2026.34.34"
 
 
 def test_deploy_request_succeeds_for_standard_request_with_null_client_id(web):
@@ -1961,7 +2345,124 @@ def test_create_db_dump_restore_request_rejects_neither_restore_nor_share(web):
     assert session.query(DeploymentRequest).count() == 0
 
 
+# --- Historical requests falling back to the client's configured URL -----------------
+
+
+def _legacy_request(session, *, client_id=1, environment=DeploymentEnvironment.test):
+    """A request from before per-client URLs existed: no `server` of its own."""
+    request = DeploymentRequest(
+        request_type=RequestType.standard,
+        task_id="PR-OLD",
+        client_id=client_id,
+        environment=environment,
+        server=None,
+        git_branch="main",
+        commit_hash="abc1234",
+        version="V12",
+        requested_by=1,
+        status=RequestStatus.pending_approval,
+        created_at=datetime(2026, 1, 1),
+    )
+    session.add(request)
+    session.commit()
+    return request
+
+
+def test_a_request_without_a_stored_url_falls_back_to_the_clients_single_url(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://ict-test.local"))
+    request = _legacy_request(session)
+
+    assert request.effective_server == "http://ict-test.local"
+
+
+def test_a_stored_url_always_wins_over_the_clients_current_one(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://new.local"))
+    request = _legacy_request(session)
+    request.server = "http://recorded-at-the-time.local"
+    session.commit()
+
+    # The recorded value is what actually happened; the client's current URL must not
+    # override it even if the client has since been repointed.
+    assert request.effective_server == "http://recorded-at-the-time.local"
+
+
+def test_no_fallback_when_the_client_has_several_urls_for_that_system(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://line1.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://line2.local"))
+    request = _legacy_request(session)
+
+    # Guessing which line an old deployment went to would assert something untrue.
+    assert request.effective_server is None
+
+
+def test_fallback_matches_the_requests_own_environment(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://test.local"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.live, url="http://live.local"))
+    request = _legacy_request(session, environment=DeploymentEnvironment.live)
+
+    assert request.effective_server == "http://live.local"
+
+
+def test_no_fallback_when_the_client_has_no_url_configured(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    request = _legacy_request(session)
+
+    assert request.effective_server is None
+
+
+def test_requests_queue_renders_the_fallback_url_for_a_historical_request(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="Intercable"))
+    session.add(ClientSystemUrl(client_id=1, environment=DeploymentEnvironment.test, url="http://ict-test.local"))
+    _legacy_request(session)
+    login_as(client, "rajib")
+
+    body = client.get("/requests").text
+
+    assert "http://ict-test.local" in body
+
+
 # --- Test.local deployment requests (no approval required) ---------------------------
+
+
+def test_requests_queue_does_not_repeat_the_hostname_in_the_url_column(web):
+    """A test.local request's hostname belongs to the System badge only.
+
+    It used to render in the URL column as well, putting the same value twice in adjacent
+    cells, where the two visibly ran into each other.
+    """
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "rajib")
+    client.post(
+        "/requests/test-local",
+        data={"server": "ict.test.local", "git_branch": "feature/x", "version": "V12"},
+        follow_redirects=False,
+    )
+
+    body = client.get("/requests").text
+
+    # The System badge keeps it; the URL cell must not print it a second time.
+    # (Counting occurrences in the whole page would also match the hidden
+    # active-requests JSON that feeds the desktop-notification script.)
+    assert '<span class="badge badge-testlocal">ict.test.local</span>' in body
+    assert '<span class="url-preview">ict.test.local</span>' not in body
 
 
 def test_create_test_local_request_skips_approval(web):

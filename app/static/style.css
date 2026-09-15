@@ -285,15 +285,31 @@ h1 {
 .requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
 .requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
 .requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
-.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 140px; }  /* System */
-.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 80px; }   /* Version */
+/* System holds a badge, and for a test.local request that badge is the full hostname
+   (e.g. "orga.test.local") in a monospace face — ~15 characters at 0.72rem plus badge
+   and cell padding, so it needs ~155px. An earlier pass trimmed this to 100px to make
+   room for the URL column, on the assumption the badge still fit; that only held for the
+   short "Test"/"Live" badges. At 100px the hostname badge overflowed its cell and ran
+   into the neighbouring column. The width taken back here comes off Changes below, so
+   the table is no wider than before. Check a *.test.local row, not a Test/Live one,
+   before trimming this again. */
+.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 155px; }  /* System */
+/* Belt and braces for the column above: table-layout: fixed does NOT clip an oversized
+   cell, it lets the content spill over the next column. Clipping keeps any future
+   longer-than-expected hostname contained in its own cell instead of overlapping URL. */
+.requests-table td:nth-child(5) { overflow: hidden; }
+.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 150px; }  /* URL */
+.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
 /* Trimmed from 260px — confirmed in a real browser this column was the single biggest
    contributor pushing Changes out past the pinned block's overlay point. The cell
    already truncates with ellipsis and a "View" button for the untruncated text
    (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
    information, just wraps/truncates a little sooner. */
-.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 210px; }  /* Branch Name / Commit */
-.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 240px; }  /* Changes */
+.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 210px; }  /* Branch Name / Commit */
+/* 240px -> 185px funds the System column's restored width above, keeping the table's
+   total unchanged. Same reasoning as Branch/Commit: this cell truncates with ellipsis and
+   a "View" button for the full text, so it loses no information by being narrower. */
+.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 185px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
    Action alone — knowing who asked and what state a row is in matters just as much
@@ -338,32 +354,57 @@ h1 {
   table-layout: fixed;
 }
 
-.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 9%; }  /* Client */
-.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 6%; }  /* System */
-.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 7%; }  /* Task ID */
-.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 9%; }  /* Branch */
-.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 7%; }  /* Commit */
-.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 7%; }  /* Version */
-.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 13%; } /* Changes */
-.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 8%; }  /* Requested By */
-.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 8%; }  /* Approved By */
-.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 8%; } /* Deployed By */
-.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 9%; } /* Requested At */
-.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 9%; } /* Deployed At */
+/* System/Task ID/Version trimmed slightly (from 6/7/7%) to make room for URL below
+   without pushing every other column's share down too — same "shrink the least
+   content-heavy columns" approach as .requests-table above. */
+.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 10%; } /* Client */
+.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 5%; }  /* System */
+.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 10%; } /* URL */
+.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 6%; }  /* Task ID */
+.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 8%; }  /* Branch */
+.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 6%; }  /* Commit */
+.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 5%; }  /* Version */
+.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 13%; } /* Changes */
+.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 7%; }  /* Requested By */
+.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 7%; } /* Approved By */
+.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 7%; } /* Deployed By */
+.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 8%; } /* Requested At */
+.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 8%; } /* Deployed At */
 
-.changes-cell, .branch-commit-cell {
+.changes-cell, .branch-commit-cell, .url-cell {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   max-width: 220px;
 }
 
-.changes-preview, .branch-commit-preview {
+.changes-preview, .branch-commit-preview, .url-preview {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Requests queue's URL column (request_list.html) — the copy button (_copy_button.html)
+   sits right next to the truncated URL, same row layout as .branch-commit-cell above. */
+.url-cell .js-copy-button { flex: none; }
+
+/* Dashboard only: a client can have several URLs for one system (one per production
+   line), and that row is about the client+system rather than a single deployment, so
+   all of them are listed. Each keeps its own copy button — one shared button would be
+   ambiguous about which URL it copies. */
+.url-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.url-label {
+  flex: none;
+  color: var(--fog);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
 }
 
 .branch-commit-sep {
@@ -530,6 +571,22 @@ code {
 .status-rejected, .status-failed { color: var(--red); }
 .status-rolled_back { color: var(--fog); }
 
+/* Who's currently handling an in_progress request (request_list.html) — sits under the
+   rail + status row inside the same cell, no extra column/row. .status-cell keeps the
+   rail and label on one line; .status-handler is a plain block below it, left-aligned
+   with the rail's own start (not indented under the label) — matches the design's
+   "starts from the progress bar" placement. */
+.status-cell {
+  display: flex;
+  align-items: center;
+}
+
+.status-handler {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--fog);
+}
+
 /* --- Pipeline Rail ----------------------------------------------------------
    The signature element: a literal rendering of the request's own state
    machine (Submitted -> Approved -> Deployed, project_plan.md Section 4),
@@ -651,6 +708,29 @@ code {
   color: var(--red);
   flex-shrink: 0;
 }
+
+/* /clients page — one client's Test or Live URL list (app/templates/clients.html),
+   same "chip row" look as .selected-tasks above, plus the small "add another URL"
+   form beneath it. */
+.mes-url-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mes-url-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.mes-url-list li .link-button { color: var(--red); }
+
+.mes-url-add-form input { width: auto; }
 
 /* --- Forms ------------------------------------------------------------------ */
 
@@ -823,6 +903,33 @@ code {
   background: var(--panel-raised);
   color: var(--paper);
 }
+
+/* Client combobox (_deployment_filter_bar.html) — a custom dropdown list rather than a
+   native <datalist> popup, whose "show every option on focus" behavior turned out
+   unreliable across browsers. */
+.combobox-field { position: relative; }
+.combobox-options {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem 0;
+  list-style: none;
+  background: var(--panel-raised);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.combobox-option {
+  padding: 0.42rem 0.6rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.combobox-option:hover { background: var(--panel); color: var(--teal); }
 
 /* Generic secondary/primary buttons — originally scoped to .filter-bar only, promoted
    to standalone classes once the "Enable Desktop Notifications" button (request_list.html)

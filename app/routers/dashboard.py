@@ -29,7 +29,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import (
     can_approve_deployment_request,
@@ -42,6 +42,7 @@ from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
 from app.models.client import Client
+from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
@@ -174,7 +175,9 @@ def export_dashboard_xlsx(
 ):
     parsed_client_id, parsed_environment, parsed_task_id = _parse_filters(client_id, environment, task_id)
     rows = current_deployment_status(db, parsed_client_id, parsed_environment, parsed_task_id)
-    content = rows_to_xlsx(rows, "Current Status")
+    # all_client_urls matches what /dashboard shows on screen; the history export below
+    # deliberately keeps the single recorded URL per deployment.
+    content = rows_to_xlsx(rows, "Current Status", all_client_urls=True)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -225,7 +228,9 @@ def _request_form_context(
 ) -> dict:
     return {
         "current_user": current_user,
-        "clients": db.query(Client).order_by(Client.name).all(),
+        # Inactive clients (app/routers/clients.py, admin/devops only) don't clutter this
+        # picker — a new request should never be filed against a deactivated client.
+        "clients": db.query(Client).filter(Client.is_active).order_by(Client.name).all(),
         # Task ID is picked from here, not typed — see create_request() below. Only
         # currently-PLANNED tasks, matching the same convention `deployable-tasks` (the
         # CLI command) already uses.
@@ -238,6 +243,10 @@ def _request_form_context(
         "new_client_value": NEW_CLIENT_VALUE,
         "environments": list(DeploymentEnvironment),
         "test_local_server_suggestions": TEST_LOCAL_SERVER_SUGGESTIONS,
+        # Every configured MES URL, across all clients — the Server URL dropdown
+        # (request_form.html) filters this client-side by the selected Client + System,
+        # same "embed everything, filter in JS" approach as deployable_tasks above.
+        "client_system_urls": db.query(ClientSystemUrl).all(),
         "active_tab": active_tab,
         "error": error,
         "notice": notice,
@@ -402,6 +411,10 @@ def create_request(
     commit_hash: str = Form(...),
     version: str = Form(...),
     changes_description: str = Form(""),
+    # Optional — picked from the Server URL dropdown (request_form.html), sourced from
+    # that client+system's configured ClientSystemUrl rows. Reuses this same column
+    # db_dump_restore/test_local already use for their own free-text server field.
+    server: str = Form(""),
 ):
     def rerender(error: str):
         context = _request_form_context(db, current_user, error)
@@ -420,6 +433,7 @@ def create_request(
             deployable_task_ids=",".join(str(task.id) for task in result.deployable_tasks),
             client_id=result.client.id,
             environment=environment,
+            server=server.strip() or None,
             git_branch=result.git_branch,
             commit_hash=result.commit_hash,
             version=result.version,
@@ -564,6 +578,9 @@ def list_requests(
 
     requests_ = (
         db.query(DeploymentRequest)
+        # Feeds current_executor (request_list.html's "Handling: <name>" line) without
+        # an N+1 query per in_progress row on the page.
+        .options(joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor))
         .order_by(DeploymentRequest.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -580,12 +597,13 @@ def list_requests(
     )
 
     # Feeds the deploy-confirmation popup's read-only "Previous version" field
-    # (request_list.html) — only meaningful for standard, in_progress rows, but
-    # cheap enough to just compute for every distinct (client_id, environment)
-    # pair actually on this page rather than filtering further.
+    # (request_list.html) — only meaningful for in_progress rows that will actually
+    # use the Release Tracker (see _uses_release_tracker), but cheap enough to just
+    # compute for every distinct (client_id, environment) pair actually on this page
+    # rather than filtering further.
     previous_versions: dict[str, str | None] = {}
     for r in requests_:
-        if r.request_type == RequestType.standard and r.status == RequestStatus.in_progress and r.client_id and r.environment:
+        if r.status == RequestStatus.in_progress and _uses_release_tracker(r):
             key = f"{r.client_id}:{r.environment.value}"
             if key not in previous_versions:
                 previous_versions[key] = current_version_for(db, r.client_id, r.environment)
@@ -627,6 +645,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "uses_release_tracker": _uses_release_tracker,
             "previous_versions": previous_versions,
             "page": page,
             "page_size": page_size,
@@ -636,6 +655,18 @@ def list_requests(
             "active_requests_json": active_requests_json,
         },
     )
+
+
+def _uses_release_tracker(deployment_request: DeploymentRequest) -> bool:
+    """Whether this request's deploy should go through the version-confirmation
+    popup/ClientVersionStatus tracking at all. The Release Tracker only covers V12
+    applications — a `standard` request against a V10 (or any other non-V12) client
+    system has no current_version to collect, same as db_dump_restore/test_local."""
+    if deployment_request.request_type != RequestType.standard:
+        return False
+    if not (deployment_request.client_id and deployment_request.environment):
+        return False
+    return (deployment_request.version or "").strip().lower() == "v12"
 
 
 def _get_request_or_404(db: Session, request_id: int) -> DeploymentRequest:
@@ -755,11 +786,12 @@ def deploy_request(
 
     # A `standard` request created via the older intake-skill `pending_intake` path can
     # still have a null client_id/environment (both columns are nullable specifically to
-    # allow that) — ClientVersionStatus.client_id is NOT NULL, so treat such
-    # a row like a non-standard request here: no current_version requirement, no record.
-    has_client_and_environment = bool(deployment_request.client_id and deployment_request.environment)
+    # allow that) — ClientVersionStatus.client_id is NOT NULL, so treat such a row like a
+    # non-standard request here: no current_version requirement, no record. Same for any
+    # non-V12 request — see _uses_release_tracker().
+    uses_release_tracker = _uses_release_tracker(deployment_request)
 
-    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+    if uses_release_tracker:
         current_version = (current_version or "").strip()
         if not current_version:
             raise HTTPException(status_code=400, detail="Current version is required.")
@@ -774,7 +806,7 @@ def deploy_request(
     execution.status = ExecutionStatus.completed
     deployment_request.status = RequestStatus.completed
 
-    if deployment_request.request_type == RequestType.standard and has_client_and_environment:
+    if uses_release_tracker:
         record_client_deploy(
             db,
             client_id=deployment_request.client_id,
@@ -811,10 +843,18 @@ def _edit_request_context(
     for task in original_tasks:
         combined_by_id.setdefault(task.id, task)
 
+    # Same "still show it if it's the original selection" rule as combined_by_id above,
+    # for the Client dropdown: an active clients list, plus this request's own client
+    # even if it's since been deactivated (app/routers/clients.py) — so editing an old
+    # request never makes its own client silently vanish from the picker.
+    clients = db.query(Client).filter(Client.is_active).order_by(Client.name).all()
+    if deployment_request.client is not None and not deployment_request.client.is_active:
+        clients = sorted([*clients, deployment_request.client], key=lambda c: c.name)
+
     return {
         "current_user": current_user,
         "deployment_request": deployment_request,
-        "clients": db.query(Client).order_by(Client.name).all(),
+        "clients": clients,
         "deployable_tasks": list(combined_by_id.values()),
         "initial_selected_tasks": [
             {
@@ -828,6 +868,7 @@ def _edit_request_context(
         ],
         "new_client_value": NEW_CLIENT_VALUE,
         "environments": list(DeploymentEnvironment),
+        "client_system_urls": db.query(ClientSystemUrl).all(),
         "error": error,
     }
 
@@ -860,6 +901,7 @@ def edit_request(
     commit_hash: str = Form(...),
     version: str = Form(...),
     changes_description: str = Form(""),
+    server: str = Form(""),
 ):
     """Lets the original requester (or an admin) fix up a request before it's been decided
     on — only while it's still in EDITABLE_REQUEST_STATUSES (can_edit_request() in
@@ -885,6 +927,7 @@ def edit_request(
     deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
     deployment_request.client_id = result.client.id
     deployment_request.environment = environment
+    deployment_request.server = server.strip() or None
     deployment_request.git_branch = result.git_branch
     deployment_request.commit_hash = result.commit_hash
     deployment_request.version = result.version

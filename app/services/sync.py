@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
+from app.models.client import Client
 from app.models.deployable_task import DeployableTask
 from app.models.team import Team
 from app.models.user import User, UserRole
@@ -80,6 +81,38 @@ def sync_teams(db: Session, provider: TaskSourceProvider) -> SyncResult:
         team.source_system_id = info.source_system_id
         team.name = info.name
         team.last_synced_at = synced_at
+
+    db.commit()
+    return SyncResult(created=created, updated=updated)
+
+
+def sync_clients(db: Session, provider: TaskSourceProvider) -> SyncResult:
+    """Upsert every active customer from the CRM API into the local Client table.
+
+    Matches on source_system_id (the CRM's custom_id) first, same as sync_users()/
+    sync_teams(). Falls back to matching by name for a row with no source_system_id
+    yet — `Client.name` is unique, and a client can already exist locally, hand-created
+    via the "+ Add new client" flow on the request form (app/routers/dashboard.py)
+    before this sync ever ran against it; without this fallback the insert below would
+    violate that uniqueness instead of adopting the existing row.
+    """
+    synced_at = datetime.now(timezone.utc)
+    created = updated = 0
+
+    for info in provider.list_clients():
+        client = db.query(Client).filter(Client.source_system_id == info.source_system_id).one_or_none()
+        if client is None:
+            client = db.query(Client).filter(Client.name == info.name).one_or_none()
+        if client is None:
+            client = Client(source_system_id=info.source_system_id)
+            db.add(client)
+            created += 1
+        else:
+            updated += 1
+
+        client.source_system_id = info.source_system_id
+        client.name = info.name
+        client.last_synced_at = synced_at
 
     db.commit()
     return SyncResult(created=created, updated=updated)

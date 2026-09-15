@@ -14,6 +14,7 @@ from app.models.deployment_request import DeploymentEnvironment, DeploymentReque
 from app.models.user import User, UserRole
 from app.services.release_tracker import (
     clients_with_version_records,
+    current_main_branch_status,
     current_version_for,
     record_client_deploy,
     release_tracker_rows,
@@ -96,40 +97,37 @@ def test_record_client_deploy_captures_previous_version(db_session):
     assert row.live_previous_version == "2026.34.30"
 
 
-def test_record_client_deploy_snapshots_main_from_cache(db_session):
+def test_record_client_deploy_does_not_touch_the_bitbucket_cache(db_session):
+    # Main Version is now a live read of bitbucket_main_branch_status (see
+    # current_main_branch_status() below), not a per-client snapshot taken
+    # at deploy time — confirming a deploy must not write to the cache row.
     _seed(db_session)
-    changed_at = datetime(2026, 8, 20, tzinfo=timezone.utc)
-    db_session.add(
-        BitbucketMainBranchStatus(id=1, version="2026.34.40", pr_number=15009, version_changed_at=changed_at)
-    )
+    db_session.add(BitbucketMainBranchStatus(id=1, version="2026.34.40", pr_number=15009))
     db_session.commit()
 
-    row = record_client_deploy(
+    record_client_deploy(
         db_session, client_id=1, environment=DeploymentEnvironment.live,
         current_version="2026.34.34", recorded_by=1, deployment_request_id=1,
     )
     db_session.commit()
 
-    assert row.main_version == "2026.34.40"
-    assert row.main_pr_number == 15009
-    # the cache's version_changed_at, not now() — compared tz-naively because
-    # BitbucketMainBranchStatus.version_changed_at is a plain (non-tz-aware)
-    # DateTime column: SQLAlchemy round-trips it as naive UTC after a commit
-    # expires the ORM object and re-fetches it, both on SQLite here and on
-    # the real Postgres TIMESTAMP WITHOUT TIME ZONE column in production.
-    assert row.main_updated_at == changed_at.replace(tzinfo=None)
+    cache = db_session.get(BitbucketMainBranchStatus, 1)
+    assert cache.version == "2026.34.40"
+    assert cache.pr_number == 15009
 
 
-def test_record_client_deploy_main_snapshot_is_null_without_a_sync_yet(db_session):
-    _seed(db_session)
-    row = record_client_deploy(
-        db_session, client_id=1, environment=DeploymentEnvironment.live,
-        current_version="2026.34.34", recorded_by=1, deployment_request_id=1,
-    )
+def test_current_main_branch_status_returns_the_cache_row(db_session):
+    db_session.add(BitbucketMainBranchStatus(id=1, version="2026.34.40", pr_number=15009))
     db_session.commit()
-    assert row.main_version is None
-    assert row.main_pr_number is None
-    assert row.main_updated_at is None
+
+    status = current_main_branch_status(db_session)
+
+    assert status.version == "2026.34.40"
+    assert status.pr_number == 15009
+
+
+def test_current_main_branch_status_is_none_without_a_sync_yet(db_session):
+    assert current_main_branch_status(db_session) is None
 
 
 def test_record_client_deploy_does_not_touch_other_clients(db_session):

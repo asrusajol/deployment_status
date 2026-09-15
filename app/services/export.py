@@ -5,14 +5,17 @@ from io import BytesIO
 from typing import Callable
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client_version_status import ClientVersionStatus
 from app.services.dashboard import DeploymentStatusRow
 
 COLUMNS = [
     ("Client", lambda r: r.client_name),
     ("System", lambda r: r.environment.capitalize() if r.environment else ""),
+    ("URL", lambda r: r.server or ""),
     ("Task ID", lambda r: r.task_id or ""),
     ("Branch", lambda r: r.git_branch or ""),
     ("Commit", lambda r: r.commit_hash or ""),
@@ -36,8 +39,21 @@ def _columns_to_xlsx(rows: list, columns: list[tuple[str, Callable]], sheet_titl
     for row in rows:
         sheet.append([getter(row) for _, getter in columns])
 
+    # A getter may return several lines in one value (the Dashboard's URL column lists
+    # every URL a client has for that system). Excel shows the extra lines only when the
+    # cell wraps, so wrap those cells — without this the second URL is invisible until
+    # the reader widens the row by hand.
+    for excel_row in sheet.iter_rows(min_row=2):
+        for cell in excel_row:
+            if isinstance(cell.value, str) and "\n" in cell.value:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
     for index, (header, getter) in enumerate(columns, start=1):
-        widest = max([len(header)] + [len(str(getter(row))) for row in rows])
+        # Measure the longest LINE, not the whole value — a multi-line cell would
+        # otherwise size its column to the sum of its lines and push everything else
+        # off the screen.
+        lengths = [len(line) for row in rows for line in str(getter(row)).split("\n")]
+        widest = max([len(header)] + lengths)
         sheet.column_dimensions[get_column_letter(index)].width = min(widest + 2, 40)
 
     buffer = BytesIO()
@@ -45,24 +61,49 @@ def _columns_to_xlsx(rows: list, columns: list[tuple[str, Callable]], sheet_titl
     return buffer.getvalue()
 
 
-def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str) -> bytes:
-    return _columns_to_xlsx(rows, COLUMNS, sheet_title)
+def _all_client_urls(row: DeploymentStatusRow) -> str:
+    """Every URL for this row's client + system, one per line in a single cell.
+
+    Mirrors what the Dashboard shows on screen. Labelled where a label is set, since
+    "Line 1" / "Line 2" is what tells two production lines apart.
+    """
+    if not row.client_urls:
+        return row.server or ""
+    return "\n".join(f"{label}: {url}" if label else url for label, url in row.client_urls)
 
 
-RELEASE_TRACKER_COLUMNS = [
-    ("Client", lambda r: r.client.name if r.client else ""),
-    ("Test Current Version", lambda r: r.test_current_version or ""),
-    ("Test Updated At", lambda r: r.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.test_updated_at else ""),
-    ("Live Current Version", lambda r: r.live_current_version or ""),
-    ("Live Updated At", lambda r: r.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.live_updated_at else ""),
-    (
-        "Main Version",
-        lambda r: f"{r.main_version} (PR #{r.main_pr_number})" if r.main_version and r.main_pr_number
-        else (r.main_version or ""),
-    ),
-    ("Main Updated At", lambda r: r.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.main_updated_at else ""),
-]
+def rows_to_xlsx(rows: list[DeploymentStatusRow], sheet_title: str, all_client_urls: bool = False) -> bytes:
+    """`all_client_urls` mirrors the on-screen split: the Dashboard lists every URL for
+    a client+system, History shows only the one recorded against that deployment (see
+    _deployment_table.html for why listing candidates against a past event misleads)."""
+    columns = COLUMNS
+    if all_client_urls:
+        columns = [(header, _all_client_urls if header == "URL" else getter) for header, getter in COLUMNS]
+    return _columns_to_xlsx(rows, columns, sheet_title)
 
 
-def release_tracker_rows_to_xlsx(rows: list[ClientVersionStatus], sheet_title: str) -> bytes:
-    return _columns_to_xlsx(rows, RELEASE_TRACKER_COLUMNS, sheet_title)
+def _release_tracker_columns(main_status: BitbucketMainBranchStatus | None) -> list[tuple[str, Callable]]:
+    # Main Version/Updated At are a live read of the single bitbucket_main_branch_status
+    # cache row, identical for every client — not a per-row field — so they're closed
+    # over here rather than read off each row (see ClientVersionStatus's docstring).
+    main_version = main_status.version if main_status else None
+    main_pr_number = main_status.pr_number if main_status else None
+    main_updated_at = main_status.version_changed_at if main_status else None
+    main_version_display = f"{main_version} (PR #{main_pr_number})" if main_version and main_pr_number else (main_version or "")
+    main_updated_at_display = main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if main_updated_at else ""
+
+    return [
+        ("Client", lambda r: r.client.name if r.client else ""),
+        ("Test Current Version", lambda r: r.test_current_version or ""),
+        ("Test Updated At", lambda r: r.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.test_updated_at else ""),
+        ("Live Current Version", lambda r: r.live_current_version or ""),
+        ("Live Updated At", lambda r: r.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if r.live_updated_at else ""),
+        ("Main Version", lambda r: main_version_display),
+        ("Main Updated At", lambda r: main_updated_at_display),
+    ]
+
+
+def release_tracker_rows_to_xlsx(
+    rows: list[ClientVersionStatus], sheet_title: str, main_status: BitbucketMainBranchStatus | None = None
+) -> bytes:
+    return _columns_to_xlsx(rows, _release_tracker_columns(main_status), sheet_title)

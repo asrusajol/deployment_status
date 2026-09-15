@@ -10,9 +10,11 @@ from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.deployable_task import DeployableTask
 from app.models.user import User, UserRole
 from app.services.bitbucket_source import BitbucketCloudProvider
+from app.services.client_merge import ClientMergeError, merge_clients
 from app.services.reports import users_by_team
 from app.services.sync import (
     sync_bitbucket_main_status,
+    sync_clients,
     sync_deployable_tasks,
     sync_team_leads,
     sync_teams,
@@ -58,6 +60,74 @@ def cmd_sync_teams(_args: argparse.Namespace) -> None:
     db = SessionLocal()
     try:
         _report_sync("teams", sync_teams(db, provider))
+    finally:
+        db.close()
+
+
+def cmd_sync_clients(_args: argparse.Namespace) -> None:
+    settings = get_settings()
+    provider = InHouseTaskSourceProvider(settings)
+    db = SessionLocal()
+    try:
+        _report_sync("clients", sync_clients(db, provider))
+    finally:
+        db.close()
+
+
+def cmd_merge_clients(args: argparse.Namespace) -> None:
+    """Fold a duplicate client into the keeper. One transaction, so a failure part-way
+    leaves nothing repointed rather than requests orphaned against a deleted client."""
+    db = SessionLocal()
+    try:
+        plan = merge_clients(
+            db,
+            keep_id=args.keep,
+            remove_id=args.remove,
+            rename_to_removed=args.rename,
+            force=args.force,
+        )
+    except ClientMergeError as exc:
+        db.rollback()
+        raise SystemExit(f"Refusing to merge: {exc}")
+
+    for line in plan.describe():
+        print(line)
+
+    if args.dry_run:
+        db.rollback()
+        print("\nDry run — nothing was changed.")
+    else:
+        db.commit()
+        print("\nDone.")
+    db.close()
+
+
+def cmd_sync_roster(_args: argparse.Namespace) -> None:
+    """Single daily entry point bundling every roster sync (teams, users, clients) behind
+    one cron trigger, instead of a separate crontab line per sync — see README's crontab
+    section. Teams first, same ordering sync-teams/sync-users already require standalone
+    (Team.leader_user_id resolution needs the lead's team already synced); clients last
+    since it's independent of the other two.
+    """
+    settings = get_settings()
+    provider = InHouseTaskSourceProvider(settings)
+    db = SessionLocal()
+    try:
+        _report_sync("teams", sync_teams(db, provider))
+
+        _report_sync("users", sync_users(db, provider))
+        contact_result = sync_user_contacts(db, provider)
+        print(
+            f"Backfilled contact info for {contact_result.matched} users from the CRM's "
+            f"general Users feed ({contact_result.backfilled} had email/username updated)."
+        )
+        lead_result = sync_team_leads(db, provider)
+        print(
+            f"Matched {lead_result.matched} team leads by custom_id against the CRM's "
+            f"supervisor Users feed ({lead_result.promoted} newly promoted from developer to team_lead)."
+        )
+
+        _report_sync("clients", sync_clients(db, provider))
     finally:
         db.close()
 
@@ -180,6 +250,17 @@ def main() -> None:
     )
     sync_teams_parser.set_defaults(func=cmd_sync_teams)
 
+    sync_clients_parser = subparsers.add_parser(
+        "sync-clients", help="Pull the customer/client roster from the CRM API into the local DB"
+    )
+    sync_clients_parser.set_defaults(func=cmd_sync_clients)
+
+    sync_roster_parser = subparsers.add_parser(
+        "sync-roster",
+        help="Run sync-teams, sync-users, and sync-clients in one go — the single daily cron entry point",
+    )
+    sync_roster_parser.set_defaults(func=cmd_sync_roster)
+
     users_by_team_parser = subparsers.add_parser(
         "users-by-team", help="Print all local users grouped by their team"
     )
@@ -205,6 +286,23 @@ def main() -> None:
     create_admin_parser.add_argument("--username", help="Set/override the username (required if not already set)")
     create_admin_parser.add_argument("--password", help="New password (omit to be prompted securely)")
     create_admin_parser.set_defaults(func=cmd_create_admin)
+
+    merge_clients_parser = subparsers.add_parser(
+        "merge-clients",
+        help="Fold a duplicate client into the one to keep, moving its requests, URLs and version status",
+    )
+    merge_clients_parser.add_argument("--keep", type=int, required=True, help="Client id that survives")
+    merge_clients_parser.add_argument("--remove", type=int, required=True, help="Duplicate client id to fold in and delete")
+    merge_clients_parser.add_argument(
+        "--rename", action="store_true", help="Give the surviving client the removed one's name"
+    )
+    merge_clients_parser.add_argument(
+        "--force", action="store_true", help="Allow keeping the client WITHOUT a source_system_id"
+    )
+    merge_clients_parser.add_argument(
+        "--dry-run", action="store_true", help="Print what would move and change nothing"
+    )
+    merge_clients_parser.set_defaults(func=cmd_merge_clients)
 
     args = parser.parse_args()
     args.func(args)

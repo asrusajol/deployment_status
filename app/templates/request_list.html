@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_copy_button.html" as copy_btn %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
   <div class="queue-header">
@@ -43,6 +44,7 @@
           <th>Module Name</th>
           <th>Client</th>
           <th>System</th>
+          <th>URL</th>
           <th>Version</th>
           <th>Branch Name / Commit</th>
           <th>Changes</th>
@@ -63,6 +65,26 @@
               <span class="badge badge-{{ r.environment.value }}">{{ r.environment.value | capitalize }}</span>
             {% elif r.request_type == RequestType.test_local and r.server %}
               <span class="badge badge-testlocal">{{ r.server }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {# test_local rows deliberately show nothing here: their `server` is the bare
+               hostname the System column already renders as its badge, so printing it
+               again put the same value twice side by side, and the two ran into each
+               other. Every other request type keeps the URL cell. #}
+            {# effective_server, not server: a request created before per-client URLs
+               existed has none stored, and falls back to the client's configured URL
+               for its system (see DeploymentRequest.effective_server). #}
+            {% set url = r.effective_server %}
+            {% if url and r.request_type != RequestType.test_local %}
+              <div class="url-cell">
+                {% if url.startswith("http://") or url.startswith("https://") %}
+                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
+                {% else %}
+                  <span class="url-preview">{{ url }}</span>
+                {% endif %}
+                {{ copy_btn.copy_button(url, "Server URL") }}
+              </div>
             {% else %}—{% endif %}
           </td>
           <td>{{ r.version or "—" }}</td>
@@ -120,13 +142,20 @@
           <td>{{ r.requester.name if r.requester else "—" }}</td>
           <td>
             {% set rail = rail_stages[r.status] %}
-            <span class="rail" aria-hidden="true">
-              {% for i in range(4) %}
-                <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
-                {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
-              {% endfor %}
-            </span>
-            <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+            <div class="status-cell">
+              <span class="rail" aria-hidden="true">
+                {% for i in range(4) %}
+                  <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
+                  {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
+                {% endfor %}
+              </span>
+              <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+            </div>
+            {% if r.status == RequestStatus.in_progress and r.current_executor %}
+              <div class="status-handler">Handling: {{ r.current_executor.name }}</div>
+            {% elif r.status == RequestStatus.completed and r.current_executor %}
+              <div class="status-handler">Deployed by: {{ r.current_executor.name }}</div>
+            {% endif %}
           </td>
           <td>
             <div class="actions-inner">
@@ -151,7 +180,7 @@
                 {% endif %}
               {% elif r.status == RequestStatus.in_progress %}
                 {% if can_deploy %}
-                  {% if r.request_type == RequestType.standard %}
+                  {% if uses_release_tracker(r) %}
                     {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
                     <div class="inline-form">
                       <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>

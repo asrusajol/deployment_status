@@ -5,7 +5,8 @@
   <p class="eyebrow">Versions</p>
   <h1>Release Tracker</h1>
   <p class="subtitle">Current deployed version per client, for Test and Live, and
-    what's on <code>main</code> as of that client's last deploy.</p>
+    what's currently on <code>main</code> — same value for every client, refreshed
+    every 5 minutes.</p>
 
   {% set show_task_id_filter = false %}
   {% set show_system_filter = false %}
@@ -41,8 +42,8 @@
           <td class="col-test">{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
           <td class="col-live">{{ row.live_current_version or "—" }}</td>
           <td class="col-live">{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
-          <td class="col-main">{{ row.main_version or "—" }}</td>
-          <td class="col-main">{{ row.main_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.main_updated_at else "—" }}</td>
+          <td class="col-main">{{ main_status.version if main_status else "—" }}</td>
+          <td class="col-main">{{ main_status.version_changed_at.strftime("%Y-%m-%d %H:%M UTC") if main_status and main_status.version_changed_at else "—" }}</td>
           <td>
             <div class="actions-inner">
               {% if can_edit_test(row) or can_edit_live(row) %}

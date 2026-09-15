@@ -42,8 +42,6 @@ def test_client_version_status_round_trips(db_session):
         live_current_version="2026.34.34", live_previous_version="2026.34.30",
         live_updated_at=datetime(2026, 8, 27, tzinfo=timezone.utc),
         live_recorded_by=1, live_deployment_request_id=1,
-        main_version="2026.34.40", main_pr_number=15009,
-        main_updated_at=datetime(2026, 8, 27, tzinfo=timezone.utc),
     )
     db_session.add(row)
     db_session.commit()
@@ -52,7 +50,6 @@ def test_client_version_status_round_trips(db_session):
     assert fetched.client.name == "CRM"
     assert fetched.test_current_version == "2026.34.30"
     assert fetched.live_current_version == "2026.34.34"
-    assert fetched.main_version == "2026.34.40"
     assert fetched.test_recorder.name == "Deployer"
     assert fetched.live_deployment_request.id == 1
 

@@ -10,8 +10,8 @@
 
   <form method="post" action="/release-tracker/{{ record.id }}/edit" class="form">
     <div class="field">
-      <label>Current version at main <span class="optional">(not editable)</span></label>
-      <p class="static-field">{{ record.main_version or "—" }}</p>
+      <label>Current version at main <span class="optional">(live, not editable)</span></label>
+      <p class="static-field">{{ main_status.version if main_status else "—" }}</p>
     </div>
 
     <div class="field">

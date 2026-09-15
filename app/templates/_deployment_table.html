@@ -1,3 +1,4 @@
+{% import "_copy_button.html" as copy_btn %}
 {% if rows %}
   <div class="table-scroll">
   <table class="status-table deployment-table">
@@ -5,6 +6,7 @@
       <tr>
         <th>Client</th>
         <th>System</th>
+        <th>URL</th>
         <th>Task ID</th>
         <th>Branch</th>
         <th>Commit</th>
@@ -22,6 +24,36 @@
       <tr>
         <td>{{ row.client_name }}</td>
         <td><span class="badge badge-{{ row.environment }}">{{ row.environment | capitalize }}</span></td>
+        <td>
+          {# Only the Dashboard (show_all_client_urls) lists every URL a client has for
+             this system, and only when there are several. Its rows are one per
+             client+system, so all of them are what the row is about. History rows
+             describe one past deployment, where listing every candidate would imply the
+             deploy went to all of them — that view keeps showing the single recorded
+             (or inferred) `server` below. #}
+          {% if show_all_client_urls and row.client_urls | length > 1 %}
+            <div class="url-stack">
+              {% for label, url in row.client_urls %}
+                <div class="url-cell">
+                  {% if label %}<span class="url-label">{{ label }}</span>{% endif %}
+                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
+                  {{ copy_btn.copy_button(url, "Server URL") }}
+                </div>
+              {% endfor %}
+            </div>
+          {% elif row.server %}
+            <div class="url-cell">
+              {% if row.server.startswith("http://") or row.server.startswith("https://") %}
+                <a href="{{ row.server }}" target="_blank" rel="noopener" class="url-preview">{{ row.server }}</a>
+              {% else %}
+                {# test_local's server is a bare hostname (e.g. "crm.test.local"), not a
+                   full URL — shown as plain text rather than a broken relative link. #}
+                <span class="url-preview">{{ row.server }}</span>
+              {% endif %}
+              {{ copy_btn.copy_button(row.server, "Server URL") }}
+            </div>
+          {% else %}—{% endif %}
+        </td>
         <td>{{ row.task_id or "—" }}</td>
         <td><code>{{ row.git_branch or "—" }}</code></td>
         <td><code>{{ row.commit_hash or "—" }}</code></td>

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
 from app.models.client import Client
 from app.models.client_version_status import ClientVersionStatus
 from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
@@ -34,6 +35,57 @@ def test_release_tracker_page_renders_one_row_per_client(web):
     assert "2.0" in response.text
     assert "CRM" in response.text
     assert 'name="environment"' not in response.text  # System filter is gone
+
+
+def test_release_tracker_main_version_reflects_the_live_bitbucket_cache(web):
+    client, session = web
+    _seed_release_tracker_row(session, client_id=1, client_name="CRM")
+    _seed_release_tracker_row(session, client_id=2, client_name="Acme", recorded_by=2)
+    session.add(
+        BitbucketMainBranchStatus(
+            id=1, version="2026.34.40", pr_number=15009,
+            version_changed_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "deployer1")
+
+    response = client.get("/release-tracker")
+
+    # Both clients show the SAME, live Main Version — not a per-client snapshot.
+    assert response.text.count("2026.34.40") == 2
+    assert "2026-08-20" in response.text
+
+
+def test_release_tracker_main_version_updates_without_a_new_deploy(web):
+    # The bug this fixes: Main Version used to only change when that client deployed
+    # again. It must now reflect whatever the cache currently holds, on every request.
+    client, session = web
+    row = _seed_release_tracker_row(session, client_id=1, client_name="CRM")
+    session.add(BitbucketMainBranchStatus(id=1, version="2026.34.40"))
+    session.commit()
+    login_as(client, "deployer1")
+
+    assert "2026.34.40" in client.get("/release-tracker").text
+
+    cache = session.get(BitbucketMainBranchStatus, 1)
+    cache.version = "2026.34.50"
+    session.commit()
+
+    response = client.get("/release-tracker")
+    assert "2026.34.50" in response.text
+    assert "2026.34.40" not in response.text
+    session.refresh(row)  # sanity: the client's own row was never touched by the sync
+
+
+def test_release_tracker_main_version_shows_dash_without_a_sync_yet(web):
+    client, session = web
+    _seed_release_tracker_row(session)
+    login_as(client, "deployer1")
+
+    response = client.get("/release-tracker")
+
+    assert response.status_code == 200
 
 
 def test_release_tracker_requires_login(web):
