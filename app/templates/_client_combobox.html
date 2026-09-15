@@ -1,0 +1,108 @@
+{# Shared client picker: a type-to-filter combobox over the client list.
+
+   Custom, not a native <select> or <datalist> — datalist's "show every option on
+   focus" popup turned out unreliable across browsers, so this renders its own
+   dropdown: click/focus with nothing typed shows every client, typing filters that
+   same list by substring instead of requiring an exact match. Clicking an item (or
+   clearing the text) sets the hidden input that actually submits.
+
+   Used by the deployment filter bar (_deployment_filter_bar.html, where
+   `all_label` supplies the "All clients" catch-all option) and by the Seeder
+   Collection form (no all_label — a client must be chosen).
+
+   Params: prefix (unique per instance, namespaces the element ids), clients,
+   selected_id, selected_name, placeholder, all_label (optional), and
+   text_id/hidden_id/list_id to override the generated ids (the filter bar keeps
+   its original `client_name_filter`/`client_id`/`client_options_list` ids). #}
+{% macro client_combobox(prefix, clients, selected_id=None, selected_name=None, placeholder="All clients", all_label=None, text_id=None, hidden_id=None, list_id=None) %}
+  {% set text_id = text_id or prefix ~ "_name" %}
+  {% set hidden_id = hidden_id or prefix ~ "_id" %}
+  {% set list_id = list_id or prefix ~ "_options" %}
+  <input
+    type="text"
+    id="{{ text_id }}"
+    autocomplete="off"
+    placeholder="{{ placeholder }}"
+    value="{{ selected_name or '' }}"
+  >
+  <input type="hidden" name="client_id" id="{{ hidden_id }}" value="{{ selected_id or '' }}">
+  <ul id="{{ list_id }}" class="combobox-options" hidden>
+    {% if all_label %}<li class="combobox-option" data-id="">{{ all_label }}</li>{% endif %}
+    {% for c in clients %}
+      <li class="combobox-option" data-id="{{ c.id }}">{{ c.name }}</li>
+    {% endfor %}
+  </ul>
+
+  <script>
+    (function () {
+      var textInput = document.getElementById("{{ text_id }}");
+      var hiddenInput = document.getElementById("{{ hidden_id }}");
+      var list = document.getElementById("{{ list_id }}");
+      var options = Array.prototype.slice.call(list.querySelectorAll(".combobox-option"));
+
+      function refresh() {
+        var typed = textInput.value.trim();
+        var typedLower = typed.toLowerCase();
+        var anyVisible = false;
+        var exact = null;
+        options.forEach(function (opt) {
+          var visible = !typedLower || opt.textContent.toLowerCase().indexOf(typedLower) !== -1;
+          opt.hidden = !visible;
+          if (visible) anyVisible = true;
+          if (opt.textContent === typed) exact = opt;
+        });
+        list.hidden = !anyVisible;
+        // Typing something that matches no client's name exactly submits as empty
+        // rather than a stale id left over from a previous pick.
+        hiddenInput.value = exact ? exact.getAttribute("data-id") : "";
+        hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      function closeList() {
+        list.hidden = true;
+      }
+
+      // A blur fires before a click on the list would, which'd hide the list right out
+      // from under the click — delayed just long enough for an option's own mousedown
+      // handler below to run first. The pending timer is tracked and cancelled on the
+      // next focus/input so a quick re-focus within that window can't still get closed
+      // out from under it by a stale timer left over from the blur that preceded it.
+      var closeTimer = null;
+      function cancelScheduledClose() {
+        if (closeTimer) {
+          clearTimeout(closeTimer);
+          closeTimer = null;
+        }
+      }
+
+      textInput.addEventListener("focus", function () {
+        cancelScheduledClose();
+        refresh();
+      });
+      textInput.addEventListener("input", function () {
+        cancelScheduledClose();
+        refresh();
+      });
+      textInput.addEventListener("blur", function () {
+        closeTimer = setTimeout(closeList, 150);
+      });
+      textInput.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeList();
+      });
+
+      options.forEach(function (opt) {
+        // mousedown, not click — it fires before the input's blur, so this always wins
+        // the race described above instead of occasionally losing to it.
+        opt.addEventListener("mousedown", function (event) {
+          event.preventDefault();
+          cancelScheduledClose();
+          var id = opt.getAttribute("data-id");
+          textInput.value = id ? opt.textContent : "";
+          hiddenInput.value = id;
+          hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
+          closeList();
+        });
+      });
+    })();
+  </script>
+{% endmacro %}
