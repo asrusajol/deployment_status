@@ -15,6 +15,12 @@ class SeederCommand(Base):
     Deliberately one row per client, not per environment: the same command
     serves Test and Live for a given client (confirmed with the user), so
     there's no environment column here, unlike ClientVersionStatus.
+
+    No host column either: the servers this command runs against are the
+    client's own Test/Live URLs, already stored in client_system_urls and
+    editable on the /clients page. The card reads them live through
+    `client.system_urls`, so a URL corrected there is right everywhere at
+    once — a copy on this row would silently go stale.
     """
 
     __tablename__ = "seeder_commands"
@@ -22,7 +28,6 @@ class SeederCommand(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), unique=True)
 
-    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     command: Mapped[str] = mapped_column(Text)
 

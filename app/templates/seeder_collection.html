@@ -10,8 +10,8 @@
   <div class="seeder-toolbar">
     <input
       type="text" id="seeder-filter" class="seeder-filter-input"
-      placeholder="Filter by client, host, or seeder name"
-      aria-label="Filter by client, host, or seeder name"
+      placeholder="Filter by client, server URL, or seeder name"
+      aria-label="Filter by client, server URL, or seeder name"
     >
     <a href="/seeder-collection/new" class="button-primary">+ Add seeder</a>
   </div>
@@ -19,7 +19,8 @@
   {% if rows %}
     <div class="seeder-cards" id="seeder-cards">
       {% for row in rows %}
-      <div class="seeder-card" data-search="{{ (row.client.name if row.client else '') ~ ' ' ~ (row.host or '') ~ ' ' ~ row.title }}">
+      {% set urls = row.client.system_urls if row.client else [] %}
+      <div class="seeder-card" data-search="{{ (row.client.name if row.client else '') ~ ' ' ~ urls | map(attribute='url') | join(' ') ~ ' ' ~ row.title }}">
         <div class="seeder-card-header">
           <h2>{{ row.client.name if row.client else "—" }}</h2>
           <div class="actions-inner">
@@ -34,7 +35,27 @@
             </form>
           </div>
         </div>
-        <p class="seeder-card-subtitle">{{ row.title }}{% if row.host %} &middot; {{ row.host }}{% endif %}</p>
+        <p class="seeder-card-subtitle">{{ row.title }}</p>
+        {# Servers this command runs against: read live from the client's own
+           record (/clients), never copied onto the seeder row. #}
+        {% if urls %}
+          <dl class="seeder-urls">
+            {% for environment in ["test", "live"] %}
+              {% set env_urls = urls | selectattr("environment.value", "equalto", environment) | list %}
+              {% if env_urls %}
+                <dt class="seeder-url-env {{ environment }}">{{ environment | capitalize }}</dt>
+                <dd class="seeder-url-list">
+                  {% for u in env_urls %}
+                    <span class="seeder-url">{{ u.url }}{% if u.label %} <span class="seeder-url-label">{{ u.label }}</span>{% endif %}</span>
+                  {% endfor %}
+                </dd>
+              {% endif %}
+            {% endfor %}
+          </dl>
+        {% else %}
+          <p class="seeder-urls-empty">No server URLs on record —
+            <a href="/clients">add them on the Clients page &rarr;</a></p>
+        {% endif %}
         <div class="seeder-command-row">
           <pre class="seeder-command">{{ row.command }}</pre>
           <button

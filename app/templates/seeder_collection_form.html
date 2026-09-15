@@ -1,6 +1,27 @@
 {# app/templates/seeder_collection_form.html — shared add/edit form for Seeder Collection #}
 {% extends "base.html" %}
+{% from "_client_combobox.html" import client_combobox %}
 {% block title %}{{ "Edit Seeder" if record else "Add Seeder" }} — Deployment Tracker{% endblock %}
+{% macro server_urls(urls) %}
+  {% if urls %}
+    <dl class="seeder-urls">
+      {% for environment in ["test", "live"] %}
+        {% set env_urls = urls | selectattr("environment.value", "equalto", environment) | list %}
+        {% if env_urls %}
+          <dt class="seeder-url-env {{ environment }}">{{ environment | capitalize }}</dt>
+          <dd class="seeder-url-list">
+            {% for u in env_urls %}
+              <span class="seeder-url">{{ u.url }}{% if u.label %} <span class="seeder-url-label">{{ u.label }}</span>{% endif %}</span>
+            {% endfor %}
+          </dd>
+        {% endif %}
+      {% endfor %}
+    </dl>
+  {% else %}
+    <p class="seeder-urls-empty">No server URLs on record —
+      <a href="/clients">add them on the Clients page &rarr;</a></p>
+  {% endif %}
+{% endmacro %}
 {% block content %}
   <h1>{{ "Edit Seeder — " ~ (record.client.name if record.client else "—") if record else "Add Seeder" }}</h1>
 
@@ -17,26 +38,36 @@
       <div class="field">
         <label>Client <span class="optional">(not editable)</span></label>
         <p class="static-field">{{ record.client.name if record.client else "—" }}</p>
+        {{ server_urls(record.client.system_urls if record.client else []) }}
       </div>
     {% else %}
       <div class="field">
-        <label for="client_id">Client</label>
-        <select name="client_id" id="client_id" required>
-          <option value="">Select a client&hellip;</option>
-          {% for c in clients %}
-            <option value="{{ c.id }}" {% if submitted and submitted.client_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        <label for="seeder_client_name">Client</label>
+        <div class="combobox-field">
+          {{ client_combobox(
+               "seeder_client",
+               clients,
+               selected_id=submitted.client_id if submitted else None,
+               selected_name=submitted.client_name if submitted else None,
+               placeholder="Search clients…",
+               text_id="seeder_client_name",
+               hidden_id="client_id",
+             ) }}
+        </div>
+        {# Servers the picked client's seeder will run against — shown so you can
+           confirm you grabbed the right client. Read live from the client record;
+           nothing here is saved onto the seeder row. #}
+        <div id="seeder-client-urls" class="seeder-form-urls" hidden></div>
+        <datalist id="client_system_urls_data">
+          {% for u in client_system_urls %}
+            <option
+              data-client-id="{{ u.client_id }}" data-environment="{{ u.environment.value }}"
+              data-label="{{ u.label or '' }}" data-url="{{ u.url }}"
+            ></option>
           {% endfor %}
-        </select>
+        </datalist>
       </div>
     {% endif %}
-
-    <div class="field">
-      <label for="host">Host / domain <span class="optional">(optional)</span></label>
-      <input
-        type="text" id="host" name="host" placeholder="e.g. 10.10.2.103"
-        value="{{ submitted.host if submitted else (record.host if record else '') }}"
-      >
-    </div>
 
     <div class="field">
       <label for="title">Seeder name</label>
@@ -54,4 +85,80 @@
     <button type="submit">{{ "Save Changes" if record else "Add Seeder" }}</button>
     <a href="/seeder-collection" class="link-button">Cancel</a>
   </form>
+
+  {% if not record %}
+  <script>
+    // Shows the picked client's Test/Live server URLs under the client picker,
+    // read from the embedded client_system_urls_data — the same mechanism the
+    // deployment request form uses (app/templates/request_form.html). Display
+    // only: the seeder row stores no host, the client record owns the URLs.
+    (function () {
+      var clientSelect = document.getElementById("client_id");
+      var panel = document.getElementById("seeder-client-urls");
+      var urlOptions = document.querySelectorAll("#client_system_urls_data option");
+      if (!clientSelect || !panel) return;
+
+      function urlsFor(clientId, environment) {
+        var matches = [];
+        urlOptions.forEach(function (opt) {
+          if (opt.getAttribute("data-client-id") === clientId && opt.getAttribute("data-environment") === environment) {
+            matches.push({ url: opt.getAttribute("data-url"), label: opt.getAttribute("data-label") });
+          }
+        });
+        return matches;
+      }
+
+      function render() {
+        var clientId = clientSelect.value;
+        panel.innerHTML = "";
+        if (!clientId) {
+          panel.hidden = true;
+          return;
+        }
+        panel.hidden = false;
+
+        var any = false;
+        ["test", "live"].forEach(function (environment) {
+          var matches = urlsFor(clientId, environment);
+          if (!matches.length) return;
+          any = true;
+          var term = document.createElement("dt");
+          term.className = "seeder-url-env " + environment;
+          term.textContent = environment.charAt(0).toUpperCase() + environment.slice(1);
+          var list = document.createElement("dd");
+          list.className = "seeder-url-list";
+          matches.forEach(function (match) {
+            var span = document.createElement("span");
+            span.className = "seeder-url";
+            span.textContent = match.url;
+            if (match.label) {
+              var label = document.createElement("span");
+              label.className = "seeder-url-label";
+              label.textContent = match.label;
+              span.appendChild(document.createTextNode(" "));
+              span.appendChild(label);
+            }
+            list.appendChild(span);
+          });
+          panel.appendChild(term);
+          panel.appendChild(list);
+        });
+
+        if (!any) {
+          var empty = document.createElement("p");
+          empty.className = "seeder-urls-empty";
+          empty.textContent = "No server URLs on record — ";
+          var link = document.createElement("a");
+          link.href = "/clients";
+          link.textContent = "add them on the Clients page \u2192";
+          empty.appendChild(link);
+          panel.appendChild(empty);
+        }
+      }
+
+      clientSelect.addEventListener("change", render);
+      render();
+    })();
+  </script>
+  {% endif %}
 {% endblock %}

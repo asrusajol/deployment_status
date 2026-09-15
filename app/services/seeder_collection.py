@@ -2,9 +2,10 @@
 docs/superpowers/specs/2026-08-30-seeder-collection-design.md.
 """
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.client import Client
+from app.models.client_system_url import ClientSystemUrl
 from app.models.seeder_command import SeederCommand
 
 
@@ -20,10 +21,19 @@ def seeder_collection_rows(db: Session) -> list[SeederCommand]:
     return (
         db.query(SeederCommand)
         .join(Client, SeederCommand.client_id == Client.id)
-        .options(joinedload(SeederCommand.client))
+        # system_urls eagerly too: every card renders its client's Test/Live
+        # URLs, so lazy-loading them would be one extra query per card.
+        .options(joinedload(SeederCommand.client).selectinload(Client.system_urls))
         .order_by(Client.name)
         .all()
     )
+
+
+def client_system_urls_for_form(db: Session) -> list[ClientSystemUrl]:
+    """Every client's server URLs, for the add form to show the picked
+    client's URLs without a round trip — same approach as the deployment
+    request form (app/templates/request_form.html)."""
+    return db.query(ClientSystemUrl).order_by(ClientSystemUrl.id).all()
 
 
 def clients_without_seeder_command(db: Session) -> list[Client]:
@@ -34,12 +44,12 @@ def clients_without_seeder_command(db: Session) -> list[Client]:
 
 
 def create_seeder_command(
-    db: Session, *, client_id: int, host: str | None, title: str, command: str, created_by: int
+    db: Session, *, client_id: int, title: str, command: str, created_by: int
 ) -> SeederCommand:
     if db.query(SeederCommand).filter_by(client_id=client_id).first() is not None:
         raise ClientAlreadyHasSeederCommandError(f"Client {client_id} already has a saved seeder command")
     row = SeederCommand(
-        client_id=client_id, host=host, title=title, command=command,
+        client_id=client_id, title=title, command=command,
         created_by=created_by, updated_by=created_by,
     )
     db.add(row)
@@ -48,9 +58,8 @@ def create_seeder_command(
 
 
 def update_seeder_command(
-    db: Session, row: SeederCommand, *, host: str | None, title: str, command: str, updated_by: int
+    db: Session, row: SeederCommand, *, title: str, command: str, updated_by: int
 ) -> SeederCommand:
-    row.host = host
     row.title = title
     row.command = command
     row.updated_by = updated_by

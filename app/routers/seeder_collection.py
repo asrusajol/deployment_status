@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_devops
 from app.database import get_db
+from app.models.client import Client
 from app.models.seeder_command import SeederCommand
 from app.models.user import User
 from app.services.seeder_collection import (
     ClientAlreadyHasSeederCommandError,
+    client_system_urls_for_form,
     clients_without_seeder_command,
     create_seeder_command,
     delete_seeder_command,
@@ -34,7 +36,16 @@ def _get_seeder_command_or_404(db: Session, seeder_id: int) -> SeederCommand:
     return row
 
 
-def _blank_fields(host: str | None, title: str, command: str) -> list[str]:
+def client_name_for(db: Session, client_id) -> str | None:
+    """Re-labels the client combobox when a rejected form is re-shown — the
+    hidden field carries the id, the visible text input needs the name."""
+    if not str(client_id).strip().isdigit():
+        return None
+    client = db.get(Client, int(client_id))
+    return client.name if client else None
+
+
+def _blank_fields(title: str, command: str) -> list[str]:
     errors = []
     if not title.strip():
         errors.append("Title cannot be blank.")
@@ -61,10 +72,14 @@ def seeder_collection_new_form(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_devops),
 ):
-    clients = clients_without_seeder_command(db)
     return templates.TemplateResponse(
         request, "seeder_collection_form.html",
-        {"current_user": current_user, "clients": clients, "record": None},
+        {
+            "current_user": current_user,
+            "clients": clients_without_seeder_command(db),
+            "client_system_urls": client_system_urls_for_form(db),
+            "record": None,
+        },
     )
 
 
@@ -73,28 +88,41 @@ def seeder_collection_create(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_devops),
-    client_id: int = Form(...),
-    host: str = Form(""),
+    # str, not int: the client combobox submits "" when nothing is picked (or a
+    # typed name matches no client), and that deserves a readable error rather
+    # than FastAPI's 422.
+    client_id: str = Form(""),
     title: str = Form(...),
     command: str = Form(...),
 ):
-    errors = _blank_fields(host, title, command)
+    errors = _blank_fields(title, command)
+    if not client_id.strip().isdigit():
+        errors.append("Choose a client from the list.")
     if not errors:
+        client_id = int(client_id)
         try:
             create_seeder_command(
-                db, client_id=client_id, host=host.strip() or None, title=title.strip(),
+                db, client_id=client_id, title=title.strip(),
                 command=command.strip(), created_by=current_user.id,
             )
         except ClientAlreadyHasSeederCommandError:
             errors.append("This client already has a saved seeder command — edit it instead.")
 
     if errors:
-        clients = clients_without_seeder_command(db)
         return templates.TemplateResponse(
             request, "seeder_collection_form.html",
             {
-                "current_user": current_user, "clients": clients, "record": None, "error": " ".join(errors),
-                "submitted": {"client_id": client_id, "host": host, "title": title, "command": command},
+                "current_user": current_user,
+                "clients": clients_without_seeder_command(db),
+                "client_system_urls": client_system_urls_for_form(db),
+                "record": None,
+                "error": " ".join(errors),
+                "submitted": {
+                    "client_id": int(client_id) if str(client_id).strip().isdigit() else None,
+                    "client_name": client_name_for(db, client_id),
+                    "title": title,
+                    "command": command,
+                },
             },
             status_code=400,
         )
@@ -113,7 +141,7 @@ def seeder_collection_edit_form(
     row = _get_seeder_command_or_404(db, seeder_id)
     return templates.TemplateResponse(
         request, "seeder_collection_form.html",
-        {"current_user": current_user, "clients": None, "record": row},
+        {"current_user": current_user, "clients": None, "client_system_urls": [], "record": row},
     )
 
 
@@ -123,22 +151,24 @@ def seeder_collection_edit(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_devops),
-    host: str = Form(""),
     title: str = Form(...),
     command: str = Form(...),
 ):
     row = _get_seeder_command_or_404(db, seeder_id)
-    errors = _blank_fields(host, title, command)
+    errors = _blank_fields(title, command)
 
     if errors:
         return templates.TemplateResponse(
             request, "seeder_collection_form.html",
-            {"current_user": current_user, "clients": None, "record": row, "error": " ".join(errors)},
+            {
+                "current_user": current_user, "clients": None, "client_system_urls": [],
+                "record": row, "error": " ".join(errors),
+            },
             status_code=400,
         )
 
     update_seeder_command(
-        db, row, host=host.strip() or None, title=title.strip(), command=command.strip(),
+        db, row, title=title.strip(), command=command.strip(),
         updated_by=current_user.id,
     )
     db.commit()

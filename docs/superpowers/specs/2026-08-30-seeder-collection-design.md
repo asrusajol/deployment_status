@@ -29,7 +29,6 @@ New table `seeder_commands`:
 |---|---|---|
 | `id` | PK | |
 | `client_id` | FK → `clients.id`, unique | one row per client |
-| `host` | string, nullable | free text — IP or domain, e.g. `10.10.2.103` |
 | `title` | string | free text label, e.g. "Dynamic Permission Seeder" — not a fixed catalog, devops names it whatever the command is for |
 | `command` | text | the full command, verbatim, copy-pasteable |
 | `created_by` | FK → `users.id`, nullable | who first saved this row |
@@ -39,6 +38,14 @@ New table `seeder_commands`:
 
 No environment column, no approval/status column — this is a straight
 reference catalog, not a workflow queue.
+
+No host column either (revised 2026-09-15, after the first version shipped with
+a free-text `host`). The servers a seeder runs against are the client's own
+Test/Live URLs, which the app already stores in `client_system_urls` and lets
+admin/devops edit on the /clients page. A card reads them live through
+`client.system_urls`, so a URL corrected there is right everywhere at once,
+where a copy on the seeder row would silently go stale. Migration
+`c9d8e7f6a5b4` drops the column.
 
 ## Permissions
 
@@ -53,18 +60,18 @@ matching the existing "Admin" link's pattern.
 `app/routers/seeder_collection.py`, backed by `app/services/seeder_collection.py`:
 
 - `GET /seeder-collection` — list all rows, one card per client, ordered by
-  client name. No server-side filtering; the filter box is client-side JS
-  (see UI below).
+  client name, eager-loading `client.system_urls` (one lazy load per card
+  would be an N+1 across 55 clients). No server-side filtering; the filter box
+  is client-side JS (see UI below).
 - `GET /seeder-collection/new` — add form. Client picker is restricted to
   clients that don't already have a `seeder_commands` row (enforcing "one
   per client" at the UI level; the DB unique constraint on `client_id` is
   the hard backstop).
 - `POST /seeder-collection/new` — create. 400 with the form re-shown if the
-  chosen client already has a row (race with another devops user) or any
-  field is blank.
-- `GET /seeder-collection/{id}/edit` — edit form (host/title/command; client
-  is fixed, not re-assignable — deleting and re-adding covers that rare
-  case).
+  chosen client already has a row (race with another devops user), no client
+  was picked, or any field is blank.
+- `GET /seeder-collection/{id}/edit` — edit form (title/command; client is
+  fixed, not re-assignable — deleting and re-adding covers that rare case).
 - `POST /seeder-collection/{id}/edit` — update; sets `updated_by`/`updated_at`.
 - `POST /seeder-collection/{id}/delete` — delete.
 
@@ -72,13 +79,24 @@ matching the existing "Admin" link's pattern.
 
 Cards, not a table (matches the mockup's visual shape better for a
 multi-line command block than a table cell would). Each card: client name,
-`title · host` subtitle, the command in a `<pre>`/monospace block, a Copy
-button (reuses the existing `.icon-button` copy-with-checkmark pattern
-already in `base.html`), and Edit/Delete action links.
+the seeder title, the client's Test and Live server URLs (every URL for each
+environment, with its optional label like "Line 2" — the same command serves
+both systems, which is exactly why both are shown), the command in a
+`<pre>`/monospace block, a Copy button (reuses the existing `.icon-button`
+copy-with-checkmark pattern already in `base.html`), and Edit/Delete action
+links. A client with no URLs on record gets a muted prompt linking to the
+Clients page rather than a blank space.
 
-A single text input above the list ("Filter by client, host, or seeder
+The add form's client picker is the shared type-to-filter combobox extracted
+into `_client_combobox.html` — the same one the dashboard/requests filter bar
+uses, so client search behaves identically across the app. Picking a client
+immediately renders that client's Test/Live URLs beneath the picker, read from
+an embedded datalist, matching how `request_form.html` populates its server-URL
+dropdown.
+
+A single text input above the list ("Filter by client, server URL, or seeder
 name") is a client-side JS live filter — no page reload, no server round
-trip — hiding cards whose client name, host, or title don't match the typed
+trip — hiding cards whose client name, server URLs, or title don't match the typed
 substring (case-insensitive). This differs from Release Tracker's
 server-side dropdown filter bar on purpose: the mockup shows instant-typing
 filtering across three free-text-ish fields, which is what a client-side
@@ -97,14 +115,22 @@ Following this repo's existing pattern (`tests/test_release_tracker*.py`):
   same client.
 - Routes: devops and admin can list/add/edit/delete; a `developer`/`team_lead`
   user gets 403 on every route and doesn't see the nav link.
-- Template smoke test: card renders client/title/host/command; empty state
-  when no rows exist.
+- Template smoke test: card renders client/title/command, both environments'
+  server URLs with their labels, and the "no URLs on record" prompt for a
+  client that has none; empty state when no rows exist.
+- Service: `seeder_collection_rows` eager-loads `client.system_urls` (asserted
+  by counting queries issued after the call, so the test actually fails if the
+  eager load is dropped).
 
 ## Migration
 
-One Alembic migration: create `seeder_commands` with the columns above, FK
+`f7a8b9c0d1e2` creates `seeder_commands` with the columns above, FK
 constraints to `clients` and `users`, unique constraint on `client_id`. No
 data migration — this is a brand new table with no prior data.
+
+`c9d8e7f6a5b4` then drops `host` (see Data model). Its downgrade re-adds the
+column as nullable; the values themselves are not recoverable, which is
+deliberate — the client record owns the URLs now.
 
 ## Open items requiring the user before implementation can fully complete
 

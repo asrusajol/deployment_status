@@ -1181,3 +1181,64 @@ code {
   font-family: var(--font-mono);
   resize: vertical;
 }
+
+/* --- Seeder Collection: the client's Test/Live server URLs, read live from the
+   client record (no host is stored on the seeder row itself). Shown on each card
+   and under the add form's client picker. --- */
+.seeder-urls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0 0 10px;
+  align-items: baseline;
+}
+
+.seeder-url-env {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  justify-self: start;
+}
+
+.seeder-url-env.test {
+  color: #8a6100;
+  background: #fdf1d6;
+}
+
+.seeder-url-env.live {
+  color: #1c6b4a;
+  background: #ddf3e7;
+}
+
+.seeder-url-list {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.seeder-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  color: #3d4b57;
+  overflow-wrap: anywhere;
+}
+
+.seeder-url-label {
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: #7b8794;
+}
+
+.seeder-urls-empty {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: #7b8794;
+}
+
+.seeder-form-urls {
+  margin-top: 8px;
+}
