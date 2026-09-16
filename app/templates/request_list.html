@@ -56,7 +56,15 @@
       <tbody>
         {% for r in requests %}
         <tr>
-          <td><span class="badge badge-type-{{ r.request_type.value }}">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span></td>
+          {# The queue has no date column (12 already), so the request date rides
+             along as a tooltip on the Type badge — .badge-type-* gets cursor:help
+             so there's some hint it's there. #}
+          <td>
+            <span
+              class="badge badge-type-{{ r.request_type.value }}"
+              title="Requested {{ r.created_at.strftime('%Y-%m-%d %H:%M UTC') if r.created_at else 'unknown' }}"
+            >{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span>
+          </td>
           <td>{{ r.task_id or "—" }}</td>
           <td>{{ r.module_name or "—" }}</td>
           <td>{{ r.client.name if r.client else "—" }}</td>

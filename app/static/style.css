@@ -1241,3 +1241,7 @@ code {
 .seeder-form-urls {
   margin-top: 8px;
 }
+
+/* The Type badge carries the request date in its title attribute (see
+   request_list.html) — the cursor is the only affordance saying so. */
+.requests-table [class*="badge-type-"] { cursor: help; }
