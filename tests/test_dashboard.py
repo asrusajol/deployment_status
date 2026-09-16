@@ -2685,3 +2685,23 @@ def test_intake_requests_count_as_open_too(web):
     response = client.get("/requests")
 
     assert _row_order(response.text, ["PR-INTAKE", "PR-DONE"]) == ["PR-INTAKE", "PR-DONE"]
+
+
+def test_type_badge_carries_the_request_date_as_a_tooltip(web):
+    """Hovering the Type badge shows when the request was made — the queue has
+    no date column, so this is the only place that date is visible."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    session.add(
+        DeploymentRequest(
+            task_id="PR-DATED", requested_by=1, status=RequestStatus.pending_approval,
+            created_at=datetime(2026, 3, 4, 9, 7, tzinfo=timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert 'title="Requested 2026-03-04 09:07 UTC"' in response.text
