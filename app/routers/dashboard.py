@@ -29,6 +29,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import case
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import (
@@ -552,6 +553,43 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
     RequestStatus.approved,
     RequestStatus.in_progress,
 )
+# Requests still moving through the flow, in the order a person meets them. The
+# queue lists these before anything finished (see _requests_ordering below), so
+# what still needs doing is on page 1 instead of wherever pagination left it.
+# Defined as "not finished" rather than by listing the active ones: a status added
+# later is open until someone deliberately marks it terminal, which fails safe —
+# a new status showing up in the queue is noticeable, one silently sorted into
+# history is not.
+OPEN_REQUEST_STATUS_ORDER = (
+    RequestStatus.pending_intake,
+    RequestStatus.submitted,
+    RequestStatus.pending_approval,
+    RequestStatus.approved,
+    RequestStatus.claimed,
+    RequestStatus.in_progress,
+)
+
+
+def _requests_ordering():
+    """Open requests first, grouped by stage, oldest first within a stage —
+    the one that has waited longest is the one most likely to have been
+    forgotten, so it sits on top. Everything finished follows, still
+    newest-first: that part of the list is a history log and reads as a
+    reverse chronology."""
+    is_open = DeploymentRequest.status.in_(OPEN_REQUEST_STATUS_ORDER)
+    return (
+        case((is_open, 0), else_=1),
+        case(
+            *[(DeploymentRequest.status == s, i) for i, s in enumerate(OPEN_REQUEST_STATUS_ORDER)],
+            else_=len(OPEN_REQUEST_STATUS_ORDER),
+        ),
+        # Oldest-first for open rows only. Finished rows all share the same NULL
+        # here, so they fall through to the created_at DESC below untouched.
+        case((is_open, DeploymentRequest.created_at), else_=None).asc(),
+        DeploymentRequest.created_at.desc(),
+    )
+
+
 # User-selectable via the page-size dropdown (request_list.html) — DEFAULT is what a
 # fresh visit (no page_size query param) gets; ALLOWED bounds the dropdown itself and
 # also anything sent directly as a query param, so a hand-edited/bookmarked URL can't
@@ -581,7 +619,9 @@ def list_requests(
         # Feeds current_executor (request_list.html's "Handling: <name>" line) without
         # an N+1 query per in_progress row on the page.
         .options(joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor))
-        .order_by(DeploymentRequest.created_at.desc())
+        # Ordered before the offset/limit below, so an old open request lands on
+        # page 1 rather than only being hoisted within the page it already sat on.
+        .order_by(*_requests_ordering())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

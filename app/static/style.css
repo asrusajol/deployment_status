@@ -1184,7 +1184,13 @@ code {
 
 /* --- Seeder Collection: the client's Test/Live server URLs, read live from the
    client record (no host is stored on the seeder row itself). Shown on each card
-   and under the add form's client picker. --- */
+   and under the add form's client picker.
+
+   Colours come from the design system's tokens, not from fixed hex values: the
+   Test/Live chips reuse the same amber/violet the Test and Live badges and the
+   Release Tracker columns use, because in this app those two hues *are* what
+   Test and Live mean. A one-off palette here would read as a third environment
+   that doesn't exist. --- */
 .seeder-urls {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -1203,15 +1209,8 @@ code {
   justify-self: start;
 }
 
-.seeder-url-env.test {
-  color: #8a6100;
-  background: #fdf1d6;
-}
-
-.seeder-url-env.live {
-  color: #1c6b4a;
-  background: #ddf3e7;
-}
+.seeder-url-env.test { background: var(--amber-dim); color: var(--amber); }
+.seeder-url-env.live { background: var(--violet-dim); color: var(--violet); }
 
 .seeder-url-list {
   margin: 0;
@@ -1221,22 +1220,22 @@ code {
 }
 
 .seeder-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: #3d4b57;
+  color: var(--paper);
   overflow-wrap: anywhere;
 }
 
 .seeder-url-label {
-  font-family: inherit;
+  font-family: var(--font-body);
   font-size: 0.72rem;
-  color: #7b8794;
+  color: var(--fog);
 }
 
 .seeder-urls-empty {
   margin: 0 0 10px;
   font-size: 0.8rem;
-  color: #7b8794;
+  color: var(--fog);
 }
 
 .seeder-form-urls {

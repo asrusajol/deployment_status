@@ -2570,3 +2570,118 @@ def test_no_approval_required_requests_go_straight_to_deploy_queue(web):
     assert deploy_response.status_code == 303
     session.refresh(request)
     assert request.status == RequestStatus.completed
+
+
+def _row_order(response_text, task_ids):
+    """Task IDs in the order they appear in the table body — scoped to <tbody>
+    on purpose: the notification script's active_requests_json blob near the top
+    of the page also contains task ids, and matching that instead would make an
+    ordering assertion pass without the table being ordered at all."""
+    body = response_text[response_text.index("<tbody>") : response_text.index("</tbody>")]
+    positions = [(body.index(t), t) for t in task_ids if t in body]
+    return [t for _, t in sorted(positions)]
+
+
+def test_requests_queue_lists_open_requests_before_finished_ones(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(task_id="PR-DONE", requested_by=1, status=RequestStatus.completed, created_at=now),
+        DeploymentRequest(
+            task_id="PR-OPEN", requested_by=1, status=RequestStatus.pending_approval,
+            created_at=now - timedelta(days=9),
+        ),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    # Open beats newer-but-finished: PR-OPEN is nine days older and still comes first.
+    assert _row_order(response.text, ["PR-OPEN", "PR-DONE"]) == ["PR-OPEN", "PR-DONE"]
+
+
+def test_open_requests_are_grouped_by_stage_then_oldest_first(web):
+    """Waiting on approval, then waiting on deployment, then being deployed —
+    and within a stage the one that has waited longest is on top, because that's
+    the one most likely to have been forgotten."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(task_id="PR-PROG", requested_by=1, status=RequestStatus.in_progress, created_at=now - timedelta(days=5)),
+        DeploymentRequest(task_id="PR-APPR-NEW", requested_by=1, status=RequestStatus.approved, created_at=now),
+        DeploymentRequest(task_id="PR-APPR-OLD", requested_by=1, status=RequestStatus.approved, created_at=now - timedelta(days=3)),
+        DeploymentRequest(task_id="PR-WAIT", requested_by=1, status=RequestStatus.pending_approval, created_at=now),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert _row_order(response.text, ["PR-WAIT", "PR-APPR-OLD", "PR-APPR-NEW", "PR-PROG"]) == [
+        "PR-WAIT", "PR-APPR-OLD", "PR-APPR-NEW", "PR-PROG",
+    ]
+
+
+def test_finished_requests_stay_newest_first(web):
+    """Below the open ones the list is still a reverse-chronological history."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(task_id="PR-OLDER", requested_by=1, status=RequestStatus.completed, created_at=now - timedelta(days=2)),
+        DeploymentRequest(task_id="PR-NEWER", requested_by=1, status=RequestStatus.completed, created_at=now),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert _row_order(response.text, ["PR-NEWER", "PR-OLDER"]) == ["PR-NEWER", "PR-OLDER"]
+
+
+def test_an_old_open_request_is_on_page_one_not_buried_by_pagination(web):
+    """The sort runs before pagination — otherwise a forgotten request three
+    pages back would only ever be hoisted within the page it already sat on,
+    which is exactly where nobody looks."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 20)  # all rejected, so all "finished"
+    session.add(
+        DeploymentRequest(
+            task_id="PR-FORGOTTEN", requested_by=1, status=RequestStatus.pending_approval,
+            created_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert "PR-FORGOTTEN" in response.text
+    assert _row_order(response.text, ["PR-FORGOTTEN", "PR-000"]) == ["PR-FORGOTTEN", "PR-000"]
+
+
+def test_intake_requests_count_as_open_too(web):
+    """"Open" is defined as "not finished", so the intake-skill's own stopgap
+    status sorts up with the rest rather than silently landing among history."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(task_id="PR-DONE", requested_by=1, status=RequestStatus.completed, created_at=now),
+        DeploymentRequest(task_id="PR-INTAKE", requested_by=1, status=RequestStatus.pending_intake, created_at=now - timedelta(days=1)),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert _row_order(response.text, ["PR-INTAKE", "PR-DONE"]) == ["PR-INTAKE", "PR-DONE"]
