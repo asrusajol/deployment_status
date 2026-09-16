@@ -71,6 +71,12 @@ def require_admin_or_devops(current_user: User = Depends(require_login)) -> User
     return current_user
 
 
+# Alias used by the Seeder Collection tab (app/routers/seeder_collection.py) — same
+# admin-or-devops gate as require_admin_or_devops above (used by app/routers/clients.py);
+# kept as a separate name since that's what seeder_collection.py already depends on.
+require_devops = require_admin_or_devops
+
+
 def _is_deploy_team_member(user: User, settings: Settings) -> bool:
     # The whole app is already scoped to this one team's deploy tasks (deployable-tasks
     # only ever pulls hall/machine-group task_api_deployable_hall_id /
