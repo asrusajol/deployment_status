@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_copy_button.html" as copy_btn %}
+{% from "_localtime.html" import localtime, localtime_text, localtime_attr %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
   <div class="queue-header">
@@ -62,7 +63,8 @@
           <td>
             <span
               class="badge badge-type-{{ r.request_type.value }}"
-              title="Requested {{ r.created_at.strftime('%Y-%m-%d %H:%M UTC') if r.created_at else 'unknown' }}"
+              title="Requested {{ localtime_text(r.created_at) if r.created_at else 'unknown' }}"
+              {% if r.created_at %}data-localtime-title="{{ localtime_attr(r.created_at) }}" data-localtime-prefix="Requested "{% endif %}
             >{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span>
           </td>
           <td>{{ r.task_id or "—" }}</td>
@@ -147,7 +149,15 @@
               —
             {% endif %}
           </td>
-          <td>{{ r.requester.name if r.requester else "—" }}</td>
+          <td class="requester-cell">
+            {{ r.requester.name if r.requester else "—" }}
+            {# When they asked, under who asked — the fact belongs beside the person,
+               not in the Action column, which is for controls. Same shape as
+               "Deployed by:" under Status. #}
+            {% if r.created_at %}
+              <div class="requester-asked-at"><span class="cell-label">Requested</span> {{ localtime(r.created_at) }}</div>
+            {% endif %}
+          </td>
           <td>
             {% set rail = rail_stages[r.status] %}
             <div class="status-cell">
@@ -166,6 +176,7 @@
             {% endif %}
           </td>
           <td>
+            {% set show_times = r.status in FINISHED_REQUEST_STATUSES and r.finished_at %}
             <div class="actions-inner">
               {% if r.status == RequestStatus.pending_approval %}
                 {% if can_approve_request(r) %}
@@ -201,8 +212,20 @@
                 {% else %}
                   <span class="muted">In progress — awaiting completion</span>
                 {% endif %}
-              {% elif not can_delete_request(r) and not can_edit_request(r) %}
+              {% elif not can_delete_request(r) and not can_edit_request(r) and not show_times %}
                 <span class="muted">—</span>
+              {% endif %}
+
+              {# Once devops is done there is no button left, so the cell carries when
+                 they finished. Only that: when it was *asked for* sits under the
+                 requester's name, and carrying both here widened this column enough to
+                 push the table into horizontal scroll. Converts to the viewer's
+                 timezone (_localtime.html). #}
+              {% if show_times %}
+                <div class="action-times">
+                  <span class="cell-label">Deployed</span>
+                  {{ localtime(r.finished_at) }}
+                </div>
               {% endif %}
               {% if can_edit_request(r) %}
                 <a href="/requests/{{ r.id }}/edit" class="action-link edit">Edit</a>

@@ -203,5 +203,65 @@
       });
     })();
   </script>
+  <script>
+    // Restates every server-rendered UTC timestamp in the viewer's own timezone.
+    // The markup ships UTC (see _localtime.html) so the page is correct before this
+    // runs and for anyone without JS; this only rewrites what is already there.
+    //
+    // Same 12-hour, zero-padded, ISO-dated shape as the server's rendering rather
+    // than toLocaleString()'s locale ordering — these sit in table columns that have
+    // to stay aligned and scannable, and "9/15/2026, 7:45 PM" does neither. The zone
+    // offset is appended so nobody has to wonder which clock they are reading.
+    (function () {
+      function parts(date) {
+        var pad = function (n) { return String(n).padStart(2, "0"); };
+        var hours = date.getHours();
+        var suffix = hours >= 12 ? "PM" : "AM";
+        var hour12 = hours % 12 === 0 ? 12 : hours % 12;
+        return (
+          date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+          " " + pad(hour12) + ":" + pad(date.getMinutes()) + " " + suffix
+        );
+      }
+
+      // "+06", "-05:30" — minutes only when the zone actually needs them.
+      function offset(date) {
+        var total = -date.getTimezoneOffset();
+        var sign = total < 0 ? "-" : "+";
+        var abs = Math.abs(total);
+        var hours = String(Math.floor(abs / 60)).padStart(2, "0");
+        var minutes = abs % 60;
+        return sign + hours + (minutes ? ":" + String(minutes).padStart(2, "0") : "");
+      }
+
+      function local(iso) {
+        var date = new Date(iso);
+        if (isNaN(date.getTime())) return null;   // leave the UTC text alone
+        return parts(date) + " " + offset(date);
+      }
+
+      document.querySelectorAll("time.localtime[datetime]").forEach(function (el) {
+        var date = new Date(el.getAttribute("datetime"));
+        if (isNaN(date.getTime())) return;
+        // Halves are rewritten separately so the Action column can keep its line
+        // break between them; textContent would collapse the two spans into one.
+        var dateEl = el.querySelector(".localtime-date");
+        var timeEl = el.querySelector(".localtime-time");
+        if (dateEl && timeEl) {
+          var both = parts(date);
+          dateEl.textContent = both.slice(0, both.indexOf(" "));
+          timeEl.textContent = both.slice(both.indexOf(" ") + 1) + " " + offset(date);
+        } else {
+          el.textContent = local(el.getAttribute("datetime"));
+        }
+      });
+
+      // A title attribute can't hold markup, so those instants travel separately.
+      document.querySelectorAll("[data-localtime-title]").forEach(function (el) {
+        var text = local(el.getAttribute("data-localtime-title"));
+        if (text) el.setAttribute("title", (el.getAttribute("data-localtime-prefix") || "") + text);
+      });
+    })();
+  </script>
 </body>
 </html>
