@@ -153,3 +153,120 @@ def test_returning_from_approved_leaves_other_claims_alone(web):
     assert response.status_code == 303
     assert session.query(DeploymentExecution).filter_by(request_id=request_b.id).count() == 1
     assert session.query(RequestReturn).one().returned_from == RequestStatus.approved
+
+
+def _returned_request(session, *, request_type=RequestType.standard, requester_id=2):
+    request = DeploymentRequest(
+        task_id="PR-BACK", requested_by=requester_id, status=RequestStatus.returned,
+        request_type=request_type, created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    session.add(request)
+    session.commit()
+    session.add(
+        RequestReturn(
+            request_id=request.id, reason="branch deleted", returned_by=1,
+            returned_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+            returned_from=RequestStatus.approved,
+        )
+    )
+    session.commit()
+    return request
+
+
+def test_resubmitting_a_standard_request_goes_back_for_approval(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    session.refresh(request)
+    # The branch changed, so the team lead's approval was for something that no
+    # longer exists.
+    assert request.status == RequestStatus.pending_approval
+
+
+def test_resubmitting_a_test_local_request_goes_straight_to_the_deploy_queue(web):
+    """test_local and db_dump_restore skip the approval gate at creation, so they
+    skip it on the way back too."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, request_type=RequestType.test_local)
+    login_as(client, "devone")
+
+    client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    session.refresh(request)
+    assert request.status == RequestStatus.approved
+
+
+def test_someone_elses_request_cannot_be_resubmitted(web):
+    client, session = web
+    make_user(session, id=3, name="Other Dev", username="other", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "other")
+
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    assert response.status_code == 403
+
+
+def test_resubmitting_something_not_returned_is_refused(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    request.status = RequestStatus.approved
+    session.commit()
+    login_as(client, "devone")
+
+    assert client.post(f"/requests/{request.id}/resubmit", follow_redirects=False).status_code == 409
+
+
+def test_the_requester_can_withdraw_a_returned_request(web):
+    """Withdraw, not delete: the return log has to survive, or the team lead's
+    view of why it kept coming back disappears with it."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    response = client.post(f"/requests/{request.id}/withdraw", follow_redirects=False)
+
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.withdrawn
+    assert session.query(RequestReturn).count() == 1
+
+
+def test_a_returned_request_is_editable_even_when_not_standard(web):
+    """can_edit_request refuses non-standard types outright, on the grounds they
+    have no pre-decision window. A return creates one by design — without this
+    exception a returned test_local request could never be corrected."""
+    from app.auth import can_edit_request
+
+    client, session = web
+    requester = make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, request_type=RequestType.test_local)
+
+    assert can_edit_request(requester, request) is True
+
+
+def test_a_returned_request_is_not_deletable(web):
+    """It carries a log now, and DELETABLE_REQUEST_STATUSES' own reasoning is that
+    deleting a row with history breaks the audit trail this tool exists for."""
+    from app.auth import can_delete_request
+
+    client, session = web
+    requester = make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+
+    assert can_delete_request(requester, request) is False

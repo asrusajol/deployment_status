@@ -55,6 +55,9 @@ EDITABLE_REQUEST_STATUSES = (
     RequestStatus.pending_intake,
     RequestStatus.submitted,
     RequestStatus.pending_approval,
+    # Fixing whatever devops flagged (usually the branch) is the entire point of a
+    # return — see can_edit_request()'s request_type exception in app/auth.py.
+    RequestStatus.returned,
 )
 
 
@@ -82,6 +85,21 @@ class RequestType(str, enum.Enum):
     # boxes (crm.test.local, tmp.test.local, vop.test.local, ...) rather than a real
     # client system, so it doesn't need a team lead's sign-off either.
     test_local = "test_local"
+
+
+def initial_status_for(request_type: RequestType) -> RequestStatus:
+    """The status a freshly created request of this type starts in.
+
+    `standard` waits for a team lead; db_dump_restore and test_local skip the
+    approval gate entirely (see RequestType). Shared by the creation routes and
+    by resubmission so the two can never drift — a resubmitted request must land
+    exactly where a new one of its type would.
+    """
+    return (
+        RequestStatus.pending_approval
+        if request_type == RequestType.standard
+        else RequestStatus.approved
+    )
 
 
 class DeploymentRequest(Base):

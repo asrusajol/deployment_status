@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.models.deployment_request import DELETABLE_REQUEST_STATUSES, EDITABLE_REQUEST_STATUSES, RequestType
+from app.models.deployment_request import (
+    DELETABLE_REQUEST_STATUSES,
+    EDITABLE_REQUEST_STATUSES,
+    RequestStatus,
+    RequestType,
+)
 from app.models.user import User, UserRole
 
 SESSION_USER_ID_KEY = "user_id"
@@ -136,9 +141,29 @@ def can_edit_request(current_user: User, deployment_request) -> bool:
     stance can_delete_request takes once execution has started. db_dump_restore/test_local
     requests are never editable regardless of status: they're created straight into
     `approved` and have no real pre-decision window."""
-    if deployment_request.request_type != RequestType.standard:
+    # Non-standard types have no pre-decision window of their own — they are created
+    # straight into `approved`. A return creates one by design, though: the requester
+    # is being asked to fix something, so they must be able to edit it. Without this
+    # a returned test_local request could not be corrected by anyone, which removes
+    # the point of returning it.
+    if (
+        deployment_request.request_type != RequestType.standard
+        and deployment_request.status != RequestStatus.returned
+    ):
         return False
     if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
+        return False
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
+
+
+def can_resubmit_request(current_user: User, deployment_request) -> bool:
+    """Whether current_user may push a returned request back into the queue: the
+    original requester, or an admin. Resubmission is deliberately a separate act
+    from saving an edit — correcting a typo should not silently re-enter the
+    deploy queue."""
+    if deployment_request.status != RequestStatus.returned:
         return False
     if current_user.role == UserRole.admin:
         return True

@@ -36,6 +36,7 @@ from app.auth import (
     can_approve_deployment_request,
     can_delete_request,
     can_edit_request,
+    can_resubmit_request,
     require_deploy_team_member,
     require_login,
 )
@@ -46,7 +47,13 @@ from app.models.client import Client
 from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
-from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.deployment_request import (
+    DeploymentEnvironment,
+    DeploymentRequest,
+    RequestStatus,
+    RequestType,
+    initial_status_for,
+)
 from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
@@ -456,7 +463,7 @@ def create_request(
             version=result.version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
-            status=RequestStatus.pending_approval,
+            status=initial_status_for(RequestType.standard),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -506,7 +513,7 @@ def create_db_dump_restore_request(
             # No approval required for this request type — lands straight in the
             # deploy team's "Pending Deployment" queue, same as an approved standard
             # request, so who-executed-it-and-when is still tracked.
-            status=RequestStatus.approved,
+            status=initial_status_for(RequestType.db_dump_restore),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -550,7 +557,7 @@ def create_test_local_request(
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
             # No approval required for this request type — see create_db_dump_restore_request above.
-            status=RequestStatus.approved,
+            status=initial_status_for(RequestType.test_local),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -863,6 +870,51 @@ def return_request(
         # fact that it had been claimed.
         db.query(DeploymentExecution).filter_by(request_id=request_id).delete()
     deployment_request.status = RequestStatus.returned
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+@router.post("/requests/{request_id}/resubmit")
+def resubmit_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    deployment_request = _get_request_or_404(db, request_id)
+    if deployment_request.status != RequestStatus.returned:
+        raise HTTPException(status_code=409, detail="Only a returned request can be resubmitted")
+    if not can_resubmit_request(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can resubmit this request")
+
+    # Exactly where a new request of this type would start — a standard request goes
+    # back through its team lead, since the branch changed and the original approval
+    # was for something that no longer exists.
+    deployment_request.status = initial_status_for(deployment_request.request_type)
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+@router.post("/requests/{request_id}/withdraw")
+def withdraw_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    """Abandon a returned request without destroying its history.
+
+    Not a delete: by this point the request carries a return log, and deleting the
+    row would hand the person with the strongest motive to erase an unflattering
+    record the means to do it.
+    """
+    deployment_request = _get_request_or_404(db, request_id)
+    if deployment_request.status != RequestStatus.returned:
+        raise HTTPException(status_code=409, detail="Only a returned request can be withdrawn")
+    if not can_resubmit_request(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can withdraw this request")
+
+    deployment_request.status = RequestStatus.withdrawn
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
