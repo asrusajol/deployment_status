@@ -1305,3 +1305,41 @@ code {
   display: block;
   white-space: nowrap;
 }
+
+/* Withdrawn is neither a failure nor a rejection, so its rail dot is the neutral
+   slate the test.local badge already uses, not red. */
+.rail-dot-slate, .rail-line-slate { background: var(--slate-chip); }
+
+/* Returned: amber, the signal this system already uses for "waiting on a person". */
+.status-returned { color: var(--amber); font-weight: 600; }
+.status-withdrawn { color: var(--fog); }
+
+.return-log-button {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.return-log-count {
+  margin-left: 2px;
+  font-size: 0.65rem;
+}
+
+.return-log-entry { margin-bottom: 12px; }
+.return-log-meta { font-size: 0.72rem; color: var(--fog-dim); }
+.return-log-reason { margin: 2px 0 0; color: var(--paper); }
+
+.inline-form button.return {
+  background: transparent;
+  color: var(--amber);
+  border: 1px solid var(--amber-dim);
+}

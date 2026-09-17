@@ -173,6 +173,24 @@
               </span>
               <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
             </div>
+            {% if r.status == RequestStatus.returned and r.returns %}
+              <button
+                type="button" class="return-log-button" data-return-log="{{ r.id }}"
+                title="Why this was returned"
+              >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
+              <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
+                {% for entry in r.returns %}
+                  <div class="return-log-entry">
+                    <div class="return-log-meta">
+                      {{ localtime(entry.returned_at) }} ·
+                      {{ entry.returner.name if entry.returner else "—" }} ·
+                      from {{ status_labels.get(entry.returned_from, entry.returned_from.value) }}
+                    </div>
+                    <p class="return-log-reason">{{ entry.reason }}</p>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
             {% if r.status == RequestStatus.in_progress and r.current_executor %}
               <div class="status-handler">Handling: {{ r.current_executor.name }}</div>
             {% elif r.status == RequestStatus.completed and r.current_executor %}
@@ -198,6 +216,10 @@
                   <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
                     <button type="submit" class="start">Start Deployment</button>
                   </form>
+                  <button
+                    type="button" class="return" data-return-request-id="{{ r.id }}"
+                    data-return-action="/requests/{{ r.id }}/return"
+                  >Return</button>
                 {% else %}
                   <span class="muted">Awaiting a deploy team member</span>
                 {% endif %}
@@ -213,8 +235,24 @@
                       <button type="submit" class="deploy">Mark Deployed</button>
                     </form>
                   {% endif %}
+                  <button
+                    type="button" class="return" data-return-request-id="{{ r.id }}"
+                    data-return-action="/requests/{{ r.id }}/return"
+                  >Return</button>
                 {% else %}
                   <span class="muted">In progress — awaiting completion</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.returned %}
+                {% if can_resubmit_request(r) %}
+                  <form method="post" action="/requests/{{ r.id }}/resubmit" class="inline-form">
+                    <button type="submit" class="start">Resubmit</button>
+                  </form>
+                  <form
+                    method="post" action="/requests/{{ r.id }}/withdraw" class="inline-form"
+                    onsubmit="return confirm('Withdraw this request? It stays on record with its return history, but leaves the queue.');"
+                  >
+                    <button type="submit" class="reject">Withdraw</button>
+                  </form>
                 {% endif %}
               {% elif not can_delete_request(r) and not can_edit_request(r) and not show_times %}
                 <span class="muted">—</span>
@@ -295,6 +333,29 @@
         <button type="button" class="button-secondary" id="deploy-version-cancel">Cancel</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="return-modal" class="changes-modal">
+    <h2>Return to requester</h2>
+    <form method="post" id="return-form" class="form">
+      <div class="field">
+        <label for="return-reason">Why is this going back?</label>
+        <textarea id="return-reason" name="reason" rows="3" required
+                  placeholder="e.g. branch client/foo was deleted"></textarea>
+      </div>
+      <div class="changes-modal-actions">
+        <button type="submit" class="reject">Return request</button>
+        <button type="button" class="button-secondary" id="return-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="return-log-modal" class="changes-modal">
+    <h2>Return history</h2>
+    <div id="return-log-body"></div>
+    <div class="changes-modal-actions">
+      <button type="button" class="button-secondary" id="return-log-close">Close</button>
+    </div>
   </dialog>
 
   <script>
@@ -510,6 +571,34 @@
           if (event.target === deployDialog) deployDialog.close();
         });
       }
+
+      (function () {
+        var returnModal = document.getElementById("return-modal");
+        var returnForm = document.getElementById("return-form");
+        document.querySelectorAll("[data-return-request-id]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            returnForm.action = "/requests/" + button.getAttribute("data-return-request-id") + "/return";
+            returnForm.reset();
+            returnModal.showModal();
+          });
+        });
+        document.getElementById("return-cancel").addEventListener("click", function () {
+          returnModal.close();
+        });
+
+        var logModal = document.getElementById("return-log-modal");
+        var logBody = document.getElementById("return-log-body");
+        document.querySelectorAll("[data-return-log]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var source = document.getElementById("return-log-" + button.getAttribute("data-return-log"));
+            logBody.innerHTML = source ? source.innerHTML : "";
+            logModal.showModal();
+          });
+        });
+        document.getElementById("return-log-close").addEventListener("click", function () {
+          logModal.close();
+        });
+      })();
     })();
   </script>
 {% endblock %}

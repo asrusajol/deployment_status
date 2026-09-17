@@ -270,3 +270,91 @@ def test_a_returned_request_is_not_deletable(web):
     request = _returned_request(session)
 
     assert can_delete_request(requester, request) is False
+
+
+def test_a_returned_row_shows_the_reason_and_its_actions(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    page = client.get("/requests").text
+
+    assert "Returned" in page
+    assert "branch deleted" in page
+    assert f"/requests/{request.id}/resubmit" in page
+    assert f"/requests/{request.id}/withdraw" in page
+    # Not deletable — the log has to survive.
+    assert f"/requests/{request.id}/delete" not in page
+
+
+def test_the_info_button_counts_repeat_returns(web):
+    """"Returned three times" is the fact a team lead is looking for; it should
+    not require opening the dialog to discover."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    for day, reason in ((3, "wrong commit"), (4, "migration error on live")):
+        session.add(
+            RequestReturn(
+                request_id=request.id, reason=reason, returned_by=1,
+                returned_at=datetime(2026, 9, day, tzinfo=timezone.utc),
+                returned_from=RequestStatus.approved,
+            )
+        )
+    session.commit()
+    login_as(client, "devone")
+
+    page = client.get("/requests").text
+
+    assert 'class="return-log-count"' in page
+    assert ">3<" in page
+    assert "migration error on live" in page
+    assert "wrong commit" in page
+
+
+def test_the_deploy_queue_offers_return(web):
+    client, session = web
+    make_user(session, id=1, name="Zunayed Islam", username="zunayed",
+              password=DEFAULT_TEST_PASSWORD, role=UserRole.admin)
+    session.commit()
+    request = _approved_request(session)
+    login_as(client, "zunayed")
+
+    page = client.get("/requests").text
+
+    assert f"/requests/{request.id}/return" in page
+
+
+def test_the_listing_eager_loads_returns(web):
+    """One lazy load per row would be an N+1 across the whole queue — the same
+    trap the seeder listing hit."""
+    from sqlalchemy import event
+
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    for i in range(3):
+        request = _returned_request(session)
+        request.task_id = f"PR-{i}"
+    session.commit()
+    login_as(client, "devone")
+
+    client.get("/requests")  # warm anything lazy
+
+    queries = []
+
+    def record(conn, cursor, statement, *rest):
+        if "request_returns" in statement:
+            queries.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        client.get("/requests")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert len(queries) <= 1, f"returns loaded per row, not eagerly: {len(queries)} queries"

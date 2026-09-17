@@ -30,12 +30,13 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import (
     can_approve_deployment_request,
     can_delete_request,
     can_edit_request,
+    can_resubmit_request,
     require_deploy_team_member,
     require_login,
 )
@@ -664,7 +665,11 @@ def list_requests(
         db.query(DeploymentRequest)
         # Feeds current_executor (request_list.html's "Handling: <name>" line) without
         # an N+1 query per in_progress row on the page.
-        .options(joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor))
+        .options(
+            joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
+            # Every returned row renders its log; lazy-loading would be an N+1.
+            selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
+        )
         # Ordered before the offset/limit below, so an old open request lands on
         # page 1 rather than only being hoisted within the page it already sat on.
         .order_by(*_requests_ordering())
@@ -730,6 +735,7 @@ def list_requests(
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
+            "can_resubmit_request": lambda r: can_resubmit_request(current_user, r),
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
