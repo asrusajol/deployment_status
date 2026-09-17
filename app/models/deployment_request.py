@@ -137,6 +137,11 @@ class DeploymentRequest(Base):
     requester = relationship("User", foreign_keys=[requested_by])
     approvals = relationship("Approval", back_populates="request")
     executions = relationship("DeploymentExecution", back_populates="request")
+    # Newest first: the status cell shows the most recent reason, and the info
+    # dialog lists them in the order a reader wants them.
+    returns = relationship(
+        "RequestReturn", back_populates="request", order_by="RequestReturn.returned_at.desc()"
+    )
 
     @property
     def current_executor(self) -> "User | None":
@@ -184,3 +189,14 @@ class DeploymentRequest(Base):
             return None
         urls = [u.url for u in self.client.system_urls if u.environment == self.environment]
         return urls[0] if len(urls) == 1 else None
+
+    @property
+    def latest_return(self) -> "RequestReturn | None":
+        """The most recent return, or None if this request has never come back.
+
+        Same reasoning as current_executor above — `returns` is ordered newest
+        first by the relationship, so the status cell needs no caller-supplied
+        join. The listing must eager-load `returns`; one lazy load per row is an
+        N+1 across the whole queue.
+        """
+        return self.returns[0] if self.returns else None
