@@ -2704,7 +2704,7 @@ def test_type_badge_carries_the_request_date_as_a_tooltip(web):
 
     response = client.get("/requests")
 
-    assert 'title="Requested 2026-03-04 09:07 UTC"' in response.text
+    assert 'title="Requested 2026-03-04 09:07 AM UTC"' in response.text
 
 
 def _seed_finished_request(session, *, task_id, status, completed_at, requester_id=1):
@@ -2728,6 +2728,13 @@ def _seed_finished_request(session, *, task_id, status, completed_at, requester_
     return request
 
 
+def _requester_cell(response_text, task_id):
+    """The Requested By cell of the row carrying task_id."""
+    body = response_text[response_text.index("<tbody>") : response_text.index("</tbody>")]
+    row = next(r for r in body.split("<tr>") if task_id in r)
+    return row[row.index('<td class="requester-cell">') : row.index('<div class="status-cell">')]
+
+
 def _action_cell(response_text, task_id):
     """The Action cell of the row carrying task_id."""
     body = response_text[response_text.index("<tbody>") : response_text.index("</tbody>")]
@@ -2748,7 +2755,7 @@ def test_action_cell_shows_when_a_deployed_request_was_finished(web):
     cell = _action_cell(client.get("/requests").text, "PR-DEPLOYED")
 
     assert "2026-09-17" in cell
-    assert "14:32 UTC" in cell
+    assert "02:32 PM UTC" in cell
 
 
 def test_action_cell_shows_the_finish_time_for_failed_and_rolled_back_too(web):
@@ -2768,13 +2775,14 @@ def test_action_cell_shows_the_finish_time_for_failed_and_rolled_back_too(web):
 
     page = client.get("/requests").text
 
-    assert "08:05 UTC" in _action_cell(page, "PR-FAILED")
-    assert "19:40 UTC" in _action_cell(page, "PR-ROLLED")
+    assert "08:05 AM UTC" in _action_cell(page, "PR-FAILED")
+    assert "07:40 PM UTC" in _action_cell(page, "PR-ROLLED")
 
 
-def test_action_cell_keeps_the_dash_when_no_finish_time_was_recorded(web):
-    """Older rows finished before the execution row carried a time — a dash, never
-    the string "None"."""
+def test_action_cell_omits_the_deployed_line_when_no_finish_time_was_recorded(web):
+    """Older rows were finished before the execution row carried a time. They still
+    show when they were requested; the Deployed line is simply absent, and the
+    string "None" never appears."""
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
@@ -2783,10 +2791,12 @@ def test_action_cell_keeps_the_dash_when_no_finish_time_was_recorded(web):
     )
     login_as(client, "rajib")
 
-    cell = _action_cell(client.get("/requests").text, "PR-NOTIME")
+    page = client.get("/requests").text
 
-    assert "None" not in cell
-    assert "—" in cell
+    assert "None" not in _action_cell(page, "PR-NOTIME")
+    assert "None" not in _requester_cell(page, "PR-NOTIME")
+    # The request time is still known even though the finish time never was.
+    assert "Requested" in _requester_cell(page, "PR-NOTIME")
 
 
 def test_action_cell_still_offers_mark_deployed_while_in_progress(web):
@@ -2809,3 +2819,128 @@ def test_action_cell_still_offers_mark_deployed_while_in_progress(web):
     cell = _action_cell(client.get("/requests").text, "PR-RUNNING")
 
     assert "Mark Deployed" in cell
+
+
+def test_action_cell_shows_no_times_while_a_request_is_unfinished(web):
+    """Unfinished rows keep their action buttons and nothing else. The request
+    time sits under the requester's name instead — a timestamp beside a live
+    button crowds the control and widened the column past the viewport."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    session.add(
+        DeploymentRequest(
+            task_id="PR-WAITING", requested_by=1, status=RequestStatus.pending_approval,
+            created_at=datetime(2026, 9, 14, 17, 20, tzinfo=timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    page = client.get("/requests").text
+
+    assert "05:20 PM UTC" not in _action_cell(page, "PR-WAITING")
+    # ...it is under the requester's name instead, on every row, finished or not
+    assert "05:20 PM UTC" in _requester_cell(page, "PR-WAITING")
+
+
+def test_action_cell_shows_requested_and_deployed_once_finished(web):
+    """Both times appear together only when devops is done with the row."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-BOTH", status=RequestStatus.completed,
+        completed_at=datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    page = client.get("/requests").text
+
+    # Each column carries its own fact: when it was asked for, and when it was done.
+    assert "02:32 PM UTC" in _action_cell(page, "PR-BOTH")
+    assert "Requested" not in _action_cell(page, "PR-BOTH")
+    assert "Requested" in _requester_cell(page, "PR-BOTH")
+
+
+def test_page_timestamps_carry_the_instant_for_local_conversion(web):
+    """Each rendered time ships the UTC instant in a <time datetime=...> so the
+    browser can restate it in the viewer's own zone. The visible text stays valid
+    UTC for anyone without JS."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-CONV", status=RequestStatus.completed,
+        completed_at=datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    cell = _action_cell(client.get("/requests").text, "PR-CONV")
+
+    assert 'class="localtime"' in cell
+    assert 'datetime="2026-09-17T14:32:00Z"' in cell
+
+
+def test_type_badge_tooltip_is_convertible_too(web):
+    """A title attribute can't hold markup, so the instant rides on a data
+    attribute for the same script to rewrite."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    session.add(
+        DeploymentRequest(
+            task_id="PR-TIP", requested_by=1, status=RequestStatus.pending_approval,
+            created_at=datetime(2026, 3, 4, 9, 7, tzinfo=timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    assert 'data-localtime-title="2026-03-04T09:07:00Z"' in response.text
+
+
+def test_timestamps_split_date_and_time_so_narrow_columns_can_stack_them(web):
+    """The Action column has no room for "2026-09-04 03:49 PM +06" on one line —
+    it pushed the whole table into horizontal scroll. Date and time are separate
+    elements so CSS can break between them, and so the conversion script can
+    rewrite each half in place."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-SPLIT", status=RequestStatus.completed,
+        completed_at=datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    cell = _action_cell(client.get("/requests").text, "PR-SPLIT")
+
+    assert '<span class="localtime-date">2026-09-17</span>' in cell
+    assert '<span class="localtime-time">02:32 PM UTC</span>' in cell
+
+
+def test_intake_rows_sort_below_work_that_is_actually_actionable(web):
+    """pending_intake is the intake skill's stopgap state and the UI offers no way
+    to action it. Ranking it first meant one stale August row sat above everything
+    created since — someone would submit a request, look at the top of the queue,
+    and see "Pending intake". It stays in the open group, just under the stages a
+    person can actually move."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(task_id="PR-STALE", requested_by=1, status=RequestStatus.pending_intake, created_at=now - timedelta(days=30)),
+        DeploymentRequest(task_id="PR-NEW", requested_by=1, status=RequestStatus.pending_approval, created_at=now),
+        DeploymentRequest(task_id="PR-OLDDONE", requested_by=1, status=RequestStatus.completed, created_at=now - timedelta(days=60)),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    order = _row_order(client.get("/requests").text, ["PR-NEW", "PR-STALE", "PR-OLDDONE"])
+
+    # Actionable first, intake after it, finished last — still above history.
+    assert order == ["PR-NEW", "PR-STALE", "PR-OLDDONE"]

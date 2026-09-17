@@ -1,0 +1,34 @@
+{# A timestamp the browser restates in the viewer's own timezone.
+
+   Every stored timestamp in this app is UTC in a `timestamp without time zone`
+   column (the DB session is UTC and the app writes datetime.now(timezone.utc)),
+   so the value carries no marker of its own — the trailing Z below is what makes
+   it unambiguous. Without it a browser reads the instant as local and shifts
+   every time on the page by the viewer's offset, silently.
+
+   The visible text is the UTC rendering, which is what anyone without JS sees and
+   what the tests assert; base.html's script rewrites it in place. 12-hour with a
+   leading zero, ISO-style date: the zero keeps table columns aligned and the date
+   order keeps them scannable, where a browser-locale date (9/15/2026) would not.
+
+   Date and time are separate spans so a narrow column (the Requests Action cell)
+   can stack them with CSS while wider ones keep them on one line — on one line the
+   stamp pushed that table into horizontal scroll.
+
+   `localtime_attr` is for a title attribute, which can't hold markup — same
+   script, same conversion, via a data attribute. #}
+{% macro localtime(value, empty="—") -%}
+  {%- if value -%}
+    <time class="localtime" datetime="{{ value.strftime('%Y-%m-%dT%H:%M:%SZ') }}"><span class="localtime-date">{{ value.strftime('%Y-%m-%d') }}</span> <span class="localtime-time">{{ value.strftime('%I:%M %p UTC') }}</span></time>
+  {%- else -%}
+    {{ empty }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro localtime_text(value) -%}
+  {{- value.strftime('%Y-%m-%d %I:%M %p UTC') if value else '' -}}
+{%- endmacro %}
+
+{% macro localtime_attr(value) -%}
+  {{- value.strftime('%Y-%m-%dT%H:%M:%SZ') if value else '' -}}
+{%- endmacro %}

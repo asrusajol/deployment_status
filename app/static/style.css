@@ -222,6 +222,7 @@ h1 {
 
 .status-table th, .status-table td {
   padding: 0.75rem 0.85rem;
+  /* see .requests-table below for the tighter side padding this table uses */
   text-align: left;
   border-bottom: 1px solid var(--hairline);
   font-size: 0.87rem;
@@ -281,6 +282,13 @@ h1 {
    throw off the total width the horizontal scroll depends on. Chosen to roughly match
    each column's natural content width; long values still wrap instead of overflowing
    (word-wrap: break-word above) rather than needing to be exact. */
+/* Tighter sides than the other status tables: box-sizing is border-box and this
+   table is table-layout: fixed, so padding eats into each column's fixed width
+   rather than adding to it — 0.85rem a side left the timestamp cells clipping
+   their own content. Trimming it buys ~11px of usable room per column without
+   changing the table's total width at all. */
+.requests-table th, .requests-table td { padding-left: 0.5rem; padding-right: 0.5rem; }
+
 .requests-table th:nth-child(1), .requests-table td:nth-child(1) { width: 130px; }  /* Type */
 .requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
 .requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
@@ -298,7 +306,11 @@ h1 {
    cell, it lets the content spill over the next column. Clipping keeps any future
    longer-than-expected hostname contained in its own cell instead of overlapping URL. */
 .requests-table td:nth-child(5) { overflow: hidden; }
-.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 150px; }  /* URL */
+/* 150 -> 130px: this cell holds a truncated link plus its copy button, nothing that
+   needs the extra width, and most rows show only a dash. Unlike System above, whose
+   width is pinned by the full-hostname badge, there is nothing here that a narrower
+   column can clip. Comes straight off the table's total. */
+.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 130px; }  /* URL */
 .requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
 /* Trimmed from 260px — confirmed in a real browser this column was the single biggest
    contributor pushing Changes out past the pinned block's overlay point. The cell
@@ -309,7 +321,11 @@ h1 {
 /* 240px -> 185px funds the System column's restored width above, keeping the table's
    total unchanged. Same reasoning as Branch/Commit: this cell truncates with ellipsis and
    a "View" button for the full text, so it loses no information by being narrower. */
-.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 185px; }  /* Changes */
+/* 185 -> 165px funds Requested By's extra 20px for the request timestamp (see the
+   pinned-column block below), keeping the table's total unchanged. Same reasoning as
+   the two trims above: this cell truncates with ellipsis and a "View" button for the
+   full text, so a narrower column loses no information. */
+.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 165px; }  /* Changes */
 
 /* Pin the three rightmost columns (Requested By, Status, Action) together, not just
    Action alone — knowing who asked and what state a row is in matters just as much
@@ -330,9 +346,15 @@ h1 {
   background: var(--panel);
 }
 
+/* Rebalanced when the timestamps landed: Requested By gained the request time under
+   the name, so it goes 130 -> 150px. Action stays at 140px — it was briefly trimmed
+   to 120 and that is narrower than "Start Deployment", so every button wrapped into
+   a two-line block. The button width is the floor here, not the timestamp's.
+   The extra 20px comes off Changes below, leaving the table's total — and these
+   `right` offsets' relationship to it — unchanged. */
 .requests-table th:nth-last-child(1), .requests-table td:nth-last-child(1) { width: 140px; right: 0; }
 .requests-table th:nth-last-child(2), .requests-table td:nth-last-child(2) { width: 170px; right: 140px; }
-.requests-table th:nth-last-child(3), .requests-table td:nth-last-child(3) { width: 130px; right: 310px; }
+.requests-table th:nth-last-child(3), .requests-table td:nth-last-child(3) { width: 150px; right: 310px; }
 
 /* Only the leftmost pinned column needs the scroll-separator shadow — one between
    each pinned pair would just be noise, since they all share the same background. */
@@ -838,6 +860,12 @@ code {
   border: none;
   border-radius: 5px;
   padding: 0.32rem 0.65rem;
+  /* One line, always. When the Action column was briefly narrowed for the deploy
+     timestamps, "Start Deployment" wrapped and each button grew into a two-line
+     block — the column read as bulky next to the live system's single-line rows.
+     The column is sized for the longest label below; this keeps a future trim from
+     silently reintroducing that. */
+  white-space: nowrap;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--ink);
@@ -1246,23 +1274,34 @@ code {
    request_list.html) — the cursor is the only affordance saying so. */
 .requests-table [class*="badge-type-"] { cursor: help; }
 
-/* Finished requests have no action left, so the Action cell carries when devops
-   finished them (request_list.html). Monospaced so the times line up down the
-   column, and muted so they never compete with the action buttons above. */
-.action-finished-at {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+/* Timestamps in the requests table: the deploy time in the Action column, the
+   request time under the requester's name. Monospaced so they line up down the
+   page, muted so they read as metadata beside the action buttons rather than as
+   controls, and stacked date-over-time because on one line they widened the
+   Action column enough to push the whole table into horizontal scroll. */
+.action-times,
+.requester-asked-at {
   font-family: var(--font-mono);
-  line-height: 1.3;
-}
-
-.action-finished-date {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--fog);
+  line-height: 1.35;
 }
 
-.action-finished-time {
-  font-size: 0.72rem;
+.requester-asked-at {
+  margin-top: 3px;
+}
+
+.cell-label {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
   color: var(--fog-dim);
+}
+
+.action-times .localtime-date,
+.action-times .localtime-time,
+.requester-asked-at .localtime-date,
+.requester-asked-at .localtime-time {
+  display: block;
+  white-space: nowrap;
 }

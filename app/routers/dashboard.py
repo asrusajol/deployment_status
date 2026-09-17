@@ -560,13 +560,20 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
 # later is open until someone deliberately marks it terminal, which fails safe —
 # a new status showing up in the queue is noticeable, one silently sorted into
 # history is not.
+# Ordered by how much a person can do about them, which is not the order the flow
+# runs in. pending_intake and submitted come from the intake skill's stopgap path
+# and the UI offers no way to move them along — only Edit/Delete — so they sit at
+# the bottom of the open group. Ranking pending_intake first (as the flow order
+# would) left a single month-old intake row permanently above everything created
+# since: you would submit a request, look at the top of the queue, and find someone
+# else's stale row waiting there.
 OPEN_REQUEST_STATUS_ORDER = (
-    RequestStatus.pending_intake,
-    RequestStatus.submitted,
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.claimed,
     RequestStatus.in_progress,
+    RequestStatus.pending_intake,
+    RequestStatus.submitted,
 )
 
 

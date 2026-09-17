@@ -1,5 +1,6 @@
 {# app/templates/release_tracker.html #}
 {% extends "base.html" %}
+{% from "_localtime.html" import localtime %}
 {% block title %}Release Tracker — Deployment Tracker{% endblock %}
 {% block content %}
   <p class="eyebrow">Versions</p>
@@ -39,11 +40,11 @@
         <tr>
           <td>{{ row.client.name if row.client else "—" }}</td>
           <td class="col-test">{{ row.test_current_version or "—" }}</td>
-          <td class="col-test">{{ row.test_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.test_updated_at else "—" }}</td>
+          <td class="col-test">{{ localtime(row.test_updated_at) }}</td>
           <td class="col-live">{{ row.live_current_version or "—" }}</td>
-          <td class="col-live">{{ row.live_updated_at.strftime("%Y-%m-%d %H:%M UTC") if row.live_updated_at else "—" }}</td>
+          <td class="col-live">{{ localtime(row.live_updated_at) }}</td>
           <td class="col-main">{{ main_status.version if main_status else "—" }}</td>
-          <td class="col-main">{{ main_status.version_changed_at.strftime("%Y-%m-%d %H:%M UTC") if main_status and main_status.version_changed_at else "—" }}</td>
+          <td class="col-main">{{ localtime(main_status.version_changed_at if main_status else None) }}</td>
           <td>
             <div class="actions-inner">
               {% if can_edit_test(row) or can_edit_live(row) %}
