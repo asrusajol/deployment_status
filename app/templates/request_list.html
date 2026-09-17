@@ -217,7 +217,7 @@
                     <button type="submit" class="start">Start Deployment</button>
                   </form>
                   <button
-                    type="button" class="return" data-return-request-id="{{ r.id }}"
+                    type="button" class="return"
                     data-return-action="/requests/{{ r.id }}/return"
                   >Return</button>
                 {% else %}
@@ -236,7 +236,7 @@
                     </form>
                   {% endif %}
                   <button
-                    type="button" class="return" data-return-request-id="{{ r.id }}"
+                    type="button" class="return"
                     data-return-action="/requests/{{ r.id }}/return"
                   >Return</button>
                 {% else %}
@@ -575,9 +575,12 @@
       (function () {
         var returnModal = document.getElementById("return-modal");
         var returnForm = document.getElementById("return-form");
-        document.querySelectorAll("[data-return-request-id]").forEach(function (button) {
+        document.querySelectorAll("[data-return-action]").forEach(function (button) {
           button.addEventListener("click", function () {
-            returnForm.action = "/requests/" + button.getAttribute("data-return-request-id") + "/return";
+            // The button's own data-return-action attribute is the single source of
+            // truth for the URL — read it directly rather than rebuilding it here, so
+            // there's no second copy of the path that could drift out of sync.
+            returnForm.action = button.getAttribute("data-return-action");
             returnForm.reset();
             returnModal.showModal();
           });

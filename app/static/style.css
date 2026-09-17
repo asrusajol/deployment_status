@@ -1338,7 +1338,11 @@ code {
 .return-log-meta { font-size: 0.72rem; color: var(--fog-dim); }
 .return-log-reason { margin: 2px 0 0; color: var(--paper); }
 
-.inline-form button.return {
+/* Not scoped to .inline-form — the Return button opens the reason dialog rather
+   than submitting a form directly, so it sits bare in the actions cell. Match
+   it on its own class instead of "fixing" this back to an .inline-form-scoped
+   selector, which would just leave it unstyled again. */
+button.return {
   background: transparent;
   color: var(--amber);
   border: 1px solid var(--amber-dim);
