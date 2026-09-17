@@ -72,6 +72,8 @@ STATUS_LABELS = {
     RequestStatus.completed: "Deployed",
     RequestStatus.failed: "Failed",
     RequestStatus.rolled_back: "Rolled Back",
+    RequestStatus.returned: "Returned",
+    RequestStatus.withdrawn: "Withdrawn",
 }
 
 # Sentinel option value for "create a new client from the text field below" in the
@@ -105,6 +107,12 @@ class _Rail:
         self.pulse = pulse
 
 
+# Used when a status has no rail of its own. request_list.html looks rails up
+# through .get() with this default, so a status someone forgets to add here
+# renders a plain row instead of raising KeyError inside the row loop and
+# taking the entire Requests page down with it.
+NEUTRAL_RAIL = _Rail(("empty", "empty", "empty", "empty"), None)
+
 # Rendered by request_list.html next to every request's status label — see RequestStatus
 # for what each value means. Not applicable to the dashboard/history tables, which only
 # ever show already-`completed` rows (fully lit every time), so the rail would add
@@ -120,6 +128,13 @@ RAIL_STAGES = {
     RequestStatus.rejected: _Rail(("red", "empty", "empty", "empty"), None),
     RequestStatus.failed: _Rail(("teal", "teal", "red", "empty"), None),
     RequestStatus.rolled_back: _Rail(("teal", "teal", "teal", "red"), None),
+    # Back to the first dot, amber, and pulsing — same shape as pending_approval,
+    # because the request really has gone back to the start and really is waiting
+    # on a person.
+    RequestStatus.returned: _Rail(("amber", "empty", "empty", "empty"), 0),
+    # Slate, not red: withdrawing is not a failure or a rejection, it is a decision
+    # not to proceed. No pulse — nothing is waiting on anyone.
+    RequestStatus.withdrawn: _Rail(("slate", "empty", "empty", "empty"), None),
 }
 
 
@@ -568,6 +583,10 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
 # since: you would submit a request, look at the top of the queue, and find someone
 # else's stale row waiting there.
 OPEN_REQUEST_STATUS_ORDER = (
+    # First on purpose: a returned request is the only one that has moved
+    # *backwards*, and it waits on someone who is not watching the deploy queue,
+    # so it is the easiest thing on the page to forget.
+    RequestStatus.returned,
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.claimed,
@@ -585,6 +604,8 @@ FINISHED_REQUEST_STATUSES = (
     RequestStatus.completed,
     RequestStatus.failed,
     RequestStatus.rolled_back,
+    RequestStatus.rejected,
+    RequestStatus.withdrawn,
 )
 
 
@@ -700,6 +721,7 @@ def list_requests(
             "RequestType": RequestType,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
+            "neutral_rail": NEUTRAL_RAIL,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),

@@ -159,7 +159,11 @@
             {% endif %}
           </td>
           <td>
-            {% set rail = rail_stages[r.status] %}
+            {# .get, not [] — a status missing from RAIL_STAGES would otherwise raise
+               inside this loop and 500 the whole page rather than one row. The
+               exhaustiveness test in tests/test_request_status_coverage.py is the
+               real guard; this is so a miss is never catastrophic in production. #}
+            {% set rail = rail_stages.get(r.status, neutral_rail) %}
             <div class="status-cell">
               <span class="rail" aria-hidden="true">
                 {% for i in range(4) %}

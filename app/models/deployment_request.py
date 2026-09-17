@@ -6,13 +6,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-# Statuses considered "active" for the duplicate-submission guard in project_plan.md Section 7.
-# Checked in the service layer (not a DB constraint), since a hard unique constraint on
-# (task_id, version) would also block a legitimate re-request after one has already
-# completed, failed, or been rolled back.
-ACTIVE_REQUEST_STATUSES = ("submitted", "pending_approval", "approved", "claimed", "in_progress")
-
-
 class RequestStatus(str, enum.Enum):
     pending_intake = "pending_intake"  # matches the deployment-request-intake skill's stopgap output
     submitted = "submitted"
@@ -24,6 +17,16 @@ class RequestStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     rolled_back = "rolled_back"
+    # DevOps could not deploy this through no fault of their own — most often the
+    # git branch named on it was deleted — so it goes back to the requester to fix
+    # and resubmit. Distinct from `rejected`, which is the approval gate's verdict
+    # on whether the work should happen at all: returned means "not yet, and here
+    # is what to fix". See docs/superpowers/specs/2026-09-17-return-request-design.md.
+    returned = "returned"
+    # The requester abandoned a returned request. Terminal, and deliberately not a
+    # delete: the request carries a return log by this point, and deleting the row
+    # would destroy exactly the history a team lead goes looking for.
+    withdrawn = "withdrawn"
 
 
 # Statuses a request can still be deleted from (can_delete_request() in app/auth.py) —
