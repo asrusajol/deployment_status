@@ -47,6 +47,7 @@ from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
@@ -814,6 +815,54 @@ def reject_request(
         )
     )
     deployment_request.status = RequestStatus.rejected
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+# A request can only be handed back from the two states where devops holds it.
+RETURNABLE_REQUEST_STATUSES = (RequestStatus.approved, RequestStatus.in_progress)
+
+
+@router.post("/requests/{request_id}/return")
+def return_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_deploy_team_member),
+    reason: str = Form(""),
+):
+    """Hand a request back to its requester, with a reason.
+
+    The fourth exit from the deploy queue, alongside Mark Deployed, Reject and
+    leaving it to rot — which is what used to happen when the branch named on a
+    request had been deleted. Distinct from Reject, which is the approval gate's
+    verdict rather than a devops finding.
+    """
+    deployment_request = _get_request_or_404(db, request_id)
+    if deployment_request.status not in RETURNABLE_REQUEST_STATUSES:
+        raise HTTPException(status_code=409, detail="Only a request awaiting or under deployment can be returned")
+    if not reason.strip():
+        raise HTTPException(status_code=400, detail="A reason is required to return a request")
+
+    returned_from = deployment_request.status
+    db.add(
+        RequestReturn(
+            request_id=request_id,
+            reason=reason.strip(),
+            returned_by=current_user.id,
+            returned_at=datetime.now(timezone.utc),
+            returned_from=returned_from,
+        )
+    )
+    if returned_from == RequestStatus.in_progress:
+        # DeploymentExecution.request_id is unique — "a request can only ever be
+        # claimed once" — so leaving the claim behind would make Start Deployment
+        # fail on the constraint after the requester resubmits. The deployment did
+        # not happen, and a dangling claim would also make current_executor report
+        # a handler for a request nobody is handling. returned_from above keeps the
+        # fact that it had been claimed.
+        db.query(DeploymentExecution).filter_by(request_id=request_id).delete()
+    deployment_request.status = RequestStatus.returned
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
