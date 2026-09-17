@@ -121,3 +121,35 @@ def test_returning_from_in_progress_drops_the_claim(web):
     assert response.status_code == 303
     assert session.query(DeploymentExecution).filter_by(request_id=request.id).count() == 0
     assert session.query(RequestReturn).one().returned_from == RequestStatus.in_progress
+
+
+def test_returning_from_approved_leaves_other_claims_alone(web):
+    """Guards against making the DeploymentExecution delete unconditional. An
+    approved request never has its own execution row in practice, so the
+    regression this guards against is an unconditional delete wiping out a
+    claim that belongs to a different, unrelated in-progress request."""
+    client, session = web
+    _deploy_team_user(session)
+    session.commit()
+    request_a = _approved_request(session, task_id="PR-A")
+    request_b = _approved_request(session, task_id="PR-B")
+    request_b.status = RequestStatus.in_progress
+    session.add(
+        DeploymentExecution(
+            request_id=request_b.id, executed_by=1,
+            claimed_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+            started_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+            status=ExecutionStatus.claimed,
+        )
+    )
+    session.commit()
+    login_as(client, "zunayed")
+
+    response = client.post(
+        f"/requests/{request_a.id}/return", data={"reason": "wrong client"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert session.query(DeploymentExecution).filter_by(request_id=request_b.id).count() == 1
+    assert session.query(RequestReturn).one().returned_from == RequestStatus.approved
