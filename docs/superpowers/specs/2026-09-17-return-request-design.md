@@ -29,24 +29,41 @@ by the team lead" are different facts about a deployment.
 
 ## Data model
 
-New `RequestStatus.returned`, plus three columns on `deployment_requests`:
+New `RequestStatus.returned`, plus a new table `request_returns` — one row
+per return, not a set of "last return" columns on the request.
 
 | Column | Type | Notes |
 |---|---|---|
-| `returned_reason` | text, nullable | why it went back; required by the route whenever a return happens, nullable only because every pre-existing row has none |
-| `returned_at` | timestamp, nullable | when |
-| `returned_by` | FK → `users.id`, nullable | who returned it |
+| `id` | PK | |
+| `request_id` | FK → `deployment_requests.id`, indexed, **not** unique | many returns per request |
+| `reason` | text, not null | why it went back; the route refuses a blank one |
+| `returned_by` | FK → `users.id` | who returned it |
+| `returned_at` | timestamp, not null | when |
+| `returned_from` | enum `RequestStatus` | `approved` or `in_progress` — what state it was pulled out of |
 
-These live on the request, not on `DeploymentExecution`. A return can happen
-from `approved`, where no execution row exists yet — `DeploymentExecution` is
-created only when someone claims the request (Start Deployment).
+A table rather than columns because the history is the point: a team lead
+looking at their developer's request needs to see *that it was returned three
+times and why each time*, not just the most recent sentence. Overwriting a
+reason destroys exactly the fact someone would go looking for — "this keeps
+coming back" is a different problem from "this came back once".
 
-They are deliberately *last-return* columns, not a history table. A request
-returned three times keeps only the most recent reason. A `request_events`
-table would preserve every one, and is the right answer if returns turn out
-to be frequent or disputed; it is not worth building before there is any
-evidence of that. This is called out so the limitation is a decision rather
-than an oversight.
+`returned_from` also preserves what the previous draft of this spec threw
+away. Returning from `in_progress` deletes the `DeploymentExecution` row (see
+Transitions), so without this column the fact that someone had already
+claimed and started the deployment would be lost. With it, the log reads
+"returned while being deployed, by X" and nothing about the attempt
+disappears.
+
+`DeploymentRequest.latest_return` is a property over the relationship,
+mirroring the existing `current_executor`/`finished_at` pattern, so the
+status cell does not need a caller-supplied join. The requests listing must
+eager-load `returns` alongside `executions` — one lazy load per row would be
+an N+1 across the whole queue, the same trap the seeder listing hit.
+
+Visibility: the log is readable by anyone who can see the request. The queue
+is already shared across the team; a per-role restriction on the reason would
+be new policy, not a consequence of this feature, and nothing in the reason is
+more sensitive than the request beside it.
 
 ## Transitions
 
@@ -69,8 +86,9 @@ which is the worst possible time to discover it. The claim is deleted rather
 than kept because the deployment did not happen: nothing was executed, and
 leaving a dangling claimed-but-abandoned row would make `current_executor`
 report a handler for a request nobody is handling. Who returned it, and when,
-is preserved in `returned_by`/`returned_at` — the same person who had claimed
-it.
+is preserved in the `request_returns` row, whose `returned_from` records that
+the request was `in_progress` when it went back — so the log still says
+someone had claimed and started it.
 
 The alternative, relaxing the unique constraint to allow several executions
 per request, is the better model if returns from `in_progress` turn out to be
@@ -118,10 +136,15 @@ Returned reads as another instance of it rather than a new colour. Rail:
 `(amber, empty, empty, empty)`, back to stage one, deliberately distinct from
 Rejected's red: rejected is over, returned is not.
 
-**Reason.** An `[i]` button beside the status opens the reason in the
+**Reason.** An `[i]` button beside the status opens the return log in the
 existing `<dialog class="changes-modal">` used for Changes and
-Branch/Commit — not a new tooltip, and not a `title` attribute, which cannot
-hold a multi-line reason and is invisible on touch.
+Branch/Commit — not a tooltip and not a `title` attribute, neither of which
+can hold a multi-entry list, and `title` is invisible on touch besides.
+
+The dialog lists every return, newest first: when, by whom, out of which
+state, and the reason. The button shows a count once there is more than one
+(`[i] 3`), because "returned three times" is the fact a team lead is looking
+for and it should not require opening the dialog to discover.
 
 **Action bar.** A returned row offers `Edit`, `Resubmit`, `Delete`. A row in
 `approved` or `in_progress` gains a `Return` button beside its existing
@@ -150,15 +173,22 @@ One Alembic revision:
    Getting this wrong fails at deploy time, not in tests: the suite builds its
    schema from `Base.metadata.create_all` and never runs migrations (see
    CLAUDE.md).
-2. Add the three nullable columns.
+2. Create `request_returns` with the columns above, FKs to
+   `deployment_requests` and `users`, and an index on `request_id`.
 
-No data migration; every existing row is correct with three nulls. Downgrade
-drops the columns; the enum value cannot be removed cleanly and is left in
-place, which is harmless and should be stated in the migration's docstring.
+No data migration — a brand new table, and no existing request has ever been
+returned. Downgrade drops the table; the enum value cannot be removed cleanly
+and is left in place, which is harmless and should be said in the migration's
+docstring.
 
 ## Testing
 
-- Model: a returned request round-trips its reason, time and returner.
+- Model: a return round-trips its reason, time, returner and source status;
+  a request with several returns exposes them newest-first, and
+  `latest_return` is the most recent.
+- The listing eager-loads `returns` — asserted by counting queries after the
+  call, so the test fails if the eager load is dropped rather than merely
+  getting slower.
 - Returning from `in_progress` removes the execution row, and the full
   round trip — start → return → resubmit → start again — succeeds rather
   than failing on the unique constraint. This is the test that matters most;
@@ -173,13 +203,16 @@ place, which is harmless and should be stated in the migration's docstring.
   completed one.
 - Ordering: a returned request sorts above `pending_approval` and above
   finished work.
-- Template: the amber Returned label, the `[i]` button, the reason in the
-  dialog, and the Edit/Resubmit/Delete action bar.
+- Template: the amber Returned label, the `[i]` button and its count, every
+  return listed in the dialog with who/when/from-where, and the
+  Edit/Resubmit/Delete action bar.
+- A request returned, resubmitted and returned again shows both entries —
+  the case the whole log exists for.
 - The notification payload includes returned requests.
 
 ## Open items
 
-None blocking. Three deliberate limitations recorded above: only the latest
-return reason is kept, returning from `in_progress` discards the claim rather
-than preserving it as a deployment attempt, and the Excel export gains the new
-status but not the reason column.
+None blocking. Two deliberate limitations recorded above: returning from
+`in_progress` deletes the claim row (though `returned_from` preserves the
+fact it was claimed), and the Excel export gains the new status but not the
+return log.
