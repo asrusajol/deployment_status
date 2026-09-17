@@ -384,6 +384,7 @@
           status: r.status,
           requestType: r.requestType,
           canApprove: r.canApprove,
+          isRequester: r.isRequester,
           taskId: r.taskId,
           client: r.client,
           dumpSource: r.dumpSource,
@@ -426,10 +427,12 @@
               title: "Deployment request ready to deploy",
               body: describeRequest(now),
             });
-          } else if (before && before.status !== "returned" && now.status === "returned") {
+          } else if (before && before.status !== "returned" && now.status === "returned" && now.isRequester) {
             // A request was handed back to its requester — the notification leads with
             // the task ID and reason so they know what to fix without opening the app.
             // Same voice as the approval notifications above: "<what happened>" + details.
+            // Gated on isRequester (like canApprove for approvals, canDeploy for deploys)
+            // so the title "Your deployment request" is accurate.
             events.push({
               title: "Your deployment request has been returned",
               body: describeRequest(now),

@@ -374,3 +374,23 @@ def test_returned_requests_reach_the_notification_feed(web):
 
     assert '"status": "returned"' in payload
     assert "branch deleted" in payload
+
+
+def test_non_requester_does_not_see_returned_notification(web):
+    """A returned request appears in the feed, but only the requester gets notified.
+    A different logged-in user sees isRequester: false, so the notification does not
+    fire for them (isRequester is required in the condition)."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=3, name="Dev Two", username="devtwo", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _returned_request(session, requester_id=2)  # requester is devone (id=2)
+    login_as(client, "devtwo")  # but logged in as devtwo (id=3)
+
+    page = client.get("/requests").text
+    payload = page.split('id="active-requests-data">')[1].split("</script>")[0]
+
+    # The returned request is in the feed (everyone sees the queue)
+    assert '"status": "returned"' in payload
+    # But isRequester is false for this non-requester user
+    assert '"isRequester": false' in payload

@@ -714,6 +714,7 @@ def list_requests(
                 "status": r.status.value,
                 "requestType": r.request_type.value,
                 "canApprove": can_approve_deployment_request(current_user, r),
+                "isRequester": r.requested_by == current_user.id,
                 "taskId": r.task_id or "",
                 "client": r.client.name if r.client else "",
                 "dumpSource": r.dump_source or "",
