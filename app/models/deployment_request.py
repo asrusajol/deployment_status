@@ -147,6 +147,18 @@ class DeploymentRequest(Base):
         return self.executions[0].executor if self.executions else None
 
     @property
+    def finished_at(self) -> "datetime | None":
+        """When devops finished this request — deployed, failed, or rolled back.
+
+        Same single-row reasoning as current_executor above: `executions` holds at
+        most one row, so this needs no caller-supplied join, and request_list.html
+        already loads it eagerly. Null for anything still in flight, and for the
+        handful of old rows finished before completed_at was recorded — the Action
+        cell falls back to a dash rather than printing "None".
+        """
+        return self.executions[0].completed_at if self.executions else None
+
+    @property
     def effective_server(self) -> str | None:
         """The server URL to display for this request, recorded or inferred.
 

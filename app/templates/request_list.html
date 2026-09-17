@@ -201,6 +201,15 @@
                 {% else %}
                   <span class="muted">In progress — awaiting completion</span>
                 {% endif %}
+              {% elif r.status in FINISHED_REQUEST_STATUSES and r.finished_at %}
+                {# Nothing left to do on a finished request, so the cell carries when
+                   devops finished it instead of a bare dash. Muted and monospaced so
+                   the times line up down the column and stay quieter than the action
+                   buttons on the rows above. #}
+                <div class="action-finished-at">
+                  <span class="action-finished-date">{{ r.finished_at.strftime("%Y-%m-%d") }}</span>
+                  <span class="action-finished-time">{{ r.finished_at.strftime("%H:%M UTC") }}</span>
+                </div>
               {% elif not can_delete_request(r) and not can_edit_request(r) %}
                 <span class="muted">—</span>
               {% endif %}

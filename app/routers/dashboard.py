@@ -570,6 +570,17 @@ OPEN_REQUEST_STATUS_ORDER = (
 )
 
 
+# Devops is done with these — the Action cell has no button left to offer, so it
+# shows when they finished instead (request_list.html). Deliberately all three
+# outcomes, not just `completed`: a failed or rolled-back deploy is finished work
+# too, and its execution row carries the same completed_at.
+FINISHED_REQUEST_STATUSES = (
+    RequestStatus.completed,
+    RequestStatus.failed,
+    RequestStatus.rolled_back,
+)
+
+
 def _requests_ordering():
     """Open requests first, grouped by stage, oldest first within a stage —
     the one that has waited longest is the one most likely to have been
@@ -678,6 +689,7 @@ def list_requests(
             "requests": requests_,
             "status_labels": STATUS_LABELS,
             "RequestStatus": RequestStatus,
+            "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
             "RequestType": RequestType,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,

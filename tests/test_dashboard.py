@@ -2705,3 +2705,107 @@ def test_type_badge_carries_the_request_date_as_a_tooltip(web):
     response = client.get("/requests")
 
     assert 'title="Requested 2026-03-04 09:07 UTC"' in response.text
+
+
+def _seed_finished_request(session, *, task_id, status, completed_at, requester_id=1):
+    """A request devops has finished, with the execution row that carries the time."""
+    request = DeploymentRequest(
+        task_id=task_id, requested_by=requester_id, status=status,
+        created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    session.add(request)
+    session.flush()
+    session.add(
+        DeploymentExecution(
+            request_id=request.id, executed_by=requester_id,
+            claimed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            started_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            completed_at=completed_at,
+            status=ExecutionStatus.completed,
+        )
+    )
+    session.commit()
+    return request
+
+
+def _action_cell(response_text, task_id):
+    """The Action cell of the row carrying task_id."""
+    body = response_text[response_text.index("<tbody>") : response_text.index("</tbody>")]
+    row = next(r for r in body.split("<tr>") if task_id in r)
+    return row[row.index('<div class="actions-inner">') :]
+
+
+def test_action_cell_shows_when_a_deployed_request_was_finished(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-DEPLOYED", status=RequestStatus.completed,
+        completed_at=datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    cell = _action_cell(client.get("/requests").text, "PR-DEPLOYED")
+
+    assert "2026-09-17" in cell
+    assert "14:32 UTC" in cell
+
+
+def test_action_cell_shows_the_finish_time_for_failed_and_rolled_back_too(web):
+    """Also devops outcomes, and they carry a completed_at just the same."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-FAILED", status=RequestStatus.failed,
+        completed_at=datetime(2026, 9, 16, 8, 5, tzinfo=timezone.utc),
+    )
+    _seed_finished_request(
+        session, task_id="PR-ROLLED", status=RequestStatus.rolled_back,
+        completed_at=datetime(2026, 9, 15, 19, 40, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    page = client.get("/requests").text
+
+    assert "08:05 UTC" in _action_cell(page, "PR-FAILED")
+    assert "19:40 UTC" in _action_cell(page, "PR-ROLLED")
+
+
+def test_action_cell_keeps_the_dash_when_no_finish_time_was_recorded(web):
+    """Older rows finished before the execution row carried a time — a dash, never
+    the string "None"."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-NOTIME", status=RequestStatus.completed, completed_at=None,
+    )
+    login_as(client, "rajib")
+
+    cell = _action_cell(client.get("/requests").text, "PR-NOTIME")
+
+    assert "None" not in cell
+    assert "—" in cell
+
+
+def test_action_cell_still_offers_mark_deployed_while_in_progress(web):
+    """The finish time must not displace the button on unfinished rows."""
+    client, session = web
+    make_user(
+        session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin,
+    )
+    session.commit()
+    session.add(
+        DeploymentRequest(
+            task_id="PR-RUNNING", requested_by=1, status=RequestStatus.in_progress,
+            created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+    )
+    session.commit()
+    login_as(client, "rajib")
+
+    cell = _action_cell(client.get("/requests").text, "PR-RUNNING")
+
+    assert "Mark Deployed" in cell
