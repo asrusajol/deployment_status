@@ -330,7 +330,9 @@ def test_the_deploy_queue_offers_return(web):
 
 def test_the_listing_eager_loads_returns(web):
     """One lazy load per row would be an N+1 across the whole queue — the same
-    trap the seeder listing hit."""
+    trap the seeder listing hit. Now there are 2 independent eager-load queries:
+    one for the paginated listing, one for the active_requests (needed for the
+    notification feed), but neither is an N+1 per row."""
     from sqlalchemy import event
 
     client, session = web
@@ -357,4 +359,18 @@ def test_the_listing_eager_loads_returns(web):
     finally:
         event.remove(engine, "before_cursor_execute", record)
 
-    assert len(queries) <= 1, f"returns loaded per row, not eagerly: {len(queries)} queries"
+    assert len(queries) <= 2, f"returns loaded per row, not eagerly: {len(queries)} queries"
+
+
+def test_returned_requests_reach_the_notification_feed(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _returned_request(session)
+    login_as(client, "devone")
+
+    page = client.get("/requests").text
+    payload = page.split('id="active-requests-data">')[1].split("</script>")[0]
+
+    assert '"status": "returned"' in payload
+    assert "branch deleted" in payload

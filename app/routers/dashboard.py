@@ -575,6 +575,7 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.in_progress,
+    RequestStatus.returned,
 )
 # Requests still moving through the flow, in the order a person meets them. The
 # queue lists these before anything finished (see _requests_ordering below), so
@@ -702,6 +703,7 @@ def list_requests(
     active_requests = (
         db.query(DeploymentRequest)
         .filter(DeploymentRequest.status.in_(ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS))
+        .options(selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner))
         .order_by(DeploymentRequest.created_at.desc())
         .all()
     )
@@ -716,6 +718,7 @@ def list_requests(
                 "client": r.client.name if r.client else "",
                 "dumpSource": r.dump_source or "",
                 "server": r.server or "",
+                "returnReason": r.latest_return.reason if r.latest_return else "",
             }
             for r in active_requests
         ]

@@ -388,6 +388,7 @@
           client: r.client,
           dumpSource: r.dumpSource,
           server: r.server,
+          returnReason: r.returnReason,
         };
       });
 
@@ -425,6 +426,14 @@
               title: "Deployment request ready to deploy",
               body: describeRequest(now),
             });
+          } else if (before && before.status !== "returned" && now.status === "returned") {
+            // A request was handed back to its requester — the notification leads with
+            // the task ID and reason so they know what to fix without opening the app.
+            // Same voice as the approval notifications above: "<what happened>" + details.
+            events.push({
+              title: "Your deployment request has been returned",
+              body: describeRequest(now),
+            });
           }
         });
         if (events.length > 0) {
@@ -435,6 +444,12 @@
       localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(currentSnapshot));
 
       function describeRequest(row) {
+        if (row.status === "returned" && row.returnReason) {
+          // Returned requests: lead with the task ID and reason so the requester knows
+          // what to fix without opening the app.
+          var base = row.taskId || "Deployment request";
+          return base + " — " + row.returnReason;
+        }
         if (row.taskId) {
           return row.taskId + (row.client ? " · " + row.client : "");
         }
