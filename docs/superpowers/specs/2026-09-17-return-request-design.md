@@ -29,7 +29,9 @@ by the team lead" are different facts about a deployment.
 
 ## Data model
 
-New `RequestStatus.returned`, plus a new table `request_returns` — one row
+Two new statuses, `RequestStatus.returned` and `RequestStatus.withdrawn`
+(see Transitions for why the second one exists), plus a new table
+`request_returns` — one row
 per return, not a set of "last return" columns on the request.
 
 | Column | Type | Notes |
@@ -71,7 +73,8 @@ more sensitive than the request beside it.
 |---|---|---|---|
 | `approved`, `in_progress` | deploy team member or admin | **Return** + reason | `returned` |
 | `returned` | the requester, or an admin | **Resubmit** | see below |
-| `returned` | the requester, or an admin | **Edit**, **Delete** | unchanged status / gone |
+| `returned` | the requester, or an admin | **Edit** | stays `returned` |
+| `returned` | the requester, or an admin | **Withdraw** | `withdrawn` (terminal) |
 
 **Return** is gated by `require_deploy_team_member` — the same dependency
 that guards Start Deployment and Mark Deployed. The people who discover the
@@ -108,12 +111,40 @@ Resubmit is an explicit button, not a side effect of saving an edit. A
 requester correcting a typo should not silently re-enter the deploy queue,
 and the resubmission wants to be a deliberate, recorded act.
 
-`returned` joins `EDITABLE_REQUEST_STATUSES` and `DELETABLE_REQUEST_STATUSES`
-(both currently stop at `pending_approval`). Editing is the entire point —
-they have to fix the branch name — and deleting covers the case the user
-raised: the work is no longer needed and the requester drops it themselves.
+**A returned request is editable, and deliberately NOT deletable.**
+
+`returned` joins `EDITABLE_REQUEST_STATUSES`. Editing is the entire point:
+they have to fix the branch name. This also needs an exception in
+`can_edit_request()`, which today refuses any request whose type is not
+`standard` — the stated reason being that `db_dump_restore`/`test_local`
+requests are "created straight into `approved` and have no real pre-decision
+window". A return *creates* that window by design, so the rule has to become
+"non-standard types are editable only while `returned`". Without this, a
+returned test_local request cannot be corrected by anyone, which removes the
+point of returning it.
+
+`returned` does **not** join `DELETABLE_REQUEST_STATUSES`. A returned request
+now carries a return log, and that constant's own reasoning is that deleting
+a row with history "would silently break the audit trail this whole tool
+exists for". Deleting would hand the one person with the strongest motive to
+erase an unflattering record the means to do it — the team lead's view of
+"why did my developer's request come back three times" is exactly what
+disappears.
+
+Instead the requester gets **Withdraw**, a terminal status meaning "we are
+not doing this after all". The row and its full return log survive, the
+deploy queue is clear, and nobody needs anyone's permission to abandon their
+own request. Requiring devops to approve a deletion was considered and
+rejected: it is a second approval flow to build and maintain, and it leaves a
+requester waiting on someone else to let them drop work nobody wants.
+
+Worked example, which stays readable forever:
+`requested -> returned (migration error on live) -> withdrawn by the requester`.
 
 ## Queue position
+
+`withdrawn` is terminal and joins `FINISHED_REQUEST_STATUSES`, sorting into
+history with the rest.
 
 `returned` is an open status, ranked **first** in `OPEN_REQUEST_STATUS_ORDER`,
 above `pending_approval`. It is the only state where a request has moved
@@ -132,9 +163,21 @@ before the branch merges, not just asserted in a test.
 
 **Status cell.** "Returned" in bold amber — amber is already this design
 system's "waiting on a person" signal (pending badges, the Test chip), so
-Returned reads as another instance of it rather than a new colour. Rail:
-`(amber, empty, empty, empty)`, back to stage one, deliberately distinct from
-Rejected's red: rejected is over, returned is not.
+Returned reads as another instance of it rather than a new colour.
+
+Rail for `returned`: `_Rail(("amber", "empty", "empty", "empty"), 0)` — back
+to the first dot, amber, and pulsing, exactly as `pending_approval` does
+today (`pulse=0` is what drives `.is-pulsing`). The request really has gone
+back to the beginning and really is waiting on a person, so it should look
+like it. Deliberately distinct from Rejected's red: rejected is over,
+returned is not.
+
+Rail for `withdrawn`: `_Rail(("slate", "empty", "empty", "empty"), None)` —
+no pulse, because nothing is waiting on anyone. Slate is a neutral the design
+system already has (`--slate-chip`, used for the test.local badge) but which
+has no rail dot yet, so this adds one `.rail-dot-slate` rule. Red would be
+wrong: withdrawing is not a failure or a rejection, it is a decision not to
+proceed.
 
 **Reason.** An `[i]` button beside the status opens the return log in the
 existing `<dialog class="changes-modal">` used for Changes and
@@ -146,7 +189,7 @@ state, and the reason. The button shows a count once there is more than one
 (`[i] 3`), because "returned three times" is the fact a team lead is looking
 for and it should not require opening the dialog to discover.
 
-**Action bar.** A returned row offers `Edit`, `Resubmit`, `Delete`. A row in
+**Action bar.** A returned row offers `Edit`, `Resubmit`, `Withdraw`. A row in
 `approved` or `in_progress` gains a `Return` button beside its existing
 button, for deploy-team members only.
 
@@ -180,6 +223,49 @@ No data migration — a brand new table, and no existing request has ever been
 returned. Downgrade drops the table; the enum value cannot be removed cleanly
 and is left in place, which is harmless and should be said in the migration's
 docstring.
+
+## Not breaking what already works
+
+Adding a status to this app means touching five separate constants, and
+missing one fails in a different way each time. Enumerated here because the
+last ordering change shipped a regression that the whole suite passed:
+
+| Place | Miss it and |
+|---|---|
+| `RAIL_STAGES` | `request_list.html`'s `rail_stages[r.status]` is a bare lookup — `KeyError` inside the row loop, so the **entire Requests page 500s**, not just one row |
+| `OPEN_REQUEST_STATUS_ORDER` / `FINISHED_REQUEST_STATUSES` | the status sorts as neither and sinks into history — silent |
+| `EDITABLE_REQUEST_STATUSES` + `can_edit_request()`'s type rule | the requester cannot fix the branch, so the feature does nothing |
+| `ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS` | no popup; the requester never learns |
+| `STATUS_LABELS` | falls back to the raw enum value — visible but ugly |
+
+Two structural defences, rather than trusting anyone to remember this list:
+
+1. **Exhaustiveness tests that iterate `RequestStatus` itself**, so a status
+   added next year fails them without anyone thinking to update the tests:
+   every status has a rail entry and renders a row; every status is in
+   exactly one of the open/finished sets; every status has a label.
+2. **`rail_stages.get(status, NEUTRAL_RAIL)`** in the template, so a miss
+   degrades to a plain row instead of taking the page down. The test catches
+   it in CI; the `.get()` means it is never catastrophic in production.
+
+Also to remove while here: `ACTIVE_REQUEST_STATUSES` in
+`app/models/deployment_request.py:13` — a tuple of *strings* referenced
+nowhere in `app/`, `tests/` or `alembic/`. It is dead, and it reads exactly
+like a list someone would dutifully update while adding a status, believing
+they had done something.
+
+## Regression checks before merge
+
+Beyond the new tests, this feature must leave the existing flows untouched:
+
+- The full suite passes (CLAUDE.md: it is what guards master).
+- A request that is never returned behaves exactly as before, end to end:
+  submit → approve → start → mark deployed.
+- The dashboard, Release Tracker and Excel export are unaffected — all three
+  read only `completed` requests/executions, verified before this was
+  written.
+- The queue is looked at **in the browser with real data**, not only asserted
+  in tests. The `pending_intake` ordering regression passed every test.
 
 ## Testing
 
