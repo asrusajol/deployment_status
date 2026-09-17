@@ -36,7 +36,6 @@ from app.auth import (
     can_approve_deployment_request,
     can_delete_request,
     can_edit_request,
-    can_resubmit_request,
     require_deploy_team_member,
     require_login,
 )
@@ -875,6 +874,17 @@ def return_request(
     return RedirectResponse(url="/requests", status_code=303)
 
 
+def _is_requester_or_admin(current_user: User, deployment_request: DeploymentRequest) -> bool:
+    """The ownership half of can_resubmit_request (app/auth.py), with its status
+    condition left out on purpose: resubmit_request/withdraw_request need to check who
+    is asking before what state the request is in, or the 403-vs-409 split below would
+    let anyone logged in fingerprint a `returned` request they have no business
+    touching."""
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
+
+
 @router.post("/requests/{request_id}/resubmit")
 def resubmit_request(
     request_id: int,
@@ -882,10 +892,14 @@ def resubmit_request(
     current_user: User = Depends(require_login),
 ):
     deployment_request = _get_request_or_404(db, request_id)
+    # Permission before status, deliberately: checking status first would let anyone
+    # logged in — not just the requester — tell `returned` (409) apart from every other
+    # status (403) on a request they have no business touching, without ever passing a
+    # permission check. See _is_requester_or_admin above.
+    if not _is_requester_or_admin(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can resubmit this request")
     if deployment_request.status != RequestStatus.returned:
         raise HTTPException(status_code=409, detail="Only a returned request can be resubmitted")
-    if not can_resubmit_request(current_user, deployment_request):
-        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can resubmit this request")
 
     # Exactly where a new request of this type would start — a standard request goes
     # back through its team lead, since the branch changed and the original approval
@@ -909,10 +923,11 @@ def withdraw_request(
     record the means to do it.
     """
     deployment_request = _get_request_or_404(db, request_id)
+    # Permission before status — see resubmit_request above for why.
+    if not _is_requester_or_admin(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can withdraw this request")
     if deployment_request.status != RequestStatus.returned:
         raise HTTPException(status_code=409, detail="Only a returned request can be withdrawn")
-    if not can_resubmit_request(current_user, deployment_request):
-        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can withdraw this request")
 
     deployment_request.status = RequestStatus.withdrawn
     db.commit()

@@ -139,8 +139,9 @@ def can_edit_request(current_user: User, deployment_request) -> bool:
     actually decided on it (approved or rejected) it's a recorded decision, not a draft —
     neither the requester nor an admin can edit it at that point, the same "no override"
     stance can_delete_request takes once execution has started. db_dump_restore/test_local
-    requests are never editable regardless of status: they're created straight into
-    `approved` and have no real pre-decision window."""
+    requests are only editable while `returned`: they're created straight into `approved`
+    and have no other pre-decision window, but a return re-opens exactly one — see the
+    request_type/status check below."""
     # Non-standard types have no pre-decision window of their own — they are created
     # straight into `approved`. A return creates one by design, though: the requester
     # is being asked to fix something, so they must be able to edit it. Without this
