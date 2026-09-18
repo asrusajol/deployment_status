@@ -8,6 +8,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "b7c3d9e1f2a4"
 down_revision: Union[str, Sequence[str], None] = "c9d8e7f6a5b4"
@@ -31,9 +32,19 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("returned_by", sa.Integer(), nullable=False),
         sa.Column("returned_at", sa.DateTime(), nullable=False),
+        # Generic sa.Enum ignores create_type=False (it's a postgresql-dialect-only
+        # kwarg) and tries to re-issue CREATE TYPE requeststatus AS ENUM (), which
+        # blows up with "type already exists" on a real deploy. It passed CI and a
+        # single fresh-DB "upgrade head" because SQLAlchemy caches "already
+        # created" state within one process and skips the CREATE there — the
+        # failure only shows up when this revision runs in its own process, which
+        # is every real deploy (upgrading from the previous head) and never a
+        # from-scratch test run. The test suite can't catch this either: it
+        # builds its schema from Base.metadata.create_all and never runs
+        # migrations. Use postgresql.ENUM, which actually honours create_type.
         sa.Column(
             "returned_from",
-            sa.Enum(name="requeststatus", create_type=False),
+            postgresql.ENUM(name="requeststatus", create_type=False),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["request_id"], ["deployment_requests.id"]),
