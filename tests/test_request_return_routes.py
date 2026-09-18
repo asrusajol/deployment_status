@@ -245,10 +245,15 @@ def test_the_requester_can_withdraw_a_returned_request(web):
     assert session.query(RequestReturn).count() == 1
 
 
-def test_a_returned_request_is_editable_even_when_not_standard(web):
-    """can_edit_request refuses non-standard types outright, on the grounds they
-    have no pre-decision window. A return creates one by design — without this
-    exception a returned test_local request could never be corrected."""
+def test_a_returned_non_standard_request_is_not_editable(web):
+    """The edit route and request_edit.html only understand `standard` requests
+    (they require environment/git_branch/commit_hash/version and a PLANNED
+    deployable task) — a returned test_local or db_dump_restore request offered
+    an Edit link there either 422s or gets silently rewritten into a
+    standard-shaped row while request_type stays unchanged, which is data
+    corruption behind a button. So non-standard types are never editable,
+    returned or not; the requester withdraws and raises a new request instead,
+    which is cheap for these two types."""
     from app.auth import can_edit_request
 
     client, session = web
@@ -256,7 +261,7 @@ def test_a_returned_request_is_editable_even_when_not_standard(web):
     session.commit()
     request = _returned_request(session, request_type=RequestType.test_local)
 
-    assert can_edit_request(requester, request) is True
+    assert can_edit_request(requester, request) is False
 
 
 def test_a_returned_request_is_not_deletable(web):
@@ -270,6 +275,46 @@ def test_a_returned_request_is_not_deletable(web):
     request = _returned_request(session)
 
     assert can_delete_request(requester, request) is False
+
+
+def test_a_resubmitted_request_is_still_not_deletable(web):
+    """`returned` was deliberately kept out of DELETABLE_REQUEST_STATUSES, but a
+    returned request doesn't stay returned: resubmit moves it to pending_approval
+    (or approved), both of which ARE deletable statuses. A resubmitted request
+    still carries its request_returns log, and deleting the row would destroy it
+    exactly like a still-returned one would — so it must stay refused even once
+    the status has moved on."""
+    from app.auth import can_delete_request
+
+    client, session = web
+    requester = make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+    client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+    session.refresh(request)
+    assert request.status == RequestStatus.pending_approval  # sanity: now in a deletable status
+
+    assert can_delete_request(requester, request) is False
+
+
+def test_deleting_a_resubmitted_request_is_refused_not_a_500(web):
+    """Route-level companion to the test above: without the auth fix, delete_request
+    clears `approvals` but nothing clears `request_returns`, and the FK (no ondelete,
+    no cascade) turns this into an IntegrityError -> 500 instead of a clean 403, and
+    the request becomes permanently undeletable."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+    client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+    session.refresh(request)
+
+    response = client.post(f"/requests/{request.id}/delete", follow_redirects=False)
+
+    assert response.status_code == 403
+    assert session.query(RequestReturn).count() == 1
 
 
 def test_a_returned_row_shows_the_reason_and_its_actions(web):
@@ -287,6 +332,34 @@ def test_a_returned_row_shows_the_reason_and_its_actions(web):
     assert f"/requests/{request.id}/withdraw" in page
     # Not deletable — the log has to survive.
     assert f"/requests/{request.id}/delete" not in page
+
+
+def test_resubmitted_request_still_shows_its_return_history(web):
+    """The [i] button used to be gated on `r.status == RequestStatus.returned`, so
+    the history disappeared the moment the request moved on — exactly when the
+    team lead reviewing it most needs to see why it kept coming back. Fix: gate
+    on `r.returns` alone. Uses `withdrawn`, not `pending_approval`, on purpose:
+    `pending_approval` is in ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS, so its
+    return reason also lands in the page's `active-requests-data` JSON blob for
+    the notification feed — asserting on raw substring presence there would pass
+    whether or not the table's own gate was fixed (the exact trap noted in this
+    repo's CLAUDE.md: a test matching a JSON blob elsewhere on the page instead
+    of the table it meant to assert on). `withdrawn` is excluded from that list,
+    so the only way "branch deleted" can appear is the request_list.html table
+    row itself, via the return-log-reason markup."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+    client.post(f"/requests/{request.id}/withdraw", follow_redirects=False)
+    session.refresh(request)
+    assert request.status == RequestStatus.withdrawn
+
+    page = client.get("/requests").text
+
+    assert 'data-return-log="%d"' % request.id in page
+    assert '<p class="return-log-reason">branch deleted</p>' in page
 
 
 def test_the_info_button_counts_repeat_returns(web):

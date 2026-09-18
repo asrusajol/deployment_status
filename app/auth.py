@@ -124,7 +124,20 @@ def can_delete_request(current_user: User, deployment_request) -> bool:
     execution history, not a mistake to undo — deleting it would silently break the
     audit trail this tool exists for, so neither an admin nor the requester can at that
     point (there's no override; if a real correction is needed once execution has
-    started, that's an operational conversation, not a delete button)."""
+    started, that's an operational conversation, not a delete button).
+
+    Same reasoning rules out a request that has ever been returned, regardless of its
+    current status: `returned` is deliberately left out of DELETABLE_REQUEST_STATUSES,
+    but a returned request doesn't stay returned — Resubmit moves it back to
+    pending_approval or approved, both of which ARE deletable, and it can end up
+    rejected from there too. By then it still carries its request_returns log, which
+    is the whole point of the feature (a team lead's view of why it kept coming back),
+    and the FK from request_returns has no ondelete/cascade — deleting the row would
+    either destroy that log or, in production, just 500 with an IntegrityError and
+    leave the request permanently stuck undeletable. So checked first, independent of
+    status."""
+    if deployment_request.returns:
+        return False
     if deployment_request.status not in DELETABLE_REQUEST_STATUSES:
         return False
     if current_user.role == UserRole.admin:
@@ -138,19 +151,21 @@ def can_edit_request(current_user: User, deployment_request) -> bool:
     EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py). Once a team lead has
     actually decided on it (approved or rejected) it's a recorded decision, not a draft —
     neither the requester nor an admin can edit it at that point, the same "no override"
-    stance can_delete_request takes once execution has started. db_dump_restore/test_local
-    requests are only editable while `returned`: they're created straight into `approved`
-    and have no other pre-decision window, but a return re-opens exactly one — see the
-    request_type/status check below."""
-    # Non-standard types have no pre-decision window of their own — they are created
-    # straight into `approved`. A return creates one by design, though: the requester
-    # is being asked to fix something, so they must be able to edit it. Without this
-    # a returned test_local request could not be corrected by anyone, which removes
-    # the point of returning it.
-    if (
-        deployment_request.request_type != RequestType.standard
-        and deployment_request.status != RequestStatus.returned
-    ):
+    stance can_delete_request takes once execution has started. `returned` is kept in
+    EDITABLE_REQUEST_STATUSES for exactly the standard case: it's a `standard` request's
+    one pre-decision window reopened after a return, so the requester can fix whatever
+    devops flagged before resubmitting."""
+    # Non-standard types are never editable, returned or not — this used to have an
+    # exception for `returned`, on the theory that a return re-opens a pre-decision
+    # window even for db_dump_restore/test_local. It doesn't: the edit route and
+    # request_edit.html only understand `standard` requests (they require
+    # environment/git_branch/commit_hash/version and a PLANNED deployable task), so a
+    # returned test_local/db_dump_restore request offered that Edit link either 422s or
+    # gets silently rewritten into a standard-shaped row while request_type stays
+    # unchanged — data corruption behind a button. Cheaper fix for these two types: the
+    # requester withdraws and raises a new request. If that becomes a real nuisance,
+    # the actual fix is a type-aware edit form, not reopening this exception.
+    if deployment_request.request_type != RequestType.standard:
         return False
     if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
         return False

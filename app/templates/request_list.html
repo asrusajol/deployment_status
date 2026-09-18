@@ -173,7 +173,13 @@
               </span>
               <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
             </div>
-            {% if r.status == RequestStatus.returned and r.returns %}
+            {# Not gated on r.status == RequestStatus.returned: the history has to
+               survive past the return itself — a resubmitted request sitting in
+               pending_approval is exactly when a team lead most needs to see why it
+               kept coming back, and the Withdraw confirmation text promises "it stays
+               on record with its return history", which requires this to still show
+               on a withdrawn row too. #}
+            {% if r.returns %}
               <button
                 type="button" class="return-log-button" data-return-log="{{ r.id }}"
                 title="Why this was returned"

@@ -609,6 +609,12 @@ OPEN_REQUEST_STATUS_ORDER = (
 # shows when they finished instead (request_list.html). Deliberately all three
 # outcomes, not just `completed`: a failed or rolled-back deploy is finished work
 # too, and its execution row carries the same completed_at.
+#
+# `rejected`/`withdrawn` were added for that same Action-cell purpose only — this
+# constant does NOT drive queue ordering (that's OPEN_REQUEST_STATUS_ORDER's
+# membership above, which rejected/withdrawn are deliberately not part of), so
+# despite the name it's less load-bearing than it looks; don't assume adding a
+# status here changes where a request sits in the list.
 FINISHED_REQUEST_STATUSES = (
     RequestStatus.completed,
     RequestStatus.failed,
@@ -1158,8 +1164,13 @@ def delete_request(
         raise HTTPException(status_code=403, detail="You don't have permission to delete this request")
 
     # Approval rows have a plain FK to this request (no cascade) — delete those first,
-    # or the DB rejects the delete. No DeploymentExecution row can exist yet: everything
-    # in DELETABLE_REQUEST_STATUSES is strictly before start_request() above ever runs.
+    # or the DB rejects the delete. No DeploymentExecution row can exist here: a request
+    # that was ever claimed/in_progress is either still there (not in
+    # DELETABLE_REQUEST_STATUSES) or was returned from there, and returning deletes its
+    # execution row (see the return route) before handing status back to the requester —
+    # so nothing reaching this point, resubmitted or not, has an execution row left to
+    # clear. (A request that HAS been returned is refused above regardless of status,
+    # for the request_returns log, not this.)
     for approval in list(deployment_request.approvals):
         db.delete(approval)
     db.delete(deployment_request)
