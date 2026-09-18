@@ -1,0 +1,264 @@
+{# One request row, shared by both tables on request_list.html: the "Returned to
+   you" table above the queue and the main paginated table below it. Extracted so
+   the two render identically — same columns, same actions — and can never drift
+   apart; both includes rely on Jinja's default with-context behavior to see `r`
+   (the loop variable) plus everything else request_list.html put in the template
+   context (status_labels, can_approve_request, etc). #}
+        <tr>
+          {# The queue has no date column (12 already), so the request date rides
+             along as a tooltip on the Type badge — .badge-type-* gets cursor:help
+             so there's some hint it's there. #}
+          <td>
+            <span
+              class="badge badge-type-{{ r.request_type.value }}"
+              title="Requested {{ localtime_text(r.created_at) if r.created_at else 'unknown' }}"
+              {% if r.created_at %}data-localtime-title="{{ localtime_attr(r.created_at) }}" data-localtime-prefix="Requested "{% endif %}
+            >{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span>
+          </td>
+          <td>{{ r.task_id or "—" }}</td>
+          <td>{{ r.module_name or "—" }}</td>
+          <td>{{ r.client.name if r.client else "—" }}</td>
+          <td>
+            {% if r.environment %}
+              <span class="badge badge-{{ r.environment.value }}">{{ r.environment.value | capitalize }}</span>
+            {% elif r.request_type == RequestType.test_local and r.server %}
+              <span class="badge badge-testlocal">{{ r.server }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {# test_local rows deliberately show nothing here: their `server` is the bare
+               hostname the System column already renders as its badge, so printing it
+               again put the same value twice side by side, and the two ran into each
+               other. Every other request type keeps the URL cell. #}
+            {# effective_server, not server: a request created before per-client URLs
+               existed has none stored, and falls back to the client's configured URL
+               for its system (see DeploymentRequest.effective_server). #}
+            {% set url = r.effective_server %}
+            {% if url and r.request_type != RequestType.test_local %}
+              <div class="url-cell">
+                {% if url.startswith("http://") or url.startswith("https://") %}
+                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
+                {% else %}
+                  <span class="url-preview">{{ url }}</span>
+                {% endif %}
+                {{ copy_btn.copy_button(url, "Server URL") }}
+              </div>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ r.version or "—" }}</td>
+          <td>
+            {% if r.request_type == RequestType.db_dump_restore %}
+              {% set plain_detail = (r.dump_source or "—") ~ " → " ~ ("share with requestor" if r.share_with_requestor else (r.restore_source or "—")) %}
+              {# No standalone "branch" concept for this request type — copy the same full value shown. #}
+              {% set copy_value = plain_detail %}
+            {% elif r.request_type == RequestType.test_local %}
+              {% set plain_detail = r.git_branch or "—" %}
+              {% set copy_value = r.git_branch or "" %}
+            {% else %}
+              {# "||" rather than "/" — branch names routinely contain their own slashes
+                 (e.g. "bugfix/PR-03168-..."), which made "branch / commit" ambiguous
+                 about where the branch ends and the commit begins. #}
+              {% set plain_detail = (r.git_branch or "—") ~ " || " ~ (r.commit_hash or "—") %}
+              {# Copy button copies the branch name alone, not "branch || commit" — the commit
+                 hash tacked on made pasted branch names unusable (see the copy-button fix). #}
+              {% set copy_value = r.git_branch or "" %}
+            {% endif %}
+            <div class="branch-commit-cell">
+              <span class="branch-commit-preview">
+                {% if r.request_type == RequestType.db_dump_restore %}
+                  <code>{{ r.dump_source or "—" }}</code> →
+                  {% if r.share_with_requestor %}
+                    <em>share with requestor</em>
+                  {% else %}
+                    <code>{{ r.restore_source or "—" }}</code>
+                  {% endif %}
+                {% elif r.request_type == RequestType.test_local %}
+                  <code>{{ r.git_branch or "—" }}</code>
+                {% else %}
+                  <code>{{ r.git_branch or "—" }}</code> <span class="branch-commit-sep">||</span> <code>{{ r.commit_hash or "—" }}</code>
+                {% endif %}
+              </span>
+              <button
+                type="button"
+                class="link-button view-detail"
+                data-detail-title="Branch Name / Commit"
+                data-detail="{{ plain_detail }}"
+                data-copy="{{ copy_value }}"
+              >View</button>
+            </div>
+          </td>
+          <td>
+            {% if r.changes_description %}
+              <div class="changes-cell">
+                <span class="changes-preview">{{ r.changes_description }}</span>
+                <button type="button" class="link-button view-changes" data-changes="{{ r.changes_description }}">View</button>
+              </div>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="requester-cell">
+            {{ r.requester.name if r.requester else "—" }}
+            {# When they asked, under who asked — the fact belongs beside the person,
+               not in the Action column, which is for controls. Same shape as
+               "Deployed by:" under Status. #}
+            {% if r.created_at %}
+              <div class="requester-asked-at"><span class="cell-label">Requested</span> {{ localtime(r.created_at) }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {# .get, not [] — a status missing from RAIL_STAGES would otherwise raise
+               inside this loop and 500 the whole page rather than one row. The
+               exhaustiveness test in tests/test_request_status_coverage.py is the
+               real guard; this is so a miss is never catastrophic in production. #}
+            {% set rail = rail_stages.get(r.status, neutral_rail) %}
+            <div class="status-cell">
+              <span class="rail" aria-hidden="true">
+                {% for i in range(4) %}
+                  <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
+                  {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
+                {% endfor %}
+              </span>
+              <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+              {# Inside .status-cell, beside the label — as a sibling of the cell it
+                 wrapped onto its own line under the rail, with the count dropping
+                 below the glyph.
+
+                 Not gated on r.status == RequestStatus.returned: the history has to
+                 survive past the return itself — a resubmitted request sitting in
+                 pending_approval is exactly when a team lead most needs to see why it
+                 kept coming back, and the Withdraw confirmation text promises "it stays
+                 on record with its return history", which requires this to still show
+                 on a withdrawn row too. #}
+              {# Amber when there's a return: this design system's "waiting on a person /
+                 something went wrong" signal, and a return is exactly that. Muted ash
+                 (is-muted, see .return-log-button.is-muted in style.css) when all there is
+                 is a withdrawal note — that's information, not a warning, and the button
+                 should read as part of the surrounding text rather than call attention to
+                 itself. #}
+              {% if r.returns or r.withdrawn_note %}
+                <button
+                  type="button" class="return-log-button{% if not r.returns %} is-muted{% endif %}" data-return-log="{{ r.id }}"
+                  title="{{ 'Why this was returned' if r.returns else 'Withdrawal note' }}"
+                >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
+              {% endif %}
+            </div>
+            {% if r.returns or r.withdrawn_note %}
+              <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
+                {# Withdrawal first, even though it happened after every return below it —
+                   it's the last word on the request, so it answers "what happened to this"
+                   before the reader has to scroll through why it kept coming back. #}
+                {% if r.withdrawn_at %}
+                  <div class="return-log-entry">
+                    <div class="return-log-meta">
+                      Withdrawn · {{ localtime(r.withdrawn_at) }} · {{ r.withdrawer.name if r.withdrawer else "—" }}
+                    </div>
+                    {% if r.withdrawn_note %}
+                      <p class="return-log-reason">{{ r.withdrawn_note }}</p>
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% for entry in r.returns %}
+                  <div class="return-log-entry">
+                    <div class="return-log-meta">
+                      {{ localtime(entry.returned_at) }} ·
+                      {{ entry.returner.name if entry.returner else "—" }} ·
+                      from {{ status_labels.get(entry.returned_from, entry.returned_from.value) }}
+                    </div>
+                    <p class="return-log-reason">{{ entry.reason }}</p>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if r.status == RequestStatus.in_progress and r.current_executor %}
+              <div class="status-handler">Handling: {{ r.current_executor.name }}</div>
+            {% elif r.status == RequestStatus.completed and r.current_executor %}
+              <div class="status-handler">Deployed by: {{ r.current_executor.name }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% set show_times = r.status in FINISHED_REQUEST_STATUSES and r.finished_at %}
+            <div class="actions-inner">
+              {% if r.status == RequestStatus.pending_approval %}
+                {% if can_approve_request(r) %}
+                  <form method="post" action="/requests/{{ r.id }}/approve" class="inline-form">
+                    <button type="submit" class="approve">Approve</button>
+                  </form>
+                  <form method="post" action="/requests/{{ r.id }}/reject" class="inline-form">
+                    <button type="submit" class="reject">Reject</button>
+                  </form>
+                {% else %}
+                  <span class="muted">Awaiting the requester's team lead</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.approved %}
+                {% if can_deploy %}
+                  <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
+                    <button type="submit" class="start">Start Deployment</button>
+                  </form>
+                  <button
+                    type="button" class="return"
+                    data-return-action="/requests/{{ r.id }}/return"
+                  >Return</button>
+                {% else %}
+                  <span class="muted">Awaiting a deploy team member</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.in_progress %}
+                {% if can_deploy %}
+                  {% if uses_release_tracker(r) %}
+                    {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
+                    <div class="inline-form">
+                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
+                    </div>
+                  {% else %}
+                    <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
+                      <button type="submit" class="deploy">Mark Deployed</button>
+                    </form>
+                  {% endif %}
+                  <button
+                    type="button" class="return"
+                    data-return-action="/requests/{{ r.id }}/return"
+                  >Return</button>
+                {% else %}
+                  <span class="muted">In progress — awaiting completion</span>
+                {% endif %}
+              {% elif r.status == RequestStatus.returned %}
+                {% if can_resubmit_request(r) %}
+                  <form method="post" action="/requests/{{ r.id }}/resubmit" class="inline-form">
+                    <button type="submit" class="start">Resubmit</button>
+                  </form>
+                  <button
+                    type="button" class="reject"
+                    data-withdraw-action="/requests/{{ r.id }}/withdraw"
+                  >Withdraw</button>
+                {% endif %}
+              {% elif not can_delete_request(r) and not can_edit_request(r) and not show_times %}
+                <span class="muted">—</span>
+              {% endif %}
+
+              {# Once devops is done there is no button left, so the cell carries when
+                 they finished. Only that: when it was *asked for* sits under the
+                 requester's name, and carrying both here widened this column enough to
+                 push the table into horizontal scroll. Converts to the viewer's
+                 timezone (_localtime.html). #}
+              {% if show_times %}
+                <div class="action-times">
+                  <span class="cell-label">Deployed</span>
+                  {{ localtime(r.finished_at) }}
+                </div>
+              {% endif %}
+              {% if can_edit_request(r) %}
+                <a href="/requests/{{ r.id }}/edit" class="action-link edit">Edit</a>
+              {% endif %}
+              {% if can_delete_request(r) %}
+                <form
+                  method="post"
+                  action="/requests/{{ r.id }}/delete"
+                  class="inline-form"
+                  onsubmit="return confirm('Delete this deployment request? This cannot be undone.');"
+                >
+                  <button type="submit" class="reject">Delete</button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>

@@ -1059,6 +1059,15 @@ code {
   pointer-events: none;
 }
 
+/* Heading for the "Returned to you" table (request_list.html) — no new visual
+   design, just enough spacing/weight to read as a section label above the same
+   table markup used below it. */
+.returned-to-you-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--paper);
+}
+
 .queue-header {
   display: flex;
   align-items: flex-end;

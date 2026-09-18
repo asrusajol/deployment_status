@@ -29,7 +29,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case
+from sqlalchemy import and_, case
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import (
@@ -712,12 +712,38 @@ def list_requests(
     if page_size not in ALLOWED_REQUESTS_PAGE_SIZES:
         page_size = DEFAULT_REQUESTS_PAGE_SIZE
 
-    total_count = db.query(DeploymentRequest).count()
+    # A request returned specifically to this user is hoisted into its own table
+    # above the queue (request_list.html's "Returned to you") so it can't get lost
+    # pages deep behind everything else — that's the whole point of the feature.
+    # Excluded from the main query below (not just hidden in the template) so
+    # total_count/total_pages reflect what's actually in the paginated list; if we
+    # only skipped it while rendering, the last page could come up short.
+    my_returned_requests_filter = and_(
+        DeploymentRequest.requested_by == current_user.id,
+        DeploymentRequest.status == RequestStatus.returned,
+    )
+    my_returned_requests = (
+        db.query(DeploymentRequest)
+        .filter(my_returned_requests_filter)
+        .options(
+            joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
+            selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
+            joinedload(DeploymentRequest.withdrawer),
+        )
+        # Oldest-first, same as the open-work ordering below (_requests_ordering) —
+        # the one waiting longest is the one most likely to have been forgotten.
+        .order_by(DeploymentRequest.created_at.asc())
+        .all()
+    )
+
+    main_query = db.query(DeploymentRequest).filter(~my_returned_requests_filter)
+
+    total_count = main_query.count()
     total_pages = max(1, math.ceil(total_count / page_size))
     page = max(1, min(page, total_pages))
 
     requests_ = (
-        db.query(DeploymentRequest)
+        main_query
         # Feeds current_executor (request_list.html's "Handling: <name>" line) without
         # an N+1 query per in_progress row on the page.
         .options(
@@ -788,6 +814,7 @@ def list_requests(
         {
             "current_user": current_user,
             "requests": requests_,
+            "my_returned_requests": my_returned_requests,
             "status_labels": STATUS_LABELS,
             "RequestStatus": RequestStatus,
             "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
