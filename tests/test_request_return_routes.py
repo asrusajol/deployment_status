@@ -627,45 +627,17 @@ def test_non_requester_does_not_see_returned_notification(web):
     assert '"isRequester": false' in payload
 
 
-def _main_table_body(response_text):
-    """The main queue's <tbody> only — scoped so a task id embedded elsewhere on the
-    page (the notification script's active-requests-data JSON blob, or the
-    "Returned to you" box's own <tbody> above it) can't produce a false pass/fail.
-    Empty string when the main table doesn't render at all (the empty-state message
-    instead) — that's the strongest possible "not visible", not a test failure."""
-    if "<tbody>" not in response_text:
-        return ""
-    start = response_text.rindex("<tbody>")
-    return response_text[start : response_text.index("</tbody>", start)]
-
-
-def test_admin_without_override_does_not_see_others_returned_requests(web):
-    """Some admins manage the deploy queue and never touch returns — a returned
-    request pinned at the top of their queue regardless of who owns it, or whether
-    they will ever act on it, is pure noise. User.can_manage_other_returns
-    (set per admin from /admin/users, default off) is what opts a specific admin
-    back into seeing it. (It still reaches the notification-feed JSON blob — that
-    is a separate mechanism, already gated to the actual requester elsewhere — this
-    test is about the visible queue table only.)"""
+def test_admin_without_override_sees_others_returned_requests_like_devops(web):
+    """The row itself is never hidden — visibility of a returned request in the
+    shared queue is the same for every role, admin included, whether or not
+    User.can_manage_other_returns is set. The checkbox only ever gates the
+    Edit/Resubmit/Withdraw controls (see the next tests), matching how devops
+    already sees the row today: visible, with no special buttons on someone
+    else's request."""
     client, session = web
     make_user(
         session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
         role=UserRole.admin, can_manage_other_returns=False,
-    )
-    session.commit()
-    request = _returned_request(session, task_id="PR-NOISY")
-    login_as(client, "root")
-
-    page = client.get("/requests").text
-
-    assert "PR-NOISY" not in _main_table_body(page)
-
-
-def test_admin_with_override_sees_others_returned_requests(web):
-    client, session = web
-    make_user(
-        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
-        role=UserRole.admin, can_manage_other_returns=True,
     )
     session.commit()
     request = _returned_request(session, task_id="PR-VISIBLE")
@@ -676,43 +648,7 @@ def test_admin_with_override_sees_others_returned_requests(web):
     assert "PR-VISIBLE" in page
 
 
-def test_non_admin_always_sees_others_returned_requests(web):
-    """The flag exists to quiet admin noise specifically — devops/team_lead/developer
-    are unaffected either way, same as before this feature."""
-    client, session = web
-    make_user(session, id=9, name="Devops One", username="devops1", password=DEFAULT_TEST_PASSWORD, role=UserRole.devops)
-    session.commit()
-    request = _returned_request(session, task_id="PR-STILLTHERE")
-    login_as(client, "devops1")
-
-    page = client.get("/requests").text
-
-    assert "PR-STILLTHERE" in page
-
-
-def test_admin_without_override_still_sees_their_own_returned_request(web):
-    """The flag governs OTHER people's returns only — an admin's own returned
-    request still shows, in the "Returned to you" box, exactly as for anyone else."""
-    client, session = web
-    make_user(
-        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
-        role=UserRole.admin, can_manage_other_returns=False,
-    )
-    session.commit()
-    request = _returned_request(session, task_id="PR-MINE", requester_id=9)
-    login_as(client, "root")
-
-    page = client.get("/requests").text
-
-    assert "PR-MINE" in page
-    assert "Returned to you" in page
-
-
-def test_pagination_excludes_hidden_returns_for_admin_without_override(web):
-    """Hidden rows must come out of the query, not just the template, or the stated
-    total and the last page's row count disagree — the same trap the returned-to-you
-    exclusion already guards against. Seeded past the default page size (15) so the
-    pagination footer actually renders."""
+def test_admin_without_override_cannot_resubmit_someone_elses_returned_request(web):
     client, session = web
     make_user(
         session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
@@ -720,18 +656,100 @@ def test_pagination_excludes_hidden_returns_for_admin_without_override(web):
     )
     make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
     session.commit()
-    for i in range(16):
-        r = DeploymentRequest(
-            task_id=f"PR-HIST-{i}", requested_by=2, status=RequestStatus.completed,
-            created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
-        )
-        session.add(r)
-    session.commit()
-    _returned_request(session, task_id="PR-HIDDEN")
+    request = _returned_request(session, requester_id=2)
     login_as(client, "root")
 
-    response = client.get("/requests")
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
 
-    # 16 completed rows, the returned one excluded — not 17.
-    assert "(16 total)" in response.text
-    assert "PR-HIDDEN" not in _main_table_body(response.text)
+    assert response.status_code == 403
+    session.refresh(request)
+    assert request.status == RequestStatus.returned
+
+
+def test_admin_with_override_can_resubmit_someone_elses_returned_request(web):
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=True,
+    )
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, requester_id=2)
+    login_as(client, "root")
+
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status != RequestStatus.returned
+
+
+def test_admin_without_override_cannot_withdraw_someone_elses_returned_request(web):
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, requester_id=2)
+    login_as(client, "root")
+
+    response = client.post(f"/requests/{request.id}/withdraw", follow_redirects=False)
+
+    assert response.status_code == 403
+    session.refresh(request)
+    assert request.status == RequestStatus.returned
+
+
+def test_admin_with_override_can_withdraw_someone_elses_returned_request(web):
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=True,
+    )
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, requester_id=2)
+    login_as(client, "root")
+
+    response = client.post(f"/requests/{request.id}/withdraw", follow_redirects=False)
+
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.withdrawn
+
+
+def test_admin_without_override_still_resubmits_and_withdraws_their_own(web):
+    """The checkbox governs acting on OTHER people's returns only — an admin's own
+    returned request is unaffected either way, same as the ordinary requester case."""
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _returned_request(session, requester_id=9)
+    login_as(client, "root")
+
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    assert response.status_code == 303
+
+
+def test_devops_without_any_override_behaves_exactly_like_admin_without_it(web):
+    """devops never had a blanket override on someone else's returned request in the
+    first place — this pins that down as a regression guard now that admin's own
+    override is opt-in too, so the two roles land in the same place by default."""
+    client, session = web
+    make_user(session, id=9, name="Devops One", username="devops1", password=DEFAULT_TEST_PASSWORD, role=UserRole.devops)
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session, requester_id=2)
+    login_as(client, "devops1")
+
+    page = client.get("/requests").text
+    resubmit_response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+
+    assert "PR-BACK" in page
+    assert resubmit_response.status_code == 403
