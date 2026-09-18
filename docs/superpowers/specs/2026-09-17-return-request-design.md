@@ -146,18 +146,32 @@ Worked example, which stays readable forever:
 `withdrawn` is terminal and joins `FINISHED_REQUEST_STATUSES`, sorting into
 history with the rest.
 
-`returned` is an open status, ranked **first** in `OPEN_REQUEST_STATUS_ORDER`,
-above `pending_approval`. It is the only state where a request has moved
-*backwards*, and it waits on someone who is not watching the deploy queue —
-so it is the easiest thing on the page to forget. Within the stage the
-existing oldest-first rule applies.
+**Revised after real use** (2026-09-18): `returned` was originally ranked
+**first** in `OPEN_REQUEST_STATUS_ORDER`, above `pending_approval`, on the
+reasoning that it's the only state where a request has moved *backwards* and
+waits on someone not watching the deploy queue. Once the "Returned to you"
+table shipped (see below), that reasoning stopped applying to the main
+queue: the person who actually needs to notice a return sees it hoisted into
+their own table on every page load regardless of where it sits in the main
+list. Leaving it pinned first there too meant every OTHER viewer — mainly
+admin/devops, who manage the shared queue and usually have no reason to act
+on someone else's return until it's resubmitted — got it shoved to the top
+of their queue by default, reported as noise.
 
-This is a judgement call, flagged as such: the alternative is ranking it
-below `pending_approval`, on the grounds that the deploy team's own queue
-should lead. The preceding change to this ordering shipped a regression that
-every test passed (`pending_intake` ranked first, pinning one stale row above
-everything newer), so this ranking should be looked at in the real queue
-before the branch merges, not just asserted in a test.
+`returned` now falls through to the finished branch (newest-first, alongside
+`withdrawn`/`completed`/...) for everyone. Once the requester resubmits it,
+its new status (`pending_approval`/`approved`) is open again in the normal
+way — nothing here changes what resubmitting does, only where a request
+sits while it is actually `returned`.
+
+This was itself a judgement call the first time round, flagged as such at
+the time: the preceding ordering change had shipped a regression that every
+test passed (`pending_intake` ranked first, pinning one stale row above
+everything newer), so pinning `returned` first was meant to be checked
+against the real queue before merge — and once it was, it turned out wrong
+for the same reason `pending_intake` was: a good-sounding priority pinned to
+the very top of everyone's queue is only right for the audience it was
+designed for. Here that audience is now served a different way.
 
 ## UI
 
