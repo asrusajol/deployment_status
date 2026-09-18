@@ -182,15 +182,34 @@
                  kept coming back, and the Withdraw confirmation text promises "it stays
                  on record with its return history", which requires this to still show
                  on a withdrawn row too. #}
-              {% if r.returns %}
+              {# Amber when there's a return: this design system's "waiting on a person /
+                 something went wrong" signal, and a return is exactly that. Muted ash
+                 (is-muted, see .return-log-button.is-muted in style.css) when all there is
+                 is a withdrawal note — that's information, not a warning, and the button
+                 should read as part of the surrounding text rather than call attention to
+                 itself. #}
+              {% if r.returns or r.withdrawn_note %}
                 <button
-                  type="button" class="return-log-button" data-return-log="{{ r.id }}"
-                  title="Why this was returned"
+                  type="button" class="return-log-button{% if not r.returns %} is-muted{% endif %}" data-return-log="{{ r.id }}"
+                  title="{{ 'Why this was returned' if r.returns else 'Withdrawal note' }}"
                 >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
               {% endif %}
             </div>
-            {% if r.returns %}
+            {% if r.returns or r.withdrawn_note %}
               <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
+                {# Withdrawal first, even though it happened after every return below it —
+                   it's the last word on the request, so it answers "what happened to this"
+                   before the reader has to scroll through why it kept coming back. #}
+                {% if r.withdrawn_at %}
+                  <div class="return-log-entry">
+                    <div class="return-log-meta">
+                      Withdrawn · {{ localtime(r.withdrawn_at) }} · {{ r.withdrawer.name if r.withdrawer else "—" }}
+                    </div>
+                    {% if r.withdrawn_note %}
+                      <p class="return-log-reason">{{ r.withdrawn_note }}</p>
+                    {% endif %}
+                  </div>
+                {% endif %}
                 {% for entry in r.returns %}
                   <div class="return-log-entry">
                     <div class="return-log-meta">
@@ -259,12 +278,10 @@
                   <form method="post" action="/requests/{{ r.id }}/resubmit" class="inline-form">
                     <button type="submit" class="start">Resubmit</button>
                   </form>
-                  <form
-                    method="post" action="/requests/{{ r.id }}/withdraw" class="inline-form"
-                    onsubmit="return confirm('Withdraw this request? It stays on record with its return history, but leaves the queue.');"
-                  >
-                    <button type="submit" class="reject">Withdraw</button>
-                  </form>
+                  <button
+                    type="button" class="reject"
+                    data-withdraw-action="/requests/{{ r.id }}/withdraw"
+                  >Withdraw</button>
                 {% endif %}
               {% elif not can_delete_request(r) and not can_edit_request(r) and not show_times %}
                 <span class="muted">—</span>
@@ -358,6 +375,22 @@
       <div class="changes-modal-actions">
         <button type="submit" class="reject">Return request</button>
         <button type="button" class="button-secondary" id="return-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="withdraw-modal" class="changes-modal">
+    <h2>Withdraw request</h2>
+    <form method="post" id="withdraw-form" class="form">
+      <p class="hint">It stays on record with its return history, but leaves the queue.</p>
+      <div class="field">
+        <label for="withdraw-note">Anything to add? (optional)</label>
+        <textarea id="withdraw-note" name="note" rows="3"
+                  placeholder="e.g. going a different direction, no longer needed"></textarea>
+      </div>
+      <div class="changes-modal-actions">
+        <button type="submit" class="reject">Withdraw request</button>
+        <button type="button" class="button-secondary" id="withdraw-cancel">Cancel</button>
       </div>
     </form>
   </dialog>
@@ -617,6 +650,25 @@
         });
         document.getElementById("return-cancel").addEventListener("click", function () {
           returnModal.close();
+        });
+
+        // Same shape as the Return dialog above: the button's own data attribute is
+        // the single source of truth for the action URL, one dialog element reused
+        // across every row rather than one per request.
+        var withdrawModal = document.getElementById("withdraw-modal");
+        var withdrawForm = document.getElementById("withdraw-form");
+        document.querySelectorAll("[data-withdraw-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            withdrawForm.action = button.getAttribute("data-withdraw-action");
+            withdrawForm.reset();
+            withdrawModal.showModal();
+          });
+        });
+        document.getElementById("withdraw-cancel").addEventListener("click", function () {
+          withdrawModal.close();
+        });
+        withdrawModal.addEventListener("click", function (event) {
+          if (event.target === withdrawModal) withdrawModal.close();
         });
 
         var logModal = document.getElementById("return-log-modal");

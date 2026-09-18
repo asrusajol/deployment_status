@@ -151,9 +151,22 @@ class DeploymentRequest(Base):
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[RequestStatus] = mapped_column(Enum(RequestStatus), default=RequestStatus.pending_intake)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    # Withdrawal, unlike a return, happens at most once and is terminal — a table
+    # keyed on "how many times" makes no sense for something that can only occur
+    # once, so this is columns on the request rather than a request_withdrawals
+    # table (compare RequestReturn, which needs the row-per-occasion shape because
+    # a request can bounce back any number of times). All three are nullable and
+    # only ever set together, by withdraw_request() in app/routers/dashboard.py.
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    withdrawn_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     client = relationship("Client")
     requester = relationship("User", foreign_keys=[requested_by])
+    # foreign_keys required: User now has two FKs pointing at it from this table
+    # (requested_by above, withdrawn_by here), so SQLAlchemy can't infer which
+    # column this relationship walks without being told.
+    withdrawer = relationship("User", foreign_keys=[withdrawn_by])
     approvals = relationship("Approval", back_populates="request")
     executions = relationship("DeploymentExecution", back_populates="request")
     # Newest first: the status cell shows the most recent reason, and the info

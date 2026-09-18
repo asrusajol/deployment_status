@@ -1343,6 +1343,23 @@ code {
   color: var(--ink);
 }
 
+/* A withdrawal note with no return behind it isn't a warning, so it doesn't get
+   the amber "waiting on a person" treatment above — --fog/--fog-dim (rather than
+   --slate-chip/--slate-chip-dim) because against this panel's background the fog
+   tokens read as a quieter, lower-contrast grey, which is the point: it should
+   blend with the surrounding status text, not sit next to it as a chip. */
+.return-log-button.is-muted {
+  border: 1px solid var(--fog-dim);
+  background: var(--fog-dim);
+  color: var(--fog);
+}
+
+.return-log-button.is-muted:hover,
+.return-log-button.is-muted:focus-visible {
+  background: var(--fog);
+  color: var(--ink);
+}
+
 .return-log-count {
   font-style: normal;
   font-size: 0.62rem;

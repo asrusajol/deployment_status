@@ -724,6 +724,9 @@ def list_requests(
             joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
             # Every returned row renders its log; lazy-loading would be an N+1.
             selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
+            # Every withdrawn row's [i] dialog renders "Withdrawn · ... · <who>" —
+            # same N+1 reasoning as returner above.
+            joinedload(DeploymentRequest.withdrawer),
         )
         # Ordered before the offset/limit below, so an old open request lands on
         # page 1 rather than only being hoisted within the page it already sat on.
@@ -979,12 +982,18 @@ def withdraw_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
+    note: str = Form(""),
 ):
     """Abandon a returned request without destroying its history.
 
     Not a delete: by this point the request carries a return log, and deleting the
     row would hand the person with the strongest motive to erase an unflattering
     record the means to do it.
+
+    The note is optional, unlike a return's reason: devops needs to know why every
+    time, but a developer walking away from their own request doesn't owe anyone
+    an explanation — the dialog just gives them somewhere to leave one if there is
+    something worth saying (e.g. "no longer needed").
     """
     deployment_request = _get_request_or_404(db, request_id)
     # Permission before status — see resubmit_request above for why.
@@ -994,6 +1003,11 @@ def withdraw_request(
         raise HTTPException(status_code=409, detail="Only a returned request can be withdrawn")
 
     deployment_request.status = RequestStatus.withdrawn
+    deployment_request.withdrawn_at = datetime.now(timezone.utc)
+    deployment_request.withdrawn_by = current_user.id
+    # Blank stored as None, not "" — an empty string would read as "they wrote
+    # something" everywhere the template checks `if r.withdrawn_note`.
+    deployment_request.withdrawn_note = note.strip() or None
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)

@@ -245,6 +245,109 @@ def test_the_requester_can_withdraw_a_returned_request(web):
     assert session.query(RequestReturn).count() == 1
 
 
+def test_withdrawing_with_a_note_stores_note_at_and_by(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    response = client.post(
+        f"/requests/{request.id}/withdraw",
+        data={"note": "going a different direction"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.withdrawn
+    assert request.withdrawn_note == "going a different direction"
+    assert request.withdrawn_by == 2
+    assert request.withdrawn_at is not None
+
+
+def test_withdrawing_without_a_note_stores_none_not_empty_string(web):
+    """The note is optional — unlike Return's reason — and blank must store None,
+    not "", or every template check for `if r.withdrawn_note` would misread a
+    blank withdrawal as one that left something to say."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    response = client.post(f"/requests/{request.id}/withdraw", follow_redirects=False)
+
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.withdrawn
+    assert request.withdrawn_note is None
+    assert request.withdrawn_at is not None
+    assert request.withdrawn_by == 2
+
+
+def test_withdrawing_with_a_whitespace_only_note_stores_none(web):
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    login_as(client, "devone")
+
+    client.post(f"/requests/{request.id}/withdraw", data={"note": "   "}, follow_redirects=False)
+
+    session.refresh(request)
+    assert request.withdrawn_note is None
+
+
+def test_a_withdrawn_request_never_returned_shows_a_muted_info_button(web):
+    """A withdrawal note with no return behind it isn't a warning — the [i] button
+    must still render (today it's gated on r.returns alone, which this request has
+    none of), but with the muted `is-muted` class rather than the amber one."""
+    client, session = web
+    requester = make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = DeploymentRequest(
+        task_id="PR-WD", requested_by=2, status=RequestStatus.withdrawn,
+        request_type=RequestType.standard, created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        withdrawn_at=datetime(2026, 9, 5, tzinfo=timezone.utc), withdrawn_by=2,
+        withdrawn_note="no longer needed",
+    )
+    session.add(request)
+    session.commit()
+    login_as(client, "devone")
+
+    page = client.get("/requests").text
+
+    assert 'data-return-log="%d"' % request.id in page
+    assert "no longer needed" in page
+    assert "Withdrawn" in page
+    assert "is-muted" in page
+
+
+def test_a_withdrawn_request_that_was_returned_shows_both_with_amber(web):
+    """Once there's a return in the history, the button stays amber — a return is
+    exactly the "waiting on a person / something went wrong" signal amber means in
+    this design system — even though the request also carries a withdrawal note.
+    Both entries must appear in the same dialog."""
+    client, session = web
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _returned_request(session)
+    request.status = RequestStatus.withdrawn
+    request.withdrawn_at = datetime(2026, 9, 6, tzinfo=timezone.utc)
+    request.withdrawn_by = 2
+    request.withdrawn_note = "could not get it working"
+    session.commit()
+    login_as(client, "devone")
+
+    page = client.get("/requests").text
+
+    assert "branch deleted" in page  # the original return entry
+    assert "could not get it working" in page  # the withdrawal note
+    assert "Withdrawn" in page
+    assert "is-muted" not in page
+
+
 def test_a_returned_non_standard_request_is_editable(web):
     """request_edit.html is now type-aware (app/templates/request_edit.html branches on
     request_type, mirroring each type's own creation form), so the old blanket "non-
