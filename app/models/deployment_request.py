@@ -6,13 +6,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-# Statuses considered "active" for the duplicate-submission guard in project_plan.md Section 7.
-# Checked in the service layer (not a DB constraint), since a hard unique constraint on
-# (task_id, version) would also block a legitimate re-request after one has already
-# completed, failed, or been rolled back.
-ACTIVE_REQUEST_STATUSES = ("submitted", "pending_approval", "approved", "claimed", "in_progress")
-
-
 class RequestStatus(str, enum.Enum):
     pending_intake = "pending_intake"  # matches the deployment-request-intake skill's stopgap output
     submitted = "submitted"
@@ -24,6 +17,16 @@ class RequestStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     rolled_back = "rolled_back"
+    # DevOps could not deploy this through no fault of their own — most often the
+    # git branch named on it was deleted — so it goes back to the requester to fix
+    # and resubmit. Distinct from `rejected`, which is the approval gate's verdict
+    # on whether the work should happen at all: returned means "not yet, and here
+    # is what to fix". See docs/superpowers/specs/2026-09-17-return-request-design.md.
+    returned = "returned"
+    # The requester abandoned a returned request. Terminal, and deliberately not a
+    # delete: the request carries a return log by this point, and deleting the row
+    # would destroy exactly the history a team lead goes looking for.
+    withdrawn = "withdrawn"
 
 
 # Statuses a request can still be deleted from (can_delete_request() in app/auth.py) —
@@ -45,13 +48,17 @@ DELETABLE_REQUEST_STATUSES = (
 # app/auth.py) — deliberately narrower than DELETABLE_REQUEST_STATUSES above: once a
 # team lead has actually decided on it (approved OR rejected), it's a recorded decision,
 # not a draft — the requester would need a brand new request instead of editing this one
-# (confirmed with the user). db_dump_restore/test_local requests are never editable at
-# all regardless of status, since they're created straight into `approved` and have no
-# real pre-decision window — see can_edit_request()'s request_type check.
+# (confirmed with the user). db_dump_restore/test_local requests don't use this constant
+# at all — they're created straight into `approved` with no pending_approval stage to sit
+# in, so their own editable window (approved or returned, closing at in_progress) is
+# expressed directly in can_edit_request() instead.
 EDITABLE_REQUEST_STATUSES = (
     RequestStatus.pending_intake,
     RequestStatus.submitted,
     RequestStatus.pending_approval,
+    # Fixing whatever devops flagged (usually the branch) is the entire point of a
+    # return — see can_edit_request()'s request_type exception in app/auth.py.
+    RequestStatus.returned,
 )
 
 
@@ -79,6 +86,21 @@ class RequestType(str, enum.Enum):
     # boxes (crm.test.local, tmp.test.local, vop.test.local, ...) rather than a real
     # client system, so it doesn't need a team lead's sign-off either.
     test_local = "test_local"
+
+
+def initial_status_for(request_type: RequestType) -> RequestStatus:
+    """The status a freshly created request of this type starts in.
+
+    `standard` waits for a team lead; db_dump_restore and test_local skip the
+    approval gate entirely (see RequestType). Shared by the creation routes and
+    by resubmission so the two can never drift — a resubmitted request must land
+    exactly where a new one of its type would.
+    """
+    return (
+        RequestStatus.pending_approval
+        if request_type == RequestType.standard
+        else RequestStatus.approved
+    )
 
 
 class DeploymentRequest(Base):
@@ -129,11 +151,29 @@ class DeploymentRequest(Base):
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[RequestStatus] = mapped_column(Enum(RequestStatus), default=RequestStatus.pending_intake)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    # Withdrawal, unlike a return, happens at most once and is terminal — a table
+    # keyed on "how many times" makes no sense for something that can only occur
+    # once, so this is columns on the request rather than a request_withdrawals
+    # table (compare RequestReturn, which needs the row-per-occasion shape because
+    # a request can bounce back any number of times). All three are nullable and
+    # only ever set together, by withdraw_request() in app/routers/dashboard.py.
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    withdrawn_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     client = relationship("Client")
     requester = relationship("User", foreign_keys=[requested_by])
+    # foreign_keys required: User now has two FKs pointing at it from this table
+    # (requested_by above, withdrawn_by here), so SQLAlchemy can't infer which
+    # column this relationship walks without being told.
+    withdrawer = relationship("User", foreign_keys=[withdrawn_by])
     approvals = relationship("Approval", back_populates="request")
     executions = relationship("DeploymentExecution", back_populates="request")
+    # Newest first: the status cell shows the most recent reason, and the info
+    # dialog lists them in the order a reader wants them.
+    returns = relationship(
+        "RequestReturn", back_populates="request", order_by="RequestReturn.returned_at.desc()"
+    )
 
     @property
     def current_executor(self) -> "User | None":
@@ -181,3 +221,14 @@ class DeploymentRequest(Base):
             return None
         urls = [u.url for u in self.client.system_urls if u.environment == self.environment]
         return urls[0] if len(urls) == 1 else None
+
+    @property
+    def latest_return(self) -> "RequestReturn | None":
+        """The most recent return, or None if this request has never come back.
+
+        Same reasoning as current_executor above — `returns` is ordered newest
+        first by the relationship, so the status cell needs no caller-supplied
+        join. The listing must eager-load `returns`; one lazy load per row is an
+        N+1 across the whole queue.
+        """
+        return self.returns[0] if self.returns else None

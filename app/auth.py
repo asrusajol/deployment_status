@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.models.deployment_request import DELETABLE_REQUEST_STATUSES, EDITABLE_REQUEST_STATUSES, RequestType
+from app.models.deployment_request import (
+    DELETABLE_REQUEST_STATUSES,
+    EDITABLE_REQUEST_STATUSES,
+    RequestStatus,
+    RequestType,
+)
 from app.models.user import User, UserRole
 
 SESSION_USER_ID_KEY = "user_id"
@@ -119,7 +124,20 @@ def can_delete_request(current_user: User, deployment_request) -> bool:
     execution history, not a mistake to undo — deleting it would silently break the
     audit trail this tool exists for, so neither an admin nor the requester can at that
     point (there's no override; if a real correction is needed once execution has
-    started, that's an operational conversation, not a delete button)."""
+    started, that's an operational conversation, not a delete button).
+
+    Same reasoning rules out a request that has ever been returned, regardless of its
+    current status: `returned` is deliberately left out of DELETABLE_REQUEST_STATUSES,
+    but a returned request doesn't stay returned — Resubmit moves it back to
+    pending_approval or approved, both of which ARE deletable, and it can end up
+    rejected from there too. By then it still carries its request_returns log, which
+    is the whole point of the feature (a team lead's view of why it kept coming back),
+    and the FK from request_returns has no ondelete/cascade — deleting the row would
+    either destroy that log or, in production, just 500 with an IntegrityError and
+    leave the request permanently stuck undeletable. So checked first, independent of
+    status."""
+    if deployment_request.returns:
+        return False
     if deployment_request.status not in DELETABLE_REQUEST_STATUSES:
         return False
     if current_user.role == UserRole.admin:
@@ -129,16 +147,43 @@ def can_delete_request(current_user: User, deployment_request) -> bool:
 
 def can_edit_request(current_user: User, deployment_request) -> bool:
     """Whether current_user may edit this specific request: an admin, or the original
-    requester — and only while it's a `standard` request still in
-    EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py). Once a team lead has
-    actually decided on it (approved or rejected) it's a recorded decision, not a draft —
-    neither the requester nor an admin can edit it at that point, the same "no override"
-    stance can_delete_request takes once execution has started. db_dump_restore/test_local
-    requests are never editable regardless of status: they're created straight into
-    `approved` and have no real pre-decision window."""
-    if deployment_request.request_type != RequestType.standard:
+    requester — and only while it's in its type's editable window.
+
+    request_edit.html is type-aware now (it branches on request_type and renders that
+    type's own creation-form fields), so the two non-`standard` types get their own
+    window here instead of the old blanket "never editable" rule:
+
+    - `standard`: still exactly EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py).
+      Once a team lead has actually decided on it (approved or rejected) it's a recorded
+      decision, not a draft — the same "no override" stance can_delete_request takes once
+      execution has started. `returned` is in EDITABLE_REQUEST_STATUSES for exactly this
+      case: it's the one pre-decision window reopened after a return, so the requester can
+      fix whatever devops flagged before resubmitting.
+    - `test_local` / `db_dump_restore`: editable while `approved` or `returned`. These two
+      types skip the approval gate entirely and are CREATED straight into `approved`
+      (initial_status_for() in app/models/deployment_request.py) — for them `approved`
+      is just "not yet acted on", not a team lead's decision, so it doesn't carry the same
+      "recorded decision" weight it does for `standard`. The window closes at
+      `in_progress`: once a deploy-team member has pressed Start they are deploying what
+      they read on the request, so editing underneath them would be wrong — Return
+      (can_resubmit_request) is the way back from there, not a silent in-place edit.
+    """
+    if deployment_request.request_type == RequestType.standard:
+        if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
+            return False
+    elif deployment_request.status not in (RequestStatus.approved, RequestStatus.returned):
         return False
-    if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
+
+
+def can_resubmit_request(current_user: User, deployment_request) -> bool:
+    """Whether current_user may push a returned request back into the queue: the
+    original requester, or an admin. Resubmission is deliberately a separate act
+    from saving an edit — correcting a typo should not silently re-enter the
+    deploy queue."""
+    if deployment_request.status != RequestStatus.returned:
         return False
     if current_user.role == UserRole.admin:
         return True

@@ -29,13 +29,14 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, case
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import (
     can_approve_deployment_request,
     can_delete_request,
     can_edit_request,
+    can_resubmit_request,
     require_deploy_team_member,
     require_login,
 )
@@ -46,7 +47,14 @@ from app.models.client import Client
 from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
-from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.deployment_request import (
+    DeploymentEnvironment,
+    DeploymentRequest,
+    RequestStatus,
+    RequestType,
+    initial_status_for,
+)
+from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
@@ -72,6 +80,8 @@ STATUS_LABELS = {
     RequestStatus.completed: "Deployed",
     RequestStatus.failed: "Failed",
     RequestStatus.rolled_back: "Rolled Back",
+    RequestStatus.returned: "Returned",
+    RequestStatus.withdrawn: "Withdrawn",
 }
 
 # Sentinel option value for "create a new client from the text field below" in the
@@ -105,6 +115,12 @@ class _Rail:
         self.pulse = pulse
 
 
+# Used when a status has no rail of its own. request_list.html looks rails up
+# through .get() with this default, so a status someone forgets to add here
+# renders a plain row instead of raising KeyError inside the row loop and
+# taking the entire Requests page down with it.
+NEUTRAL_RAIL = _Rail(("empty", "empty", "empty", "empty"), None)
+
 # Rendered by request_list.html next to every request's status label — see RequestStatus
 # for what each value means. Not applicable to the dashboard/history tables, which only
 # ever show already-`completed` rows (fully lit every time), so the rail would add
@@ -120,6 +136,13 @@ RAIL_STAGES = {
     RequestStatus.rejected: _Rail(("red", "empty", "empty", "empty"), None),
     RequestStatus.failed: _Rail(("teal", "teal", "red", "empty"), None),
     RequestStatus.rolled_back: _Rail(("teal", "teal", "teal", "red"), None),
+    # Back to the first dot, amber, and pulsing — same shape as pending_approval,
+    # because the request really has gone back to the start and really is waiting
+    # on a person.
+    RequestStatus.returned: _Rail(("amber", "empty", "empty", "empty"), 0),
+    # Slate, not red: withdrawing is not a failure or a rejection, it is a decision
+    # not to proceed. No pulse — nothing is waiting on anyone.
+    RequestStatus.withdrawn: _Rail(("slate", "empty", "empty", "empty"), None),
 }
 
 
@@ -393,6 +416,72 @@ def _validate_standard_request_fields(
     )
 
 
+class _ValidatedTestLocalFields(NamedTuple):
+    """What create_test_local_request and edit_request both need after validating the
+    Test.local Deployment form — shared so the two routes can't drift on what counts as
+    a valid *.test.local host."""
+
+    server: str
+    git_branch: str
+    version: str
+
+
+def _validate_test_local_fields(
+    server: str | None, git_branch: str | None, version: str | None
+) -> _ValidatedTestLocalFields | str:
+    """Returns the validated/derived fields, or a plain error string to show the user."""
+    server = (server or "").strip()
+    git_branch = (git_branch or "").strip()
+    version = (version or "").strip()
+    if not server:
+        return "Server name is required."
+    # The whole reason this type skips the approval gate: it can only ever land on one
+    # of the internal *.test.local boxes, never a real client system — see RequestType.
+    if not server.endswith(".test.local"):
+        return "Server must be a *.test.local host."
+    if not git_branch:
+        return "Branch name is required."
+    if not version:
+        return "Application version is required."
+    return _ValidatedTestLocalFields(server=server, git_branch=git_branch, version=version)
+
+
+class _ValidatedDbDumpRestoreFields(NamedTuple):
+    """What create_db_dump_restore_request and edit_request both need after validating
+    the Database Dump & Restore form — shared so the either/or rule below can't drift
+    between the two routes."""
+
+    dump_source: str
+    version: str
+    restore_source: str | None
+    share_with_requestor: bool
+
+
+def _validate_db_dump_restore_fields(
+    dump_source: str | None, version: str | None, restore_source: str | None, share_with_requestor: bool
+) -> _ValidatedDbDumpRestoreFields | str:
+    """Returns the validated/derived fields, or a plain error string to show the user."""
+    dump_source = (dump_source or "").strip()
+    version = (version or "").strip()
+    restore_source = (restore_source or "").strip()
+    if not dump_source:
+        return "Dump source is required."
+    if not version:
+        return "Application version is required."
+    # Mutually exclusive by design — a dump is either restored somewhere else, or just
+    # handed back to the requester, never both and never neither.
+    if share_with_requestor and restore_source:
+        return "Choose either a restore source or “share with requestor”, not both."
+    if not share_with_requestor and not restore_source:
+        return "Provide a restore source, or check “share with requestor”."
+    return _ValidatedDbDumpRestoreFields(
+        dump_source=dump_source,
+        version=version,
+        restore_source=restore_source or None,
+        share_with_requestor=share_with_requestor,
+    )
+
+
 @router.post("/requests")
 def create_request(
     request: Request,
@@ -440,7 +529,7 @@ def create_request(
             version=result.version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
-            status=RequestStatus.pending_approval,
+            status=initial_status_for(RequestType.standard),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -465,32 +554,22 @@ def create_db_dump_restore_request(
         context = _request_form_context(db, current_user, error, active_tab="db_dump_restore")
         return templates.TemplateResponse(request, "request_form.html", context, status_code=400)
 
-    dump_source = dump_source.strip()
-    version = version.strip()
-    restore_source = restore_source.strip()
-    if not dump_source:
-        return rerender("Dump source is required.")
-    if not version:
-        return rerender("Application version is required.")
-    # Mutually exclusive by design — a dump is either restored somewhere else, or just
-    # handed back to the requester, never both and never neither.
-    if share_with_requestor and restore_source:
-        return rerender("Choose either a restore source or “share with requestor”, not both.")
-    if not share_with_requestor and not restore_source:
-        return rerender("Provide a restore source, or check “share with requestor”.")
+    result = _validate_db_dump_restore_fields(dump_source, version, restore_source, share_with_requestor)
+    if isinstance(result, str):
+        return rerender(result)
 
     db.add(
         DeploymentRequest(
             request_type=RequestType.db_dump_restore,
-            dump_source=dump_source,
-            version=version,
-            restore_source=restore_source or None,
-            share_with_requestor=share_with_requestor,
+            dump_source=result.dump_source,
+            version=result.version,
+            restore_source=result.restore_source,
+            share_with_requestor=result.share_with_requestor,
             requested_by=current_user.id,
             # No approval required for this request type — lands straight in the
             # deploy team's "Pending Deployment" queue, same as an approved standard
             # request, so who-executed-it-and-when is still tracked.
-            status=RequestStatus.approved,
+            status=initial_status_for(RequestType.db_dump_restore),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -513,28 +592,20 @@ def create_test_local_request(
         context = _request_form_context(db, current_user, error, active_tab="test_local")
         return templates.TemplateResponse(request, "request_form.html", context, status_code=400)
 
-    server = server.strip()
-    git_branch = git_branch.strip()
-    version = version.strip()
-    if not server:
-        return rerender("Server name is required.")
-    if not server.endswith(".test.local"):
-        return rerender("Server must be a *.test.local host.")
-    if not git_branch:
-        return rerender("Branch name is required.")
-    if not version:
-        return rerender("Application version is required.")
+    result = _validate_test_local_fields(server, git_branch, version)
+    if isinstance(result, str):
+        return rerender(result)
 
     db.add(
         DeploymentRequest(
             request_type=RequestType.test_local,
-            server=server,
-            git_branch=git_branch,
-            version=version,
+            server=result.server,
+            git_branch=result.git_branch,
+            version=result.version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
             # No approval required for this request type — see create_db_dump_restore_request above.
-            status=RequestStatus.approved,
+            status=initial_status_for(RequestType.test_local),
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -552,6 +623,7 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.in_progress,
+    RequestStatus.returned,
 )
 # Requests still moving through the flow, in the order a person meets them. The
 # queue lists these before anything finished (see _requests_ordering below), so
@@ -568,6 +640,10 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
 # since: you would submit a request, look at the top of the queue, and find someone
 # else's stale row waiting there.
 OPEN_REQUEST_STATUS_ORDER = (
+    # First on purpose: a returned request is the only one that has moved
+    # *backwards*, and it waits on someone who is not watching the deploy queue,
+    # so it is the easiest thing on the page to forget.
+    RequestStatus.returned,
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.claimed,
@@ -581,10 +657,18 @@ OPEN_REQUEST_STATUS_ORDER = (
 # shows when they finished instead (request_list.html). Deliberately all three
 # outcomes, not just `completed`: a failed or rolled-back deploy is finished work
 # too, and its execution row carries the same completed_at.
+#
+# `rejected`/`withdrawn` were added for that same Action-cell purpose only — this
+# constant does NOT drive queue ordering (that's OPEN_REQUEST_STATUS_ORDER's
+# membership above, which rejected/withdrawn are deliberately not part of), so
+# despite the name it's less load-bearing than it looks; don't assume adding a
+# status here changes where a request sits in the list.
 FINISHED_REQUEST_STATUSES = (
     RequestStatus.completed,
     RequestStatus.failed,
     RequestStatus.rolled_back,
+    RequestStatus.rejected,
+    RequestStatus.withdrawn,
 )
 
 
@@ -628,15 +712,48 @@ def list_requests(
     if page_size not in ALLOWED_REQUESTS_PAGE_SIZES:
         page_size = DEFAULT_REQUESTS_PAGE_SIZE
 
-    total_count = db.query(DeploymentRequest).count()
+    # A request returned specifically to this user is hoisted into its own table
+    # above the queue (request_list.html's "Returned to you") so it can't get lost
+    # pages deep behind everything else — that's the whole point of the feature.
+    # Excluded from the main query below (not just hidden in the template) so
+    # total_count/total_pages reflect what's actually in the paginated list; if we
+    # only skipped it while rendering, the last page could come up short.
+    my_returned_requests_filter = and_(
+        DeploymentRequest.requested_by == current_user.id,
+        DeploymentRequest.status == RequestStatus.returned,
+    )
+    my_returned_requests = (
+        db.query(DeploymentRequest)
+        .filter(my_returned_requests_filter)
+        .options(
+            joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
+            selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
+            joinedload(DeploymentRequest.withdrawer),
+        )
+        # Oldest-first, same as the open-work ordering below (_requests_ordering) —
+        # the one waiting longest is the one most likely to have been forgotten.
+        .order_by(DeploymentRequest.created_at.asc())
+        .all()
+    )
+
+    main_query = db.query(DeploymentRequest).filter(~my_returned_requests_filter)
+
+    total_count = main_query.count()
     total_pages = max(1, math.ceil(total_count / page_size))
     page = max(1, min(page, total_pages))
 
     requests_ = (
-        db.query(DeploymentRequest)
+        main_query
         # Feeds current_executor (request_list.html's "Handling: <name>" line) without
         # an N+1 query per in_progress row on the page.
-        .options(joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor))
+        .options(
+            joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
+            # Every returned row renders its log; lazy-loading would be an N+1.
+            selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
+            # Every withdrawn row's [i] dialog renders "Withdrawn · ... · <who>" —
+            # same N+1 reasoning as returner above.
+            joinedload(DeploymentRequest.withdrawer),
+        )
         # Ordered before the offset/limit below, so an old open request lands on
         # page 1 rather than only being hoisted within the page it already sat on.
         .order_by(*_requests_ordering())
@@ -669,6 +786,7 @@ def list_requests(
     active_requests = (
         db.query(DeploymentRequest)
         .filter(DeploymentRequest.status.in_(ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS))
+        .options(selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner))
         .order_by(DeploymentRequest.created_at.desc())
         .all()
     )
@@ -679,10 +797,12 @@ def list_requests(
                 "status": r.status.value,
                 "requestType": r.request_type.value,
                 "canApprove": can_approve_deployment_request(current_user, r),
+                "isRequester": r.requested_by == current_user.id,
                 "taskId": r.task_id or "",
                 "client": r.client.name if r.client else "",
                 "dumpSource": r.dump_source or "",
                 "server": r.server or "",
+                "returnReason": r.latest_return.reason if r.latest_return else "",
             }
             for r in active_requests
         ]
@@ -694,13 +814,16 @@ def list_requests(
         {
             "current_user": current_user,
             "requests": requests_,
+            "my_returned_requests": my_returned_requests,
             "status_labels": STATUS_LABELS,
             "RequestStatus": RequestStatus,
             "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
             "RequestType": RequestType,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
+            "neutral_rail": NEUTRAL_RAIL,
             "can_approve_request": lambda r: can_approve_deployment_request(current_user, r),
+            "can_resubmit_request": lambda r: can_resubmit_request(current_user, r),
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
@@ -797,6 +920,126 @@ def reject_request(
     return RedirectResponse(url="/requests", status_code=303)
 
 
+# A request can only be handed back from the two states where devops holds it.
+RETURNABLE_REQUEST_STATUSES = (RequestStatus.approved, RequestStatus.in_progress)
+
+
+@router.post("/requests/{request_id}/return")
+def return_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_deploy_team_member),
+    reason: str = Form(""),
+):
+    """Hand a request back to its requester, with a reason.
+
+    The fourth exit from the deploy queue, alongside Mark Deployed, Reject and
+    leaving it to rot — which is what used to happen when the branch named on a
+    request had been deleted. Distinct from Reject, which is the approval gate's
+    verdict rather than a devops finding.
+    """
+    deployment_request = _get_request_or_404(db, request_id)
+    if deployment_request.status not in RETURNABLE_REQUEST_STATUSES:
+        raise HTTPException(status_code=409, detail="Only a request awaiting or under deployment can be returned")
+    if not reason.strip():
+        raise HTTPException(status_code=400, detail="A reason is required to return a request")
+
+    returned_from = deployment_request.status
+    db.add(
+        RequestReturn(
+            request_id=request_id,
+            reason=reason.strip(),
+            returned_by=current_user.id,
+            returned_at=datetime.now(timezone.utc),
+            returned_from=returned_from,
+        )
+    )
+    if returned_from == RequestStatus.in_progress:
+        # DeploymentExecution.request_id is unique — "a request can only ever be
+        # claimed once" — so leaving the claim behind would make Start Deployment
+        # fail on the constraint after the requester resubmits. The deployment did
+        # not happen, and a dangling claim would also make current_executor report
+        # a handler for a request nobody is handling. returned_from above keeps the
+        # fact that it had been claimed.
+        db.query(DeploymentExecution).filter_by(request_id=request_id).delete()
+    deployment_request.status = RequestStatus.returned
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+def _is_requester_or_admin(current_user: User, deployment_request: DeploymentRequest) -> bool:
+    """The ownership half of can_resubmit_request (app/auth.py), with its status
+    condition left out on purpose: resubmit_request/withdraw_request need to check who
+    is asking before what state the request is in, or the 403-vs-409 split below would
+    let anyone logged in fingerprint a `returned` request they have no business
+    touching."""
+    if current_user.role == UserRole.admin:
+        return True
+    return current_user.id == deployment_request.requested_by
+
+
+@router.post("/requests/{request_id}/resubmit")
+def resubmit_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+):
+    deployment_request = _get_request_or_404(db, request_id)
+    # Permission before status, deliberately: checking status first would let anyone
+    # logged in — not just the requester — tell `returned` (409) apart from every other
+    # status (403) on a request they have no business touching, without ever passing a
+    # permission check. See _is_requester_or_admin above.
+    if not _is_requester_or_admin(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can resubmit this request")
+    if deployment_request.status != RequestStatus.returned:
+        raise HTTPException(status_code=409, detail="Only a returned request can be resubmitted")
+
+    # Exactly where a new request of this type would start — a standard request goes
+    # back through its team lead, since the branch changed and the original approval
+    # was for something that no longer exists.
+    deployment_request.status = initial_status_for(deployment_request.request_type)
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
+@router.post("/requests/{request_id}/withdraw")
+def withdraw_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_login),
+    note: str = Form(""),
+):
+    """Abandon a returned request without destroying its history.
+
+    Not a delete: by this point the request carries a return log, and deleting the
+    row would hand the person with the strongest motive to erase an unflattering
+    record the means to do it.
+
+    The note is optional, unlike a return's reason: devops needs to know why every
+    time, but a developer walking away from their own request doesn't owe anyone
+    an explanation — the dialog just gives them somewhere to leave one if there is
+    something worth saying (e.g. "no longer needed").
+    """
+    deployment_request = _get_request_or_404(db, request_id)
+    # Permission before status — see resubmit_request above for why.
+    if not _is_requester_or_admin(current_user, deployment_request):
+        raise HTTPException(status_code=403, detail="Only the requester (or an admin) can withdraw this request")
+    if deployment_request.status != RequestStatus.returned:
+        raise HTTPException(status_code=409, detail="Only a returned request can be withdrawn")
+
+    deployment_request.status = RequestStatus.withdrawn
+    deployment_request.withdrawn_at = datetime.now(timezone.utc)
+    deployment_request.withdrawn_by = current_user.id
+    # Blank stored as None, not "" — an empty string would read as "they wrote
+    # something" everywhere the template checks `if r.withdrawn_note`.
+    deployment_request.withdrawn_note = note.strip() or None
+    db.commit()
+    manager.notify()
+    return RedirectResponse(url="/requests", status_code=303)
+
+
 @router.post("/requests/{request_id}/start")
 def start_request(
     request_id: int,
@@ -883,6 +1126,23 @@ def deploy_request(
 def _edit_request_context(
     db: Session, current_user: User, deployment_request: DeploymentRequest, error: str | None = None
 ) -> dict:
+    """Context for request_edit.html, which branches on deployment_request.request_type
+    and renders that type's own creation-form field block (see create_request/
+    create_db_dump_restore_request/create_test_local_request above). The `standard`-only
+    lookups below (deployable tasks, clients) are skipped for the other two types — they
+    don't use those fields, and building them would just be wasted queries."""
+    base_context = {
+        "current_user": current_user,
+        "deployment_request": deployment_request,
+        "error": error,
+    }
+
+    if deployment_request.request_type == RequestType.test_local:
+        return {**base_context, "test_local_server_suggestions": TEST_LOCAL_SERVER_SUGGESTIONS}
+
+    if deployment_request.request_type == RequestType.db_dump_restore:
+        return base_context
+
     original_task_ids = _parse_deployable_task_ids(deployment_request.deployable_task_ids)
     original_tasks = [db.get(DeployableTask, task_id) for task_id in original_task_ids]
     original_tasks = [task for task in original_tasks if task is not None]
@@ -952,21 +1212,31 @@ def edit_request(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
+    # `standard`-only fields — Form(None)/Form("") rather than Form(...), because a
+    # test_local/db_dump_restore POST never submits these (request_edit.html only
+    # renders the field block for the request's own type) and a required Form() would
+    # 422 before validation ever gets a chance to dispatch on request_type below.
     deployable_task_ids: str | None = Form(None),
     client_id: str | None = Form(None),
     new_client_name: str = Form(""),
-    environment: DeploymentEnvironment = Form(...),
-    git_branch: str = Form(...),
-    commit_hash: str = Form(...),
-    version: str = Form(...),
+    environment: DeploymentEnvironment | None = Form(None),
+    git_branch: str | None = Form(None),
+    commit_hash: str | None = Form(None),
+    version: str | None = Form(None),
     changes_description: str = Form(""),
-    server: str = Form(""),
+    server: str | None = Form(None),
+    # `db_dump_restore`-only fields.
+    dump_source: str | None = Form(None),
+    restore_source: str | None = Form(None),
+    share_with_requestor: bool = Form(False),
 ):
-    """Lets the original requester (or an admin) fix up a request before it's been decided
-    on — only while it's still in EDITABLE_REQUEST_STATUSES (can_edit_request() in
-    app/auth.py); once a team lead has approved or rejected it, this 403s instead, same
-    "no override, it's a recorded decision" stance delete_request takes once execution
-    has started."""
+    """Lets the original requester (or an admin) fix up a request before it's out of its
+    type's editable window (can_edit_request() in app/auth.py) — `standard` up to a team
+    lead's decision, `test_local`/`db_dump_restore` up to a deploy-team member pressing
+    Start. request_edit.html renders the one field block matching the request's own
+    request_type, and validation below dispatches on that SAME stored request_type —
+    never on which fields happen to be present in the POST body, so a crafted POST
+    carrying another type's fields can't smuggle a request_type change through."""
     deployment_request = _get_request_or_404(db, request_id)
     if not can_edit_request(current_user, deployment_request):
         raise HTTPException(status_code=403, detail="You don't have permission to edit this request")
@@ -975,22 +1245,44 @@ def edit_request(
         context = _edit_request_context(db, current_user, deployment_request, error=error)
         return templates.TemplateResponse(request, "request_edit.html", context, status_code=400)
 
-    result = _validate_standard_request_fields(
-        db, deployable_task_ids, client_id, new_client_name, git_branch, commit_hash, version
-    )
-    if isinstance(result, str):
-        return rerender(result)
+    if deployment_request.request_type == RequestType.test_local:
+        result = _validate_test_local_fields(server, git_branch, version)
+        if isinstance(result, str):
+            return rerender(result)
+        deployment_request.server = result.server
+        deployment_request.git_branch = result.git_branch
+        deployment_request.version = result.version
+        deployment_request.changes_description = changes_description.strip() or None
 
-    deployment_request.task_id = result.combined_task_id
-    deployment_request.module_name = result.combined_module_name
-    deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
-    deployment_request.client_id = result.client.id
-    deployment_request.environment = environment
-    deployment_request.server = server.strip() or None
-    deployment_request.git_branch = result.git_branch
-    deployment_request.commit_hash = result.commit_hash
-    deployment_request.version = result.version
-    deployment_request.changes_description = changes_description.strip() or None
+    elif deployment_request.request_type == RequestType.db_dump_restore:
+        result = _validate_db_dump_restore_fields(dump_source, version, restore_source, share_with_requestor)
+        if isinstance(result, str):
+            return rerender(result)
+        deployment_request.dump_source = result.dump_source
+        deployment_request.version = result.version
+        deployment_request.restore_source = result.restore_source
+        deployment_request.share_with_requestor = result.share_with_requestor
+
+    else:
+        result = _validate_standard_request_fields(
+            db, deployable_task_ids, client_id, new_client_name, git_branch or "", commit_hash or "", version or ""
+        )
+        if isinstance(result, str):
+            return rerender(result)
+        if environment is None:
+            return rerender('Select a system.')
+
+        deployment_request.task_id = result.combined_task_id
+        deployment_request.module_name = result.combined_module_name
+        deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
+        deployment_request.client_id = result.client.id
+        deployment_request.environment = environment
+        deployment_request.server = (server or "").strip() or None
+        deployment_request.git_branch = result.git_branch
+        deployment_request.commit_hash = result.commit_hash
+        deployment_request.version = result.version
+        deployment_request.changes_description = changes_description.strip() or None
+
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
@@ -1010,8 +1302,13 @@ def delete_request(
         raise HTTPException(status_code=403, detail="You don't have permission to delete this request")
 
     # Approval rows have a plain FK to this request (no cascade) — delete those first,
-    # or the DB rejects the delete. No DeploymentExecution row can exist yet: everything
-    # in DELETABLE_REQUEST_STATUSES is strictly before start_request() above ever runs.
+    # or the DB rejects the delete. No DeploymentExecution row can exist here: a request
+    # that was ever claimed/in_progress is either still there (not in
+    # DELETABLE_REQUEST_STATUSES) or was returned from there, and returning deletes its
+    # execution row (see the return route) before handing status back to the requester —
+    # so nothing reaching this point, resubmitted or not, has an execution row left to
+    # clear. (A request that HAS been returned is refused above regardless of status,
+    # for the request_returns log, not this.)
     for approval in list(deployment_request.approvals):
         db.delete(approval)
     db.delete(deployment_request)

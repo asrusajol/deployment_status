@@ -35,6 +35,41 @@
        list_requests()'s active_requests_json in app/routers/dashboard.py. -->
   <script type="application/json" id="active-requests-data">{{ active_requests_json | safe }}</script>
 
+  {% if my_returned_requests %}
+    {# A request handed back to this user specifically — hoisted above the queue so
+       it can't get lost pages deep behind everything else (see list_requests() in
+       app/routers/dashboard.py, which excludes these same rows from the paginated
+       query below so nothing appears twice). Same table markup as the main queue,
+       including its <thead>, so the columns line up between the two — this is
+       deliberately not a new layout. #}
+    <h2 class="returned-to-you-heading">Returned to you <span class="muted">({{ my_returned_requests | length }})</span></h2>
+    <div class="table-scroll returned-to-you-table">
+    <table class="status-table requests-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Task ID</th>
+          <th>Module Name</th>
+          <th>Client</th>
+          <th>System</th>
+          <th>URL</th>
+          <th>Version</th>
+          <th>Branch Name / Commit</th>
+          <th>Changes</th>
+          <th>Requested By</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in my_returned_requests %}
+          {% include "_request_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+
   {% if requests %}
     <div class="table-scroll">
     <table class="status-table requests-table">
@@ -56,193 +91,7 @@
       </thead>
       <tbody>
         {% for r in requests %}
-        <tr>
-          {# The queue has no date column (12 already), so the request date rides
-             along as a tooltip on the Type badge — .badge-type-* gets cursor:help
-             so there's some hint it's there. #}
-          <td>
-            <span
-              class="badge badge-type-{{ r.request_type.value }}"
-              title="Requested {{ localtime_text(r.created_at) if r.created_at else 'unknown' }}"
-              {% if r.created_at %}data-localtime-title="{{ localtime_attr(r.created_at) }}" data-localtime-prefix="Requested "{% endif %}
-            >{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span>
-          </td>
-          <td>{{ r.task_id or "—" }}</td>
-          <td>{{ r.module_name or "—" }}</td>
-          <td>{{ r.client.name if r.client else "—" }}</td>
-          <td>
-            {% if r.environment %}
-              <span class="badge badge-{{ r.environment.value }}">{{ r.environment.value | capitalize }}</span>
-            {% elif r.request_type == RequestType.test_local and r.server %}
-              <span class="badge badge-testlocal">{{ r.server }}</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {# test_local rows deliberately show nothing here: their `server` is the bare
-               hostname the System column already renders as its badge, so printing it
-               again put the same value twice side by side, and the two ran into each
-               other. Every other request type keeps the URL cell. #}
-            {# effective_server, not server: a request created before per-client URLs
-               existed has none stored, and falls back to the client's configured URL
-               for its system (see DeploymentRequest.effective_server). #}
-            {% set url = r.effective_server %}
-            {% if url and r.request_type != RequestType.test_local %}
-              <div class="url-cell">
-                {% if url.startswith("http://") or url.startswith("https://") %}
-                  <a href="{{ url }}" target="_blank" rel="noopener" class="url-preview">{{ url }}</a>
-                {% else %}
-                  <span class="url-preview">{{ url }}</span>
-                {% endif %}
-                {{ copy_btn.copy_button(url, "Server URL") }}
-              </div>
-            {% else %}—{% endif %}
-          </td>
-          <td>{{ r.version or "—" }}</td>
-          <td>
-            {% if r.request_type == RequestType.db_dump_restore %}
-              {% set plain_detail = (r.dump_source or "—") ~ " → " ~ ("share with requestor" if r.share_with_requestor else (r.restore_source or "—")) %}
-              {# No standalone "branch" concept for this request type — copy the same full value shown. #}
-              {% set copy_value = plain_detail %}
-            {% elif r.request_type == RequestType.test_local %}
-              {% set plain_detail = r.git_branch or "—" %}
-              {% set copy_value = r.git_branch or "" %}
-            {% else %}
-              {# "||" rather than "/" — branch names routinely contain their own slashes
-                 (e.g. "bugfix/PR-03168-..."), which made "branch / commit" ambiguous
-                 about where the branch ends and the commit begins. #}
-              {% set plain_detail = (r.git_branch or "—") ~ " || " ~ (r.commit_hash or "—") %}
-              {# Copy button copies the branch name alone, not "branch || commit" — the commit
-                 hash tacked on made pasted branch names unusable (see the copy-button fix). #}
-              {% set copy_value = r.git_branch or "" %}
-            {% endif %}
-            <div class="branch-commit-cell">
-              <span class="branch-commit-preview">
-                {% if r.request_type == RequestType.db_dump_restore %}
-                  <code>{{ r.dump_source or "—" }}</code> →
-                  {% if r.share_with_requestor %}
-                    <em>share with requestor</em>
-                  {% else %}
-                    <code>{{ r.restore_source or "—" }}</code>
-                  {% endif %}
-                {% elif r.request_type == RequestType.test_local %}
-                  <code>{{ r.git_branch or "—" }}</code>
-                {% else %}
-                  <code>{{ r.git_branch or "—" }}</code> <span class="branch-commit-sep">||</span> <code>{{ r.commit_hash or "—" }}</code>
-                {% endif %}
-              </span>
-              <button
-                type="button"
-                class="link-button view-detail"
-                data-detail-title="Branch Name / Commit"
-                data-detail="{{ plain_detail }}"
-                data-copy="{{ copy_value }}"
-              >View</button>
-            </div>
-          </td>
-          <td>
-            {% if r.changes_description %}
-              <div class="changes-cell">
-                <span class="changes-preview">{{ r.changes_description }}</span>
-                <button type="button" class="link-button view-changes" data-changes="{{ r.changes_description }}">View</button>
-              </div>
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td class="requester-cell">
-            {{ r.requester.name if r.requester else "—" }}
-            {# When they asked, under who asked — the fact belongs beside the person,
-               not in the Action column, which is for controls. Same shape as
-               "Deployed by:" under Status. #}
-            {% if r.created_at %}
-              <div class="requester-asked-at"><span class="cell-label">Requested</span> {{ localtime(r.created_at) }}</div>
-            {% endif %}
-          </td>
-          <td>
-            {% set rail = rail_stages[r.status] %}
-            <div class="status-cell">
-              <span class="rail" aria-hidden="true">
-                {% for i in range(4) %}
-                  <span class="rail-dot rail-dot-{{ rail.dots[i] }}{% if rail.pulse == i %} is-pulsing{% endif %}"></span>
-                  {% if i < 3 %}<span class="rail-line rail-line-{{ rail.dots[i + 1] }}"></span>{% endif %}
-                {% endfor %}
-              </span>
-              <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
-            </div>
-            {% if r.status == RequestStatus.in_progress and r.current_executor %}
-              <div class="status-handler">Handling: {{ r.current_executor.name }}</div>
-            {% elif r.status == RequestStatus.completed and r.current_executor %}
-              <div class="status-handler">Deployed by: {{ r.current_executor.name }}</div>
-            {% endif %}
-          </td>
-          <td>
-            {% set show_times = r.status in FINISHED_REQUEST_STATUSES and r.finished_at %}
-            <div class="actions-inner">
-              {% if r.status == RequestStatus.pending_approval %}
-                {% if can_approve_request(r) %}
-                  <form method="post" action="/requests/{{ r.id }}/approve" class="inline-form">
-                    <button type="submit" class="approve">Approve</button>
-                  </form>
-                  <form method="post" action="/requests/{{ r.id }}/reject" class="inline-form">
-                    <button type="submit" class="reject">Reject</button>
-                  </form>
-                {% else %}
-                  <span class="muted">Awaiting the requester's team lead</span>
-                {% endif %}
-              {% elif r.status == RequestStatus.approved %}
-                {% if can_deploy %}
-                  <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
-                    <button type="submit" class="start">Start Deployment</button>
-                  </form>
-                {% else %}
-                  <span class="muted">Awaiting a deploy team member</span>
-                {% endif %}
-              {% elif r.status == RequestStatus.in_progress %}
-                {% if can_deploy %}
-                  {% if uses_release_tracker(r) %}
-                    {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
-                    <div class="inline-form">
-                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
-                    </div>
-                  {% else %}
-                    <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
-                      <button type="submit" class="deploy">Mark Deployed</button>
-                    </form>
-                  {% endif %}
-                {% else %}
-                  <span class="muted">In progress — awaiting completion</span>
-                {% endif %}
-              {% elif not can_delete_request(r) and not can_edit_request(r) and not show_times %}
-                <span class="muted">—</span>
-              {% endif %}
-
-              {# Once devops is done there is no button left, so the cell carries when
-                 they finished. Only that: when it was *asked for* sits under the
-                 requester's name, and carrying both here widened this column enough to
-                 push the table into horizontal scroll. Converts to the viewer's
-                 timezone (_localtime.html). #}
-              {% if show_times %}
-                <div class="action-times">
-                  <span class="cell-label">Deployed</span>
-                  {{ localtime(r.finished_at) }}
-                </div>
-              {% endif %}
-              {% if can_edit_request(r) %}
-                <a href="/requests/{{ r.id }}/edit" class="action-link edit">Edit</a>
-              {% endif %}
-              {% if can_delete_request(r) %}
-                <form
-                  method="post"
-                  action="/requests/{{ r.id }}/delete"
-                  class="inline-form"
-                  onsubmit="return confirm('Delete this deployment request? This cannot be undone.');"
-                >
-                  <button type="submit" class="reject">Delete</button>
-                </form>
-              {% endif %}
-            </div>
-          </td>
-        </tr>
+          {% include "_request_row.html" %}
         {% endfor %}
       </tbody>
     </table>
@@ -293,6 +142,45 @@
     </form>
   </dialog>
 
+  <dialog id="return-modal" class="changes-modal">
+    <h2>Return to requester</h2>
+    <form method="post" id="return-form" class="form">
+      <div class="field">
+        <label for="return-reason">Why is this going back?</label>
+        <textarea id="return-reason" name="reason" rows="3" required
+                  placeholder="e.g. branch client/foo was deleted"></textarea>
+      </div>
+      <div class="changes-modal-actions">
+        <button type="submit" class="reject">Return request</button>
+        <button type="button" class="button-secondary" id="return-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="withdraw-modal" class="changes-modal">
+    <h2>Withdraw request</h2>
+    <form method="post" id="withdraw-form" class="form">
+      <p class="hint">It stays on record with its return history, but leaves the queue.</p>
+      <div class="field">
+        <label for="withdraw-note">Anything to add? (optional)</label>
+        <textarea id="withdraw-note" name="note" rows="3"
+                  placeholder="e.g. going a different direction, no longer needed"></textarea>
+      </div>
+      <div class="changes-modal-actions">
+        <button type="submit" class="reject">Withdraw request</button>
+        <button type="button" class="button-secondary" id="withdraw-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="return-log-modal" class="changes-modal">
+    <h2>Return history</h2>
+    <div id="return-log-body"></div>
+    <div class="changes-modal-actions">
+      <button type="button" class="button-secondary" id="return-log-close">Close</button>
+    </div>
+  </dialog>
+
   <script>
     (function () {
       var SNAPSHOT_KEY = "deployment_tracker_request_snapshot";
@@ -319,10 +207,12 @@
           status: r.status,
           requestType: r.requestType,
           canApprove: r.canApprove,
+          isRequester: r.isRequester,
           taskId: r.taskId,
           client: r.client,
           dumpSource: r.dumpSource,
           server: r.server,
+          returnReason: r.returnReason,
         };
       });
 
@@ -360,6 +250,16 @@
               title: "Deployment request ready to deploy",
               body: describeRequest(now),
             });
+          } else if (before && before.status !== "returned" && now.status === "returned" && now.isRequester) {
+            // A request was handed back to its requester — the notification leads with
+            // the task ID and reason so they know what to fix without opening the app.
+            // Same voice as the approval notifications above: "<what happened>" + details.
+            // Gated on isRequester (like canApprove for approvals, canDeploy for deploys)
+            // so the title "Your deployment request" is accurate.
+            events.push({
+              title: "Your deployment request has been returned",
+              body: describeRequest(now),
+            });
           }
         });
         if (events.length > 0) {
@@ -370,6 +270,12 @@
       localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(currentSnapshot));
 
       function describeRequest(row) {
+        if (row.status === "returned" && row.returnReason) {
+          // Returned requests: lead with the task ID and reason so the requester knows
+          // what to fix without opening the app.
+          var base = row.taskId || "Deployment request";
+          return base + " — " + row.returnReason;
+        }
         if (row.taskId) {
           return row.taskId + (row.client ? " · " + row.client : "");
         }
@@ -506,6 +412,56 @@
           if (event.target === deployDialog) deployDialog.close();
         });
       }
+
+      (function () {
+        var returnModal = document.getElementById("return-modal");
+        var returnForm = document.getElementById("return-form");
+        document.querySelectorAll("[data-return-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            // The button's own data-return-action attribute is the single source of
+            // truth for the URL — read it directly rather than rebuilding it here, so
+            // there's no second copy of the path that could drift out of sync.
+            returnForm.action = button.getAttribute("data-return-action");
+            returnForm.reset();
+            returnModal.showModal();
+          });
+        });
+        document.getElementById("return-cancel").addEventListener("click", function () {
+          returnModal.close();
+        });
+
+        // Same shape as the Return dialog above: the button's own data attribute is
+        // the single source of truth for the action URL, one dialog element reused
+        // across every row rather than one per request.
+        var withdrawModal = document.getElementById("withdraw-modal");
+        var withdrawForm = document.getElementById("withdraw-form");
+        document.querySelectorAll("[data-withdraw-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            withdrawForm.action = button.getAttribute("data-withdraw-action");
+            withdrawForm.reset();
+            withdrawModal.showModal();
+          });
+        });
+        document.getElementById("withdraw-cancel").addEventListener("click", function () {
+          withdrawModal.close();
+        });
+        withdrawModal.addEventListener("click", function (event) {
+          if (event.target === withdrawModal) withdrawModal.close();
+        });
+
+        var logModal = document.getElementById("return-log-modal");
+        var logBody = document.getElementById("return-log-body");
+        document.querySelectorAll("[data-return-log]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var source = document.getElementById("return-log-" + button.getAttribute("data-return-log"));
+            logBody.innerHTML = source ? source.innerHTML : "";
+            logModal.showModal();
+          });
+        });
+        document.getElementById("return-log-close").addEventListener("click", function () {
+          logModal.close();
+        });
+      })();
     })();
   </script>
 {% endblock %}

@@ -17,6 +17,7 @@ from app.models.client_version_status import ClientVersionStatus
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import DeploymentEnvironment, DeploymentRequest, RequestStatus, RequestType
+from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
 from app.services.dashboard import current_deployment_status, deployment_history
 from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
@@ -1252,6 +1253,121 @@ def test_requests_queue_rejects_out_of_range_page_size(web):
 
     assert response.status_code == 200
     assert "Page 1 of 2 (20 total)" in response.text  # confirms it fell back to 15/page
+
+
+def _returned_request(session, *, task_id, requested_by, created_at=None):
+    """A request sitting in `returned`, with the RequestReturn row list_requests()
+    eager-loads (returns->returner) so the row can render its return-log button and
+    the "Returned to you" table above the main queue."""
+    request = DeploymentRequest(
+        task_id=task_id,
+        requested_by=requested_by,
+        status=RequestStatus.returned,
+        request_type=RequestType.standard,
+        created_at=created_at or datetime.now(timezone.utc),
+    )
+    session.add(request)
+    session.commit()
+    session.add(
+        RequestReturn(
+            request_id=request.id,
+            returned_by=99,
+            returned_from=RequestStatus.approved,
+            reason="branch was deleted",
+            returned_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    return request
+
+
+def test_own_returned_request_shows_in_upper_table_and_not_in_main_list(web):
+    client, session = web
+    make_user(session, id=1, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=99, name="Zunayed Islam", username="zunayed", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _returned_request(session, task_id="PR-MINE", requested_by=1)
+    login_as(client, "devone")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert "Returned to you" in response.text
+    # Exactly once as a rendered table cell — it must not also render in the main
+    # table below. (The task id also appears in active-requests-data's JSON blob for
+    # desktop notifications, which is a separate, deliberate occurrence — see
+    # active_requests_json in dashboard.py — so this checks the <td> specifically
+    # rather than counting the whole page.)
+    assert response.text.count("<td>PR-MINE</td>") == 1
+
+
+def test_no_returned_requests_hides_upper_table(web):
+    client, session = web
+    make_user(session, id=1, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    login_as(client, "devone")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert "Returned to you" not in response.text
+
+
+def test_another_users_returned_request_is_not_in_my_upper_table_but_stays_in_main_list(web):
+    client, session = web
+    make_user(session, id=1, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Dev Two", username="devtwo", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=99, name="Zunayed Islam", username="zunayed", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _returned_request(session, task_id="PR-OTHER", requested_by=2)
+    login_as(client, "devone")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert "Returned to you" not in response.text
+    # Still on the page once — in the main table, since it's not mine to hoist above it.
+    assert response.text.count("<td>PR-OTHER</td>") == 1
+
+
+def test_pagination_counts_still_correct_when_returned_rows_are_excluded(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=99, name="Zunayed Islam", username="zunayed", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, 20)  # all `rejected`, none returned, none mine
+    # Two of my own returned requests — hoisted into the upper table, so they must
+    # not be counted (or listed) in the main paginated table below.
+    _returned_request(session, task_id="PR-RET-1", requested_by=1)
+    _returned_request(session, task_id="PR-RET-2", requested_by=1)
+    login_as(client, "rajib")
+
+    page1 = client.get("/requests")
+    assert page1.status_code == 200
+    # 20 rejected rows in the main list — the 2 returned ones are excluded from the
+    # count entirely, not merely hidden, so total stays 20/2 pages, not 22.
+    assert "Page 1 of 2 (20 total)" in page1.text
+
+    page2 = client.get("/requests", params={"page": 2})
+    assert page2.status_code == 200
+    # Last page renders full (5 rows), not short, because total_count/total_pages
+    # reflect the filtered query rather than the unfiltered one.
+    assert "PR-019" in page2.text
+
+
+def test_upper_table_row_carries_the_same_actions_as_the_main_table(web):
+    client, session = web
+    make_user(session, id=1, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=99, name="Zunayed Islam", username="zunayed", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _returned_request(session, task_id="PR-ACTIONS", requested_by=1)
+    login_as(client, "devone")
+
+    response = client.get("/requests")
+
+    assert response.status_code == 200
+    assert f'action="/requests/1/resubmit"' in response.text
+    assert 'data-withdraw-action="/requests/1/withdraw"' in response.text
 
 
 def test_requester_can_delete_own_pending_request(web):
