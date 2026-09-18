@@ -147,27 +147,31 @@ def can_delete_request(current_user: User, deployment_request) -> bool:
 
 def can_edit_request(current_user: User, deployment_request) -> bool:
     """Whether current_user may edit this specific request: an admin, or the original
-    requester — and only while it's a `standard` request still in
-    EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py). Once a team lead has
-    actually decided on it (approved or rejected) it's a recorded decision, not a draft —
-    neither the requester nor an admin can edit it at that point, the same "no override"
-    stance can_delete_request takes once execution has started. `returned` is kept in
-    EDITABLE_REQUEST_STATUSES for exactly the standard case: it's a `standard` request's
-    one pre-decision window reopened after a return, so the requester can fix whatever
-    devops flagged before resubmitting."""
-    # Non-standard types are never editable, returned or not — this used to have an
-    # exception for `returned`, on the theory that a return re-opens a pre-decision
-    # window even for db_dump_restore/test_local. It doesn't: the edit route and
-    # request_edit.html only understand `standard` requests (they require
-    # environment/git_branch/commit_hash/version and a PLANNED deployable task), so a
-    # returned test_local/db_dump_restore request offered that Edit link either 422s or
-    # gets silently rewritten into a standard-shaped row while request_type stays
-    # unchanged — data corruption behind a button. Cheaper fix for these two types: the
-    # requester withdraws and raises a new request. If that becomes a real nuisance,
-    # the actual fix is a type-aware edit form, not reopening this exception.
-    if deployment_request.request_type != RequestType.standard:
-        return False
-    if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
+    requester — and only while it's in its type's editable window.
+
+    request_edit.html is type-aware now (it branches on request_type and renders that
+    type's own creation-form fields), so the two non-`standard` types get their own
+    window here instead of the old blanket "never editable" rule:
+
+    - `standard`: still exactly EDITABLE_REQUEST_STATUSES (app/models/deployment_request.py).
+      Once a team lead has actually decided on it (approved or rejected) it's a recorded
+      decision, not a draft — the same "no override" stance can_delete_request takes once
+      execution has started. `returned` is in EDITABLE_REQUEST_STATUSES for exactly this
+      case: it's the one pre-decision window reopened after a return, so the requester can
+      fix whatever devops flagged before resubmitting.
+    - `test_local` / `db_dump_restore`: editable while `approved` or `returned`. These two
+      types skip the approval gate entirely and are CREATED straight into `approved`
+      (initial_status_for() in app/models/deployment_request.py) — for them `approved`
+      is just "not yet acted on", not a team lead's decision, so it doesn't carry the same
+      "recorded decision" weight it does for `standard`. The window closes at
+      `in_progress`: once a deploy-team member has pressed Start they are deploying what
+      they read on the request, so editing underneath them would be wrong — Return
+      (can_resubmit_request) is the way back from there, not a silent in-place edit.
+    """
+    if deployment_request.request_type == RequestType.standard:
+        if deployment_request.status not in EDITABLE_REQUEST_STATUSES:
+            return False
+    elif deployment_request.status not in (RequestStatus.approved, RequestStatus.returned):
         return False
     if current_user.role == UserRole.admin:
         return True

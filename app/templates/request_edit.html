@@ -7,273 +7,357 @@
     <p class="error">{{ error }}</p>
   {% endif %}
 
-  <form method="post" action="/requests/{{ deployment_request.id }}/edit" class="form form-wide">
-    <div class="field field-full">
-      <label for="deployable_task_search">Task ID</label>
-      <input
-        type="text"
-        id="deployable_task_search"
-        list="deployable_tasks_list"
-        autocomplete="off"
-        placeholder="Type to search currently-planned tasks…"
-      >
-      <datalist id="deployable_tasks_list">
-        {% for task in deployable_tasks %}
-          <option
-            data-id="{{ task.id }}"
-            data-client-name="{{ task.client_name or '' }}"
-            data-target="{{ task.target }}"
-            value="{{ task.task_id }} — {{ task.item_name or "?" }} ({{ task.client_name or "internal" }}, {{ task.target | capitalize }})"
-          ></option>
-        {% endfor %}
-      </datalist>
-      <p class="hint">Add one or more orders — multiple orders for the <strong>same client</strong> can be
-        deployed together as a single request.</p>
-      <ul id="selected_tasks" class="selected-tasks"></ul>
-      <p id="task_select_error" class="error-inline" hidden></p>
-      <!-- Same convention as request_form.html: the real submitted value is this hidden,
-           comma-separated list of DeployableTask ids, built by the script below — never
-           typed directly. Pre-seeded from the request's own deployable_task_ids so
-           editing reopens with the original selection already in place. -->
-      <input type="hidden" id="deployable_task_ids" name="deployable_task_ids">
-    </div>
-
-    <div class="form-row">
+  {% if deployment_request.request_type.value == "test_local" %}
+    <!-- Mirrors the "Test.local Deployment" tab in request_form.html's
+         create_test_local_request form — same fields, same *.test.local suggestions. -->
+    <form method="post" action="/requests/{{ deployment_request.id }}/edit" class="form">
       <div class="field">
-        <label for="client_id">Client</label>
-        <select id="client_id" name="client_id" required>
-          <option value="" disabled>Select a client…</option>
-          {% for client in clients %}
-            <option value="{{ client.id }}" {% if deployment_request.client_id == client.id %}selected{% endif %}>{{ client.name }}</option>
-          {% endfor %}
-          <option value="{{ new_client_value }}">+ Add new client (type name below)</option>
-        </select>
-        <input type="text" name="new_client_name" placeholder="New client name — only used if “+ Add new client” is selected above">
-      </div>
-
-      <div class="field">
-        <label for="environment">System</label>
-        <select id="environment" name="environment" required>
-          <option value="" disabled>Select a system…</option>
-          {% for env in environments %}
-            <option value="{{ env.value }}" {% if deployment_request.environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="field">
-        <label for="server_url">Server URL <span class="optional">(optional)</span></label>
-        <select id="server_url" name="server">
-          <option value="">Select Client + System above…</option>
-        </select>
-        <datalist id="client_system_urls_data">
-          {% for u in client_system_urls %}
-            <option data-client-id="{{ u.client_id }}" data-environment="{{ u.environment.value }}" data-label="{{ u.label or '' }}" data-url="{{ u.url }}"></option>
+        <label for="test_local_server">Server Name</label>
+        <input
+          type="text"
+          id="test_local_server"
+          name="server"
+          list="test_local_servers_list"
+          required
+          value="{{ deployment_request.server or '' }}"
+        >
+        <datalist id="test_local_servers_list">
+          {% for host in test_local_server_suggestions %}
+            <option value="{{ host }}"></option>
           {% endfor %}
         </datalist>
-        <p class="hint">Populated from the URLs configured for that client's system on the <a href="/clients">Clients page</a>.</p>
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="field">
-        <label for="git_branch">Git branch</label>
-        <input type="text" id="git_branch" name="git_branch" required value="{{ deployment_request.git_branch or '' }}">
+        <p class="hint">Any *.test.local host — pick a suggestion or type a different one.</p>
       </div>
 
       <div class="field">
-        <label for="commit_hash">Commit hash</label>
-        <input type="text" id="commit_hash" name="commit_hash" required value="{{ deployment_request.commit_hash or '' }}">
+        <label for="test_local_git_branch">Branch Name</label>
+        <input type="text" id="test_local_git_branch" name="git_branch" required value="{{ deployment_request.git_branch or '' }}">
       </div>
 
       <div class="field">
-        <label for="version">Version</label>
-        <input type="text" id="version" name="version" required value="{{ deployment_request.version or '' }}">
+        <label for="test_local_version">Application Version</label>
+        <input type="text" id="test_local_version" name="version" required value="{{ deployment_request.version or '' }}">
       </div>
-    </div>
 
-    <div class="field field-full">
-      <label for="changes_description">Changes <span class="optional">(optional)</span></label>
-      <textarea id="changes_description" name="changes_description" rows="4">{{ deployment_request.changes_description or '' }}</textarea>
-    </div>
+      <div class="field">
+        <label for="test_local_changes_description">Additional Instruction <span class="optional">(optional)</span></label>
+        <textarea id="test_local_changes_description" name="changes_description" rows="4">{{ deployment_request.changes_description or '' }}</textarea>
+      </div>
 
-    <div class="field field-full">
-      <label>Requested by</label>
-      <p class="static-field">{{ deployment_request.requester.name if deployment_request.requester else "?" }}</p>
-    </div>
+      <div class="field">
+        <label>Requested by</label>
+        <p class="static-field">{{ deployment_request.requester.name if deployment_request.requester else "?" }}</p>
+      </div>
 
-    <button type="submit">Save Changes</button>
-    <a href="/requests" class="link-button">Cancel</a>
-  </form>
+      <button type="submit">Save Changes</button>
+      <a href="/requests" class="link-button">Cancel</a>
+    </form>
 
-  <script>
-    (function () {
-      var searchInput = document.getElementById("deployable_task_search");
-      var hiddenTaskIds = document.getElementById("deployable_task_ids");
-      var taskOptions = document.querySelectorAll("#deployable_tasks_list option");
-      var selectedTasksList = document.getElementById("selected_tasks");
-      var errorEl = document.getElementById("task_select_error");
-      var clientSelect = document.getElementById("client_id");
-      var environmentSelect = document.getElementById("environment");
-      var serverUrlSelect = document.getElementById("server_url");
-      var clientSystemUrlOptions = document.querySelectorAll("#client_system_urls_data option");
+  {% elif deployment_request.request_type.value == "db_dump_restore" %}
+    <!-- Mirrors the "Database Dump & Restore" tab in request_form.html's
+         create_db_dump_restore_request form — same fields, same either/or rule between
+         restore_source and share_with_requestor (enforced server-side, see edit_request). -->
+    <form method="post" action="/requests/{{ deployment_request.id }}/edit" class="form">
+      <div class="field">
+        <label for="dump_source">Dump Source</label>
+        <input type="text" id="dump_source" name="dump_source" required value="{{ deployment_request.dump_source or '' }}">
+      </div>
 
-      // {id, clientName, target, label} per task added, in the order they were added.
-      // Pre-seeded below from the request's original selection (initial_selected_tasks),
-      // unlike request_form.html's fresh-create version of this same script.
-      var selectedTasks = {{ initial_selected_tasks | tojson }};
+      <div class="field">
+        <label for="db_dump_restore_version">Application Version</label>
+        <input type="text" id="db_dump_restore_version" name="version" required value="{{ deployment_request.version or '' }}">
+      </div>
 
-      function showError(message) {
-        errorEl.textContent = message;
-        errorEl.hidden = false;
-      }
+      <div class="field">
+        <label for="restore_source">Restore Source <span class="optional">(leave blank if sharing with requestor)</span></label>
+        <input type="text" id="restore_source" name="restore_source" value="{{ deployment_request.restore_source or '' }}">
+      </div>
 
-      function clearError() {
-        errorEl.hidden = true;
-      }
+      <div class="field">
+        <label>
+          <input type="checkbox" id="share_with_requestor" name="share_with_requestor" {% if deployment_request.share_with_requestor %}checked{% endif %}>
+          Share the dump with the requestor instead of restoring it
+        </label>
+      </div>
 
-      // Rebuilds the Server URL dropdown from the embedded client_system_urls_data for
-      // the currently-selected Client + System — see request_form.html for the same
-      // logic on a fresh request. `preserveValue` keeps a specific URL selected across
-      // the rebuild: the request's original `server` value on initial load (even if
-      // it's no longer among that client+system's configured URLs — kept as an extra
-      // "no longer listed" option so editing a request never silently drops it), or ""
-      // when the user actively changes Client/System, so a stale selection doesn't
-      // carry over to a different client+system pair.
-      function updateServerUrlOptions(preserveValue) {
-        var clientId = clientSelect.value;
-        var environment = environmentSelect.value;
-        serverUrlSelect.innerHTML = "";
+      <div class="field">
+        <label>Requested by</label>
+        <p class="static-field">{{ deployment_request.requester.name if deployment_request.requester else "?" }}</p>
+      </div>
 
-        var matches = [];
-        if (clientId && clientId !== "{{ new_client_value }}" && environment) {
-          clientSystemUrlOptions.forEach(function (opt) {
-            if (opt.getAttribute("data-client-id") === clientId && opt.getAttribute("data-environment") === environment) {
-              matches.push(opt);
-            }
+      <button type="submit">Save Changes</button>
+      <a href="/requests" class="link-button">Cancel</a>
+    </form>
+
+  {% else %}
+    <form method="post" action="/requests/{{ deployment_request.id }}/edit" class="form form-wide">
+      <div class="field field-full">
+        <label for="deployable_task_search">Task ID</label>
+        <input
+          type="text"
+          id="deployable_task_search"
+          list="deployable_tasks_list"
+          autocomplete="off"
+          placeholder="Type to search currently-planned tasks…"
+        >
+        <datalist id="deployable_tasks_list">
+          {% for task in deployable_tasks %}
+            <option
+              data-id="{{ task.id }}"
+              data-client-name="{{ task.client_name or '' }}"
+              data-target="{{ task.target }}"
+              value="{{ task.task_id }} — {{ task.item_name or "?" }} ({{ task.client_name or "internal" }}, {{ task.target | capitalize }})"
+            ></option>
+          {% endfor %}
+        </datalist>
+        <p class="hint">Add one or more orders — multiple orders for the <strong>same client</strong> can be
+          deployed together as a single request.</p>
+        <ul id="selected_tasks" class="selected-tasks"></ul>
+        <p id="task_select_error" class="error-inline" hidden></p>
+        <!-- Same convention as request_form.html: the real submitted value is this hidden,
+             comma-separated list of DeployableTask ids, built by the script below — never
+             typed directly. Pre-seeded from the request's own deployable_task_ids so
+             editing reopens with the original selection already in place. -->
+        <input type="hidden" id="deployable_task_ids" name="deployable_task_ids">
+      </div>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="client_id">Client</label>
+          <select id="client_id" name="client_id" required>
+            <option value="" disabled>Select a client…</option>
+            {% for client in clients %}
+              <option value="{{ client.id }}" {% if deployment_request.client_id == client.id %}selected{% endif %}>{{ client.name }}</option>
+            {% endfor %}
+            <option value="{{ new_client_value }}">+ Add new client (type name below)</option>
+          </select>
+          <input type="text" name="new_client_name" placeholder="New client name — only used if “+ Add new client” is selected above">
+        </div>
+
+        <div class="field">
+          <label for="environment">System</label>
+          <select id="environment" name="environment" required>
+            <option value="" disabled>Select a system…</option>
+            {% for env in environments %}
+              <option value="{{ env.value }}" {% if deployment_request.environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="server_url">Server URL <span class="optional">(optional)</span></label>
+          <select id="server_url" name="server">
+            <option value="">Select Client + System above…</option>
+          </select>
+          <datalist id="client_system_urls_data">
+            {% for u in client_system_urls %}
+              <option data-client-id="{{ u.client_id }}" data-environment="{{ u.environment.value }}" data-label="{{ u.label or '' }}" data-url="{{ u.url }}"></option>
+            {% endfor %}
+          </datalist>
+          <p class="hint">Populated from the URLs configured for that client's system on the <a href="/clients">Clients page</a>.</p>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="git_branch">Git branch</label>
+          <input type="text" id="git_branch" name="git_branch" required value="{{ deployment_request.git_branch or '' }}">
+        </div>
+
+        <div class="field">
+          <label for="commit_hash">Commit hash</label>
+          <input type="text" id="commit_hash" name="commit_hash" required value="{{ deployment_request.commit_hash or '' }}">
+        </div>
+
+        <div class="field">
+          <label for="version">Version</label>
+          <input type="text" id="version" name="version" required value="{{ deployment_request.version or '' }}">
+        </div>
+      </div>
+
+      <div class="field field-full">
+        <label for="changes_description">Changes <span class="optional">(optional)</span></label>
+        <textarea id="changes_description" name="changes_description" rows="4">{{ deployment_request.changes_description or '' }}</textarea>
+      </div>
+
+      <div class="field field-full">
+        <label>Requested by</label>
+        <p class="static-field">{{ deployment_request.requester.name if deployment_request.requester else "?" }}</p>
+      </div>
+
+      <button type="submit">Save Changes</button>
+      <a href="/requests" class="link-button">Cancel</a>
+    </form>
+
+    <script>
+      (function () {
+        var searchInput = document.getElementById("deployable_task_search");
+        var hiddenTaskIds = document.getElementById("deployable_task_ids");
+        var taskOptions = document.querySelectorAll("#deployable_tasks_list option");
+        var selectedTasksList = document.getElementById("selected_tasks");
+        var errorEl = document.getElementById("task_select_error");
+        var clientSelect = document.getElementById("client_id");
+        var environmentSelect = document.getElementById("environment");
+        var serverUrlSelect = document.getElementById("server_url");
+        var clientSystemUrlOptions = document.querySelectorAll("#client_system_urls_data option");
+
+        // {id, clientName, target, label} per task added, in the order they were added.
+        // Pre-seeded below from the request's original selection (initial_selected_tasks),
+        // unlike request_form.html's fresh-create version of this same script.
+        var selectedTasks = {{ initial_selected_tasks | tojson }};
+
+        function showError(message) {
+          errorEl.textContent = message;
+          errorEl.hidden = false;
+        }
+
+        function clearError() {
+          errorEl.hidden = true;
+        }
+
+        // Rebuilds the Server URL dropdown from the embedded client_system_urls_data for
+        // the currently-selected Client + System — see request_form.html for the same
+        // logic on a fresh request. `preserveValue` keeps a specific URL selected across
+        // the rebuild: the request's original `server` value on initial load (even if
+        // it's no longer among that client+system's configured URLs — kept as an extra
+        // "no longer listed" option so editing a request never silently drops it), or ""
+        // when the user actively changes Client/System, so a stale selection doesn't
+        // carry over to a different client+system pair.
+        function updateServerUrlOptions(preserveValue) {
+          var clientId = clientSelect.value;
+          var environment = environmentSelect.value;
+          serverUrlSelect.innerHTML = "";
+
+          var matches = [];
+          if (clientId && clientId !== "{{ new_client_value }}" && environment) {
+            clientSystemUrlOptions.forEach(function (opt) {
+              if (opt.getAttribute("data-client-id") === clientId && opt.getAttribute("data-environment") === environment) {
+                matches.push(opt);
+              }
+            });
+          }
+
+          if (matches.length === 0 && !preserveValue) {
+            var emptyOption = document.createElement("option");
+            emptyOption.value = "";
+            emptyOption.textContent = (clientId && environment) ? "No URL configured" : "Select Client + System above…";
+            serverUrlSelect.appendChild(emptyOption);
+            return;
+          }
+
+          var placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = "Select a URL…";
+          serverUrlSelect.appendChild(placeholder);
+
+          var matchedUrls = matches.map(function (opt) { return opt.getAttribute("data-url"); });
+          matches.forEach(function (opt) {
+            var url = opt.getAttribute("data-url");
+            var label = opt.getAttribute("data-label");
+            var option = document.createElement("option");
+            option.value = url;
+            option.textContent = label ? (label + " — " + url) : url;
+            serverUrlSelect.appendChild(option);
           });
+
+          if (preserveValue && matchedUrls.indexOf(preserveValue) === -1) {
+            var staleOption = document.createElement("option");
+            staleOption.value = preserveValue;
+            staleOption.textContent = preserveValue + " (no longer listed)";
+            serverUrlSelect.appendChild(staleOption);
+          }
+
+          if (preserveValue) {
+            serverUrlSelect.value = preserveValue;
+          } else if (matches.length === 1) {
+            serverUrlSelect.value = matches[0].getAttribute("data-url");
+          }
         }
 
-        if (matches.length === 0 && !preserveValue) {
-          var emptyOption = document.createElement("option");
-          emptyOption.value = "";
-          emptyOption.textContent = (clientId && environment) ? "No URL configured" : "Select Client + System above…";
-          serverUrlSelect.appendChild(emptyOption);
-          return;
+        clientSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
+        environmentSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
+
+        function renderSelectedTasks() {
+          selectedTasksList.innerHTML = "";
+          selectedTasks.forEach(function (task, index) {
+            var item = document.createElement("li");
+            item.textContent = task.label + " ";
+            var removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "link-button";
+            removeButton.textContent = "Remove";
+            removeButton.addEventListener("click", function () {
+              selectedTasks.splice(index, 1);
+              renderSelectedTasks();
+            });
+            item.appendChild(removeButton);
+            selectedTasksList.appendChild(item);
+          });
+          hiddenTaskIds.value = selectedTasks.map(function (task) { return task.id; }).join(",");
         }
 
-        var placeholder = document.createElement("option");
-        placeholder.value = "";
-        placeholder.textContent = "Select a URL…";
-        serverUrlSelect.appendChild(placeholder);
+        function addTask(option) {
+          var id = option.getAttribute("data-id");
+          if (selectedTasks.some(function (task) { return String(task.id) === id; })) {
+            showError("That Task ID is already added.");
+            return;
+          }
 
-        var matchedUrls = matches.map(function (opt) { return opt.getAttribute("data-url"); });
-        matches.forEach(function (opt) {
-          var url = opt.getAttribute("data-url");
-          var label = opt.getAttribute("data-label");
-          var option = document.createElement("option");
-          option.value = url;
-          option.textContent = label ? (label + " — " + url) : url;
-          serverUrlSelect.appendChild(option);
+          var task = {
+            id: id,
+            clientName: option.getAttribute("data-client-name") || "",
+            target: option.getAttribute("data-target") || "",
+            label: option.value,
+          };
+
+          // Same client/system consistency rule create_request()/request_form.html enforce
+          // — see there for the full reasoning.
+          if (selectedTasks.length > 0 && selectedTasks[0].clientName !== task.clientName) {
+            showError(
+              "All selected Task IDs must belong to the same client — remove the other "
+              + "task(s) first, or pick one for "
+              + (selectedTasks[0].clientName || "this internal task's client") + "."
+            );
+            return;
+          }
+          if (selectedTasks.length > 0 && selectedTasks[0].target !== task.target) {
+            showError(
+              "All selected Task IDs must be for the same system — this request is already "
+              + "using " + selectedTasks[0].target + ", remove the other task(s) first to switch."
+            );
+            return;
+          }
+
+          clearError();
+          selectedTasks.push(task);
+          renderSelectedTasks();
+          searchInput.value = "";
+        }
+
+        searchInput.addEventListener("input", function () {
+          var typed = searchInput.value;
+          var match = null;
+          taskOptions.forEach(function (opt) {
+            if (opt.value === typed) match = opt;
+          });
+          if (match) {
+            addTask(match);
+          }
         });
 
-        if (preserveValue && matchedUrls.indexOf(preserveValue) === -1) {
-          var staleOption = document.createElement("option");
-          staleOption.value = preserveValue;
-          staleOption.textContent = preserveValue + " (no longer listed)";
-          serverUrlSelect.appendChild(staleOption);
-        }
-
-        if (preserveValue) {
-          serverUrlSelect.value = preserveValue;
-        } else if (matches.length === 1) {
-          serverUrlSelect.value = matches[0].getAttribute("data-url");
-        }
-      }
-
-      clientSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
-      environmentSelect.addEventListener("change", function () { updateServerUrlOptions(""); });
-
-      function renderSelectedTasks() {
-        selectedTasksList.innerHTML = "";
-        selectedTasks.forEach(function (task, index) {
-          var item = document.createElement("li");
-          item.textContent = task.label + " ";
-          var removeButton = document.createElement("button");
-          removeButton.type = "button";
-          removeButton.className = "link-button";
-          removeButton.textContent = "Remove";
-          removeButton.addEventListener("click", function () {
-            selectedTasks.splice(index, 1);
-            renderSelectedTasks();
-          });
-          item.appendChild(removeButton);
-          selectedTasksList.appendChild(item);
+        document.querySelector(".form-wide").addEventListener("submit", function (event) {
+          if (selectedTasks.length === 0) {
+            event.preventDefault();
+            showError("Select at least one Task ID before submitting.");
+            searchInput.focus();
+          }
         });
-        hiddenTaskIds.value = selectedTasks.map(function (task) { return task.id; }).join(",");
-      }
 
-      function addTask(option) {
-        var id = option.getAttribute("data-id");
-        if (selectedTasks.some(function (task) { return String(task.id) === id; })) {
-          showError("That Task ID is already added.");
-          return;
-        }
-
-        var task = {
-          id: id,
-          clientName: option.getAttribute("data-client-name") || "",
-          target: option.getAttribute("data-target") || "",
-          label: option.value,
-        };
-
-        // Same client/system consistency rule create_request()/request_form.html enforce
-        // — see there for the full reasoning.
-        if (selectedTasks.length > 0 && selectedTasks[0].clientName !== task.clientName) {
-          showError(
-            "All selected Task IDs must belong to the same client — remove the other "
-            + "task(s) first, or pick one for "
-            + (selectedTasks[0].clientName || "this internal task's client") + "."
-          );
-          return;
-        }
-        if (selectedTasks.length > 0 && selectedTasks[0].target !== task.target) {
-          showError(
-            "All selected Task IDs must be for the same system — this request is already "
-            + "using " + selectedTasks[0].target + ", remove the other task(s) first to switch."
-          );
-          return;
-        }
-
-        clearError();
-        selectedTasks.push(task);
         renderSelectedTasks();
-        searchInput.value = "";
-      }
-
-      searchInput.addEventListener("input", function () {
-        var typed = searchInput.value;
-        var match = null;
-        taskOptions.forEach(function (opt) {
-          if (opt.value === typed) match = opt;
-        });
-        if (match) {
-          addTask(match);
-        }
-      });
-
-      document.querySelector(".form-wide").addEventListener("submit", function (event) {
-        if (selectedTasks.length === 0) {
-          event.preventDefault();
-          showError("Select at least one Task ID before submitting.");
-          searchInput.focus();
-        }
-      });
-
-      renderSelectedTasks();
-      updateServerUrlOptions({{ (deployment_request.server or "") | tojson }});
-    })();
-  </script>
+        updateServerUrlOptions({{ (deployment_request.server or "") | tojson }});
+      })();
+    </script>
+  {% endif %}
 {% endblock %}

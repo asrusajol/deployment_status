@@ -48,9 +48,10 @@ DELETABLE_REQUEST_STATUSES = (
 # app/auth.py) — deliberately narrower than DELETABLE_REQUEST_STATUSES above: once a
 # team lead has actually decided on it (approved OR rejected), it's a recorded decision,
 # not a draft — the requester would need a brand new request instead of editing this one
-# (confirmed with the user). db_dump_restore/test_local requests are only editable while
-# `returned`: they're created straight into `approved` and have no other pre-decision
-# window, but a return re-opens exactly one — see can_edit_request()'s request_type check.
+# (confirmed with the user). db_dump_restore/test_local requests don't use this constant
+# at all — they're created straight into `approved` with no pending_approval stage to sit
+# in, so their own editable window (approved or returned, closing at in_progress) is
+# expressed directly in can_edit_request() instead.
 EDITABLE_REQUEST_STATUSES = (
     RequestStatus.pending_intake,
     RequestStatus.submitted,

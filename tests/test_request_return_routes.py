@@ -245,15 +245,14 @@ def test_the_requester_can_withdraw_a_returned_request(web):
     assert session.query(RequestReturn).count() == 1
 
 
-def test_a_returned_non_standard_request_is_not_editable(web):
-    """The edit route and request_edit.html only understand `standard` requests
-    (they require environment/git_branch/commit_hash/version and a PLANNED
-    deployable task) — a returned test_local or db_dump_restore request offered
-    an Edit link there either 422s or gets silently rewritten into a
-    standard-shaped row while request_type stays unchanged, which is data
-    corruption behind a button. So non-standard types are never editable,
-    returned or not; the requester withdraws and raises a new request instead,
-    which is cheap for these two types."""
+def test_a_returned_non_standard_request_is_editable(web):
+    """request_edit.html is now type-aware (app/templates/request_edit.html branches on
+    request_type, mirroring each type's own creation form), so the old blanket "non-
+    standard is never editable" rule in can_edit_request() no longer applies. A return is
+    exactly the moment a test_local/db_dump_restore request needs to become editable —
+    that's the whole point of returning one instead of just leaving it stuck: devops
+    flags something (e.g. "branch deleted") and the requester needs a way to fix it
+    without deleting and re-raising the request from scratch."""
     from app.auth import can_edit_request
 
     client, session = web
@@ -261,7 +260,7 @@ def test_a_returned_non_standard_request_is_not_editable(web):
     session.commit()
     request = _returned_request(session, request_type=RequestType.test_local)
 
-    assert can_edit_request(requester, request) is False
+    assert can_edit_request(requester, request) is True
 
 
 def test_a_returned_request_is_not_deletable(web):

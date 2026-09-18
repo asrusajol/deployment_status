@@ -416,6 +416,72 @@ def _validate_standard_request_fields(
     )
 
 
+class _ValidatedTestLocalFields(NamedTuple):
+    """What create_test_local_request and edit_request both need after validating the
+    Test.local Deployment form — shared so the two routes can't drift on what counts as
+    a valid *.test.local host."""
+
+    server: str
+    git_branch: str
+    version: str
+
+
+def _validate_test_local_fields(
+    server: str | None, git_branch: str | None, version: str | None
+) -> _ValidatedTestLocalFields | str:
+    """Returns the validated/derived fields, or a plain error string to show the user."""
+    server = (server or "").strip()
+    git_branch = (git_branch or "").strip()
+    version = (version or "").strip()
+    if not server:
+        return "Server name is required."
+    # The whole reason this type skips the approval gate: it can only ever land on one
+    # of the internal *.test.local boxes, never a real client system — see RequestType.
+    if not server.endswith(".test.local"):
+        return "Server must be a *.test.local host."
+    if not git_branch:
+        return "Branch name is required."
+    if not version:
+        return "Application version is required."
+    return _ValidatedTestLocalFields(server=server, git_branch=git_branch, version=version)
+
+
+class _ValidatedDbDumpRestoreFields(NamedTuple):
+    """What create_db_dump_restore_request and edit_request both need after validating
+    the Database Dump & Restore form — shared so the either/or rule below can't drift
+    between the two routes."""
+
+    dump_source: str
+    version: str
+    restore_source: str | None
+    share_with_requestor: bool
+
+
+def _validate_db_dump_restore_fields(
+    dump_source: str | None, version: str | None, restore_source: str | None, share_with_requestor: bool
+) -> _ValidatedDbDumpRestoreFields | str:
+    """Returns the validated/derived fields, or a plain error string to show the user."""
+    dump_source = (dump_source or "").strip()
+    version = (version or "").strip()
+    restore_source = (restore_source or "").strip()
+    if not dump_source:
+        return "Dump source is required."
+    if not version:
+        return "Application version is required."
+    # Mutually exclusive by design — a dump is either restored somewhere else, or just
+    # handed back to the requester, never both and never neither.
+    if share_with_requestor and restore_source:
+        return "Choose either a restore source or “share with requestor”, not both."
+    if not share_with_requestor and not restore_source:
+        return "Provide a restore source, or check “share with requestor”."
+    return _ValidatedDbDumpRestoreFields(
+        dump_source=dump_source,
+        version=version,
+        restore_source=restore_source or None,
+        share_with_requestor=share_with_requestor,
+    )
+
+
 @router.post("/requests")
 def create_request(
     request: Request,
@@ -488,27 +554,17 @@ def create_db_dump_restore_request(
         context = _request_form_context(db, current_user, error, active_tab="db_dump_restore")
         return templates.TemplateResponse(request, "request_form.html", context, status_code=400)
 
-    dump_source = dump_source.strip()
-    version = version.strip()
-    restore_source = restore_source.strip()
-    if not dump_source:
-        return rerender("Dump source is required.")
-    if not version:
-        return rerender("Application version is required.")
-    # Mutually exclusive by design — a dump is either restored somewhere else, or just
-    # handed back to the requester, never both and never neither.
-    if share_with_requestor and restore_source:
-        return rerender("Choose either a restore source or “share with requestor”, not both.")
-    if not share_with_requestor and not restore_source:
-        return rerender("Provide a restore source, or check “share with requestor”.")
+    result = _validate_db_dump_restore_fields(dump_source, version, restore_source, share_with_requestor)
+    if isinstance(result, str):
+        return rerender(result)
 
     db.add(
         DeploymentRequest(
             request_type=RequestType.db_dump_restore,
-            dump_source=dump_source,
-            version=version,
-            restore_source=restore_source or None,
-            share_with_requestor=share_with_requestor,
+            dump_source=result.dump_source,
+            version=result.version,
+            restore_source=result.restore_source,
+            share_with_requestor=result.share_with_requestor,
             requested_by=current_user.id,
             # No approval required for this request type — lands straight in the
             # deploy team's "Pending Deployment" queue, same as an approved standard
@@ -536,24 +592,16 @@ def create_test_local_request(
         context = _request_form_context(db, current_user, error, active_tab="test_local")
         return templates.TemplateResponse(request, "request_form.html", context, status_code=400)
 
-    server = server.strip()
-    git_branch = git_branch.strip()
-    version = version.strip()
-    if not server:
-        return rerender("Server name is required.")
-    if not server.endswith(".test.local"):
-        return rerender("Server must be a *.test.local host.")
-    if not git_branch:
-        return rerender("Branch name is required.")
-    if not version:
-        return rerender("Application version is required.")
+    result = _validate_test_local_fields(server, git_branch, version)
+    if isinstance(result, str):
+        return rerender(result)
 
     db.add(
         DeploymentRequest(
             request_type=RequestType.test_local,
-            server=server,
-            git_branch=git_branch,
-            version=version,
+            server=result.server,
+            git_branch=result.git_branch,
+            version=result.version,
             changes_description=changes_description.strip() or None,
             requested_by=current_user.id,
             # No approval required for this request type — see create_db_dump_restore_request above.
@@ -1037,6 +1085,23 @@ def deploy_request(
 def _edit_request_context(
     db: Session, current_user: User, deployment_request: DeploymentRequest, error: str | None = None
 ) -> dict:
+    """Context for request_edit.html, which branches on deployment_request.request_type
+    and renders that type's own creation-form field block (see create_request/
+    create_db_dump_restore_request/create_test_local_request above). The `standard`-only
+    lookups below (deployable tasks, clients) are skipped for the other two types — they
+    don't use those fields, and building them would just be wasted queries."""
+    base_context = {
+        "current_user": current_user,
+        "deployment_request": deployment_request,
+        "error": error,
+    }
+
+    if deployment_request.request_type == RequestType.test_local:
+        return {**base_context, "test_local_server_suggestions": TEST_LOCAL_SERVER_SUGGESTIONS}
+
+    if deployment_request.request_type == RequestType.db_dump_restore:
+        return base_context
+
     original_task_ids = _parse_deployable_task_ids(deployment_request.deployable_task_ids)
     original_tasks = [db.get(DeployableTask, task_id) for task_id in original_task_ids]
     original_tasks = [task for task in original_tasks if task is not None]
@@ -1106,21 +1171,31 @@ def edit_request(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
+    # `standard`-only fields — Form(None)/Form("") rather than Form(...), because a
+    # test_local/db_dump_restore POST never submits these (request_edit.html only
+    # renders the field block for the request's own type) and a required Form() would
+    # 422 before validation ever gets a chance to dispatch on request_type below.
     deployable_task_ids: str | None = Form(None),
     client_id: str | None = Form(None),
     new_client_name: str = Form(""),
-    environment: DeploymentEnvironment = Form(...),
-    git_branch: str = Form(...),
-    commit_hash: str = Form(...),
-    version: str = Form(...),
+    environment: DeploymentEnvironment | None = Form(None),
+    git_branch: str | None = Form(None),
+    commit_hash: str | None = Form(None),
+    version: str | None = Form(None),
     changes_description: str = Form(""),
-    server: str = Form(""),
+    server: str | None = Form(None),
+    # `db_dump_restore`-only fields.
+    dump_source: str | None = Form(None),
+    restore_source: str | None = Form(None),
+    share_with_requestor: bool = Form(False),
 ):
-    """Lets the original requester (or an admin) fix up a request before it's been decided
-    on — only while it's still in EDITABLE_REQUEST_STATUSES (can_edit_request() in
-    app/auth.py); once a team lead has approved or rejected it, this 403s instead, same
-    "no override, it's a recorded decision" stance delete_request takes once execution
-    has started."""
+    """Lets the original requester (or an admin) fix up a request before it's out of its
+    type's editable window (can_edit_request() in app/auth.py) — `standard` up to a team
+    lead's decision, `test_local`/`db_dump_restore` up to a deploy-team member pressing
+    Start. request_edit.html renders the one field block matching the request's own
+    request_type, and validation below dispatches on that SAME stored request_type —
+    never on which fields happen to be present in the POST body, so a crafted POST
+    carrying another type's fields can't smuggle a request_type change through."""
     deployment_request = _get_request_or_404(db, request_id)
     if not can_edit_request(current_user, deployment_request):
         raise HTTPException(status_code=403, detail="You don't have permission to edit this request")
@@ -1129,22 +1204,44 @@ def edit_request(
         context = _edit_request_context(db, current_user, deployment_request, error=error)
         return templates.TemplateResponse(request, "request_edit.html", context, status_code=400)
 
-    result = _validate_standard_request_fields(
-        db, deployable_task_ids, client_id, new_client_name, git_branch, commit_hash, version
-    )
-    if isinstance(result, str):
-        return rerender(result)
+    if deployment_request.request_type == RequestType.test_local:
+        result = _validate_test_local_fields(server, git_branch, version)
+        if isinstance(result, str):
+            return rerender(result)
+        deployment_request.server = result.server
+        deployment_request.git_branch = result.git_branch
+        deployment_request.version = result.version
+        deployment_request.changes_description = changes_description.strip() or None
 
-    deployment_request.task_id = result.combined_task_id
-    deployment_request.module_name = result.combined_module_name
-    deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
-    deployment_request.client_id = result.client.id
-    deployment_request.environment = environment
-    deployment_request.server = server.strip() or None
-    deployment_request.git_branch = result.git_branch
-    deployment_request.commit_hash = result.commit_hash
-    deployment_request.version = result.version
-    deployment_request.changes_description = changes_description.strip() or None
+    elif deployment_request.request_type == RequestType.db_dump_restore:
+        result = _validate_db_dump_restore_fields(dump_source, version, restore_source, share_with_requestor)
+        if isinstance(result, str):
+            return rerender(result)
+        deployment_request.dump_source = result.dump_source
+        deployment_request.version = result.version
+        deployment_request.restore_source = result.restore_source
+        deployment_request.share_with_requestor = result.share_with_requestor
+
+    else:
+        result = _validate_standard_request_fields(
+            db, deployable_task_ids, client_id, new_client_name, git_branch or "", commit_hash or "", version or ""
+        )
+        if isinstance(result, str):
+            return rerender(result)
+        if environment is None:
+            return rerender('Select a system.')
+
+        deployment_request.task_id = result.combined_task_id
+        deployment_request.module_name = result.combined_module_name
+        deployment_request.deployable_task_ids = ",".join(str(task.id) for task in result.deployable_tasks)
+        deployment_request.client_id = result.client.id
+        deployment_request.environment = environment
+        deployment_request.server = (server or "").strip() or None
+        deployment_request.git_branch = result.git_branch
+        deployment_request.commit_hash = result.commit_hash
+        deployment_request.version = result.version
+        deployment_request.changes_description = changes_description.strip() or None
+
     db.commit()
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
