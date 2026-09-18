@@ -856,7 +856,13 @@ code {
   color: var(--paper);
 }
 
-.inline-form button {
+/* Both the form submits (.inline-form) and the dialog triggers that sit directly in
+   the actions cell (Return, Withdraw) — they are the same kind of control and have to
+   look it. Scoping this to .inline-form alone is what left Withdraw rendering as a
+   white browser default, and Return with default padding and shape, once each became
+   a dialog trigger instead of a submit. */
+.inline-form button,
+.actions-inner > button {
   border: none;
   border-radius: 5px;
   padding: 0.32rem 0.65rem;
@@ -874,13 +880,18 @@ code {
   transition: filter 0.15s ease;
 }
 
-.inline-form button:hover { filter: brightness(1.1); }
-.inline-form button.approve, .inline-form button.deploy { background: var(--green); }
+.inline-form button:hover,
+.actions-inner > button:hover { filter: brightness(1.1); }
+.inline-form button.approve, .inline-form button.deploy,
+.actions-inner > button.approve, .actions-inner > button.deploy { background: var(--green); }
 /* Teal, not green — matches the "in flight" signal color (rail/status), since starting a
    deployment isn't a completion the way approving/marking-deployed are. */
-.inline-form button.start { background: var(--teal); }
-.inline-form button.reject { background: transparent; color: var(--red); border: 1px solid rgba(226, 88, 74, 0.45); }
-.inline-form button.reject:hover { background: var(--red-dim); }
+.inline-form button.start,
+.actions-inner > button.start { background: var(--teal); }
+.inline-form button.reject,
+.actions-inner > button.reject { background: transparent; color: var(--red); border: 1px solid rgba(226, 88, 74, 0.45); }
+.inline-form button.reject:hover,
+.actions-inner > button.reject:hover { background: var(--red-dim); }
 
 /* A plain <a> (GET, not a form submission), styled to match the .inline-form buttons
    above so "Edit" reads as the same kind of action, not a lesser text link. */
@@ -1376,12 +1387,19 @@ code {
 .return-log-entry:not(:first-child) .return-log-reason { color: var(--fog); }
 .return-log-entry:not(:first-child) .return-log-meta { opacity: 0.75; }
 
-/* Not scoped to .inline-form — the Return button opens the reason dialog rather
-   than submitting a form directly, so it sits bare in the actions cell. Match
-   it on its own class instead of "fixing" this back to an .inline-form-scoped
-   selector, which would just leave it unstyled again. */
-button.return {
+/* Colour only — size, shape and weight come from the shared button base above,
+   which now covers dialog triggers as well as form submits. This rule used to carry
+   no geometry at all, so Return rendered with browser-default padding.
+
+   Amber rather than teal or red: returning is not progress through the flow and it is
+   not a rejection, it is sending work back to be fixed — the same "waiting on a
+   person" signal amber carries everywhere else here. */
+.inline-form button.return,
+.actions-inner > button.return {
   background: transparent;
   color: var(--amber);
   border: 1px solid var(--amber-dim);
 }
+
+.inline-form button.return:hover,
+.actions-inner > button.return:hover { background: var(--amber-dim); }
