@@ -173,21 +173,33 @@ def can_edit_request(current_user: User, deployment_request) -> bool:
             return False
     elif deployment_request.status not in (RequestStatus.approved, RequestStatus.returned):
         return False
-    if current_user.role == UserRole.admin:
+    if current_user.id == deployment_request.requested_by:
         return True
-    return current_user.id == deployment_request.requested_by
+    if deployment_request.status == RequestStatus.returned:
+        # Scoped to `returned` specifically, per the user: an admin's blanket edit
+        # override on every OTHER editable status (pending_approval, etc.) is
+        # untouched — this is about editing someone else's request *after a
+        # return*, which implies the admin has verified whatever devops flagged is
+        # actually fixed. User.can_manage_other_returns (checkbox on /admin/users,
+        # default off) is what an admin opts into for that. Without it they're
+        # treated exactly like any other non-owner, same as devops already is —
+        # the row stays fully visible in the queue either way (see list_requests()),
+        # this only concerns whether the Edit control does anything for them.
+        return current_user.role == UserRole.admin and current_user.can_manage_other_returns
+    return current_user.role == UserRole.admin
 
 
 def can_resubmit_request(current_user: User, deployment_request) -> bool:
     """Whether current_user may push a returned request back into the queue: the
-    original requester, or an admin. Resubmission is deliberately a separate act
-    from saving an edit — correcting a typo should not silently re-enter the
-    deploy queue."""
+    original requester, or an admin who has opted in via
+    User.can_manage_other_returns (see the same gate in can_edit_request above).
+    Resubmission is deliberately a separate act from saving an edit — correcting
+    a typo should not silently re-enter the deploy queue."""
     if deployment_request.status != RequestStatus.returned:
         return False
-    if current_user.role == UserRole.admin:
+    if current_user.id == deployment_request.requested_by:
         return True
-    return current_user.id == deployment_request.requested_by
+    return current_user.role == UserRole.admin and current_user.can_manage_other_returns
 
 
 def can_edit_client_version_status(current_user: User, row, environment) -> bool:

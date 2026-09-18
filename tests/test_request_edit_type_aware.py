@@ -384,3 +384,62 @@ def test_post_edit_on_in_progress_standard_request_by_admin_is_403(web):
     )
 
     assert response.status_code == 403
+
+
+def test_admin_without_return_override_cannot_edit_someone_elses_returned_request(web):
+    """Editing on someone else's behalf, after a return, implies verifying the fix
+    is actually correct — an admin usually can't do that without looking at the
+    branch themselves. User.can_manage_other_returns (checkbox on /admin/users,
+    default off) is what an admin opts into for this. Scoped to `returned`
+    specifically — see the next test for every OTHER editable status, which this
+    must not touch."""
+    client, session = web
+    admin = make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _returned_test_local_request(session, requester_id=1)
+
+    assert can_edit_request(admin, request) is False
+
+
+def test_admin_with_return_override_can_edit_someone_elses_returned_request(web):
+    client, session = web
+    admin = make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=True,
+    )
+    session.commit()
+    request = _returned_test_local_request(session, requester_id=1)
+
+    assert can_edit_request(admin, request) is True
+
+
+def test_admin_editing_their_own_returned_request_needs_no_override(web):
+    """The flag governs acting on OTHER people's requests only — an admin editing
+    their own is just the ordinary requester case."""
+    client, session = web
+    admin = make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _returned_test_local_request(session, requester_id=9)
+
+    assert can_edit_request(admin, request) is True
+
+
+def test_admin_without_return_override_can_still_edit_a_pending_approval_request(web):
+    """"For the return option only": the checkbox must not narrow an admin's
+    existing blanket edit power on statuses that have nothing to do with a
+    return — pending_approval here is a team lead's decision window, unrelated."""
+    client, session = web
+    admin = make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _standard_request(session, status=RequestStatus.pending_approval, requester_id=1)
+
+    assert can_edit_request(admin, request) is True
