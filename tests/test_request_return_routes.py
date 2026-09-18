@@ -376,6 +376,62 @@ def test_returned_requests_reach_the_notification_feed(web):
     assert "branch deleted" in payload
 
 
+def test_start_return_resubmit_start_round_trip_does_not_collide_on_the_unique_claim(web):
+    """Regression for the exact failure mode return_request()'s comment warns about:
+    DeploymentExecution.request_id is unique, so if the execution-row delete in
+    return_request() were ever dropped or narrowed, this wouldn't blow up at Return —
+    it would blow up later, when devops presses Start Deployment on the resubmitted
+    request and the insert dies on the unique constraint. Drives the whole cycle
+    through the HTTP routes (Start -> Return -> Resubmit -> Start) rather than the
+    model directly, so it exercises what a user actually does.
+
+    Uses a test_local request so resubmitting lands straight back on `approved`
+    (test_local/db_dump_restore skip the approval gate) instead of `pending_approval`
+    like a standard request would — keeping this test about the unique-claim
+    constraint, not the approval workflow.
+    """
+    client, session = web
+    _deploy_team_user(session)
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    request = _approved_request(session, task_id="PR-ROUNDTRIP", request_type=RequestType.test_local)
+
+    # Start Deployment: deploy team claims it, creating the one-and-only execution row.
+    login_as(client, "zunayed")
+    response = client.post(f"/requests/{request.id}/start", follow_redirects=False)
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.in_progress
+    assert session.query(DeploymentExecution).filter_by(request_id=request.id).count() == 1
+
+    # Return: devops hands it back with a reason, which must drop the claim.
+    response = client.post(
+        f"/requests/{request.id}/return", data={"reason": "wrong branch pushed"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.returned
+    assert session.query(DeploymentExecution).filter_by(request_id=request.id).count() == 0
+
+    # Resubmit: the requester puts it back in the queue. test_local goes straight to
+    # `approved`, so it's immediately eligible for Start Deployment again.
+    login_as(client, "devone")
+    response = client.post(f"/requests/{request.id}/resubmit", follow_redirects=False)
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.approved
+
+    # Start Deployment again: this is the claim that would die on the unique
+    # constraint if the Return route had left the old execution row behind.
+    login_as(client, "zunayed")
+    response = client.post(f"/requests/{request.id}/start", follow_redirects=False)
+    assert response.status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.in_progress
+    assert session.query(DeploymentExecution).filter_by(request_id=request.id).count() == 1
+
+
 def test_non_requester_does_not_see_returned_notification(web):
     """A returned request appears in the feed, but only the requester gets notified.
     A different logged-in user sees isRequester: false, so the notification does not
