@@ -1315,28 +1315,49 @@ code {
 .status-withdrawn { color: var(--fog); }
 
 .return-log-button {
+  /* Inline with the status label, never its own line: it is an annotation on the
+     status, not a row-level control. */
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
   margin-left: 6px;
-  width: 18px;
-  height: 18px;
+  padding: 0 5px;
+  min-width: 17px;
+  height: 17px;
   border-radius: 999px;
   border: 1px solid var(--amber);
   background: var(--amber-dim);
   color: var(--amber);
   font-family: var(--font-body);
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   font-weight: 700;
+  font-style: italic;
   line-height: 1;
   cursor: pointer;
 }
 
-.return-log-count {
-  margin-left: 2px;
-  font-size: 0.65rem;
+.return-log-button:hover,
+.return-log-button:focus-visible {
+  background: var(--amber);
+  color: var(--ink);
 }
 
-.return-log-entry { margin-bottom: 12px; }
+.return-log-count {
+  font-style: normal;
+  font-size: 0.62rem;
+}
+
+/* Newest return first (the relationship orders desc), and only that one gets full
+   contrast — the older entries recede to the same weight as their own timestamps.
+   Reading the dialog should answer "why is it back THIS time" before it answers
+   "what happened before". */
+.return-log-entry { margin-bottom: 14px; }
 .return-log-meta { font-size: 0.72rem; color: var(--fog-dim); }
 .return-log-reason { margin: 2px 0 0; color: var(--paper); }
+
+.return-log-entry:not(:first-child) .return-log-reason { color: var(--fog); }
+.return-log-entry:not(:first-child) .return-log-meta { opacity: 0.75; }
 
 /* Not scoped to .inline-form — the Return button opens the reason dialog rather
    than submitting a form directly, so it sits bare in the actions cell. Match

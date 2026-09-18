@@ -172,18 +172,24 @@
                 {% endfor %}
               </span>
               <span class="status status-{{ r.status.value }}">{{ status_labels.get(r.status, r.status.value) }}</span>
+              {# Inside .status-cell, beside the label — as a sibling of the cell it
+                 wrapped onto its own line under the rail, with the count dropping
+                 below the glyph.
+
+                 Not gated on r.status == RequestStatus.returned: the history has to
+                 survive past the return itself — a resubmitted request sitting in
+                 pending_approval is exactly when a team lead most needs to see why it
+                 kept coming back, and the Withdraw confirmation text promises "it stays
+                 on record with its return history", which requires this to still show
+                 on a withdrawn row too. #}
+              {% if r.returns %}
+                <button
+                  type="button" class="return-log-button" data-return-log="{{ r.id }}"
+                  title="Why this was returned"
+                >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
+              {% endif %}
             </div>
-            {# Not gated on r.status == RequestStatus.returned: the history has to
-               survive past the return itself — a resubmitted request sitting in
-               pending_approval is exactly when a team lead most needs to see why it
-               kept coming back, and the Withdraw confirmation text promises "it stays
-               on record with its return history", which requires this to still show
-               on a withdrawn row too. #}
             {% if r.returns %}
-              <button
-                type="button" class="return-log-button" data-return-log="{{ r.id }}"
-                title="Why this was returned"
-              >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
               <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
                 {% for entry in r.returns %}
                   <div class="return-log-entry">
