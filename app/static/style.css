@@ -1070,11 +1070,12 @@ code {
 
 /* Without this the returned-to-you table's bottom border sits flush against the
    main queue's top border below it — two distinct tables read as one continuous
-   one. A visible gap (plus a hairline rule of its own) is what separates them. */
+   one. margin-bottom alone (not padding/border-bottom) is deliberate: .table-scroll
+   already draws its own full border + border-radius around this element, so adding
+   padding-bottom inside it just left a dead, still-bordered strip of empty panel
+   rather than a real gap — margin sits outside that border box instead. */
 .returned-to-you-table {
   margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--hairline);
 }
 
 .queue-header {
