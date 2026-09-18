@@ -83,6 +83,25 @@ def set_role(
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+@router.post("/users/{user_id}/set-return-override")
+def set_return_override(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    # Checkbox: absent from the POST body entirely when unchecked, so a plain bool
+    # default (rather than Form(...)) is what lets "unchecked" parse cleanly — same
+    # pattern as share_with_requestor elsewhere in this app.
+    can_manage_other_returns: bool = Form(False),
+):
+    """Toggles whether this user (meaningful for admins only — see
+    User.can_manage_other_returns) sees OTHER people's returned requests in their
+    main queue. Any admin can flip this for any user, same as set_role above."""
+    user = _get_user_or_404(db, user_id)
+    user.can_manage_other_returns = can_manage_other_returns
+    db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
 def _rerender_with_error(request: Request, db: Session, admin: User, error: str):
     users = db.query(User).order_by(User.name).all()
     return templates.TemplateResponse(

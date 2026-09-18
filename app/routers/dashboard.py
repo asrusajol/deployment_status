@@ -738,6 +738,17 @@ def list_requests(
 
     main_query = db.query(DeploymentRequest).filter(~my_returned_requests_filter)
 
+    # Every admin used to see every OTHER user's returned request pinned at the top of
+    # their queue regardless of whether they had anything to do with it — reported as
+    # pure noise for admins who manage the deploy queue but never touch returns.
+    # User.can_manage_other_returns (checkbox on /admin/users, default off) is what
+    # opts a specific admin back in. Their own returned requests are unaffected either
+    # way — those are already excluded above and shown in "Returned to you" instead.
+    # Excluded from the query, not just the template, for the same total_count/
+    # total_pages reason as my_returned_requests_filter above.
+    if current_user.role == UserRole.admin and not current_user.can_manage_other_returns:
+        main_query = main_query.filter(DeploymentRequest.status != RequestStatus.returned)
+
     total_count = main_query.count()
     total_pages = max(1, math.ceil(total_count / page_size))
     page = max(1, min(page, total_pages))

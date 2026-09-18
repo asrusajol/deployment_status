@@ -146,3 +146,62 @@ def test_non_admin_cannot_change_roles(web):
     response = client.post("/admin/users/2/set-role", data={"role": "admin"})
 
     assert response.status_code == 403
+
+
+def test_admin_grants_return_override_to_another_admin(web):
+    client, session = web
+    make_user(session, id=1, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Other Admin", role=UserRole.admin)
+    session.commit()
+    login_as(client, "root")
+
+    response = client.post(
+        "/admin/users/2/set-return-override", data={"can_manage_other_returns": "on"}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    target = session.get(User, 2)
+    session.refresh(target)
+    assert target.can_manage_other_returns is True
+
+
+def test_admin_revokes_return_override_by_unchecking(web):
+    """A checkbox sends nothing at all when unchecked — the route must accept an
+    absent field as "off", not require an explicit false value."""
+    client, session = web
+    make_user(session, id=1, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Other Admin", role=UserRole.admin, can_manage_other_returns=True)
+    session.commit()
+    login_as(client, "root")
+
+    response = client.post("/admin/users/2/set-return-override", data={}, follow_redirects=False)
+
+    assert response.status_code == 303
+    target = session.get(User, 2)
+    session.refresh(target)
+    assert target.can_manage_other_returns is False
+
+
+def test_return_override_column_shown_only_for_admin_rows(web):
+    client, session = web
+    make_user(session, id=1, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Some Developer", role=UserRole.developer)
+    session.commit()
+    login_as(client, "root")
+
+    response = client.get("/admin/users")
+
+    assert response.status_code == 200
+    assert "Show others" in response.text
+
+
+def test_non_admin_cannot_set_return_override(web):
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Some Admin", role=UserRole.admin)
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.post("/admin/users/2/set-return-override", data={"can_manage_other_returns": "on"})
+
+    assert response.status_code == 403

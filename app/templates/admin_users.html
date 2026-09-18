@@ -17,6 +17,7 @@
         <th>Role</th>
         <th>Login Access</th>
         <th>Grant / Reset Password</th>
+        <th>Show others' returns</th>
       </tr>
     </thead>
     <tbody>
@@ -53,6 +54,22 @@
             <input type="password" name="new_password" placeholder="New password" required minlength="8" style="width:9rem">
             <button type="submit">{{ "Reset" if u.password_hash else "Grant Access" }}</button>
           </form>
+        </td>
+        <td>
+          {# Meaningful for admins only — a returned request an admin doesn't own is
+             excluded from their main queue (list_requests() in app/routers/dashboard.py)
+             unless this is checked. Shown as "—" for other roles rather than hidden
+             entirely, so it's clear the setting exists but does nothing for them yet. #}
+          {% if u.role.value == "admin" %}
+            <form method="post" action="/admin/users/{{ u.id }}/set-return-override" class="inline-form">
+              <label>
+                <input type="checkbox" name="can_manage_other_returns" {% if u.can_manage_other_returns %}checked{% endif %}>
+              </label>
+              <button type="submit">Save</button>
+            </form>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

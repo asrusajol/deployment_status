@@ -71,12 +71,16 @@ def make_user(
     password=None,
     must_change_password=False,
     machine_group_id=None,
+    can_manage_other_returns=False,
 ):
     """Seed a User, optionally with login access (password set + hashed). Login-capable
     users default to must_change_password=False so tests can log in and act immediately
     without an extra round-trip through /change-password, unless a test is specifically
     exercising that forced flow."""
-    user = User(id=id, name=name, role=role, username=username, machine_group_id=machine_group_id)
+    user = User(
+        id=id, name=name, role=role, username=username, machine_group_id=machine_group_id,
+        can_manage_other_returns=can_manage_other_returns,
+    )
     if password is not None:
         user.password_hash = hash_password(password)
         user.must_change_password = must_change_password
