@@ -35,6 +35,17 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
+    # Meaningful for admins only. Every admin used to see every OTHER user's `returned`
+    # request pinned at the top of the queue (app/routers/dashboard.py's
+    # OPEN_REQUEST_STATUS_ORDER), whether or not they had anything to do with it —
+    # reported as pure noise for admins who manage the deploy queue but never touch
+    # returns. Default False, so a returned request an admin doesn't own is excluded
+    # from their main queue; a specific admin who does want to see and manage other
+    # people's returns opts back in via the checkbox on /admin/users. Purely a queue
+    # display preference — it does not touch can_edit_request()/can_resubmit_request()
+    # (app/auth.py), which still let an admin act on any request they can reach.
+    can_manage_other_returns: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Mirrored from the in-house API's daily user-roster sync (project_plan.md, Section 6):
     # employees are represented as "Machine" records in that system, hence machine_group_id.
     source_system_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)

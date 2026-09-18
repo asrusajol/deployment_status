@@ -640,10 +640,18 @@ ACTIVE_REQUEST_STATUSES_FOR_NOTIFICATIONS = (
 # since: you would submit a request, look at the top of the queue, and find someone
 # else's stale row waiting there.
 OPEN_REQUEST_STATUS_ORDER = (
-    # First on purpose: a returned request is the only one that has moved
-    # *backwards*, and it waits on someone who is not watching the deploy queue,
-    # so it is the easiest thing on the page to forget.
-    RequestStatus.returned,
+    # `returned` used to be pinned first here — the reasoning was that it's the
+    # only status that moves backwards, so it's the easiest thing to forget. That
+    # stopped being true once the "Returned to you" table existed: a request
+    # returned to a specific person is already hoisted above the main queue,
+    # for that person, on every page load — the whole reason a pin was needed in
+    # the first place. Leaving it pinned here too meant every OTHER viewer
+    # (mainly admin/devops, who manage the shared queue but usually have nothing
+    # to do with someone else's return until it's resubmitted) saw it jump to the
+    # top of their queue regardless of ownership — reported as noise. It now
+    # falls through to the "finished" branch below (newest-first, alongside
+    # withdrawn/completed/...) until the requester resubmits it, at which point
+    # its new status (pending_approval/approved) is open again in the normal way.
     RequestStatus.pending_approval,
     RequestStatus.approved,
     RequestStatus.claimed,
@@ -658,17 +666,21 @@ OPEN_REQUEST_STATUS_ORDER = (
 # outcomes, not just `completed`: a failed or rolled-back deploy is finished work
 # too, and its execution row carries the same completed_at.
 #
-# `rejected`/`withdrawn` were added for that same Action-cell purpose only — this
-# constant does NOT drive queue ordering (that's OPEN_REQUEST_STATUS_ORDER's
-# membership above, which rejected/withdrawn are deliberately not part of), so
-# despite the name it's less load-bearing than it looks; don't assume adding a
-# status here changes where a request sits in the list.
+# `rejected`/`withdrawn`/`returned` were added for that Action-cell purpose, or
+# (for `returned`) just to satisfy test_request_status_coverage.py's "every status
+# is in exactly one of these two sets" — this constant does NOT drive queue
+# ordering (that's OPEN_REQUEST_STATUS_ORDER's membership above: anything not
+# listed there falls into the "finished", newest-first branch regardless of
+# whether it's in this tuple too), so despite the name it's less load-bearing
+# than it looks; don't assume adding a status here changes where a request sits
+# in the list.
 FINISHED_REQUEST_STATUSES = (
     RequestStatus.completed,
     RequestStatus.failed,
     RequestStatus.rolled_back,
     RequestStatus.rejected,
     RequestStatus.withdrawn,
+    RequestStatus.returned,
 )
 
 
@@ -737,6 +749,17 @@ def list_requests(
     )
 
     main_query = db.query(DeploymentRequest).filter(~my_returned_requests_filter)
+
+    # Every admin used to see every OTHER user's returned request pinned at the top of
+    # their queue regardless of whether they had anything to do with it — reported as
+    # pure noise for admins who manage the deploy queue but never touch returns.
+    # User.can_manage_other_returns (checkbox on /admin/users, default off) is what
+    # opts a specific admin back in. Their own returned requests are unaffected either
+    # way — those are already excluded above and shown in "Returned to you" instead.
+    # Excluded from the query, not just the template, for the same total_count/
+    # total_pages reason as my_returned_requests_filter above.
+    if current_user.role == UserRole.admin and not current_user.can_manage_other_returns:
+        main_query = main_query.filter(DeploymentRequest.status != RequestStatus.returned)
 
     total_count = main_query.count()
     total_pages = max(1, math.ceil(total_count / page_size))

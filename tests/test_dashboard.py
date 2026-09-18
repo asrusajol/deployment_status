@@ -2743,6 +2743,46 @@ def test_open_requests_are_grouped_by_stage_then_oldest_first(web):
     ]
 
 
+def test_returned_requests_sort_with_finished_work_not_pinned_to_the_top(web):
+    """`returned` moved out of OPEN_REQUEST_STATUS_ORDER once the "Returned to you"
+    box existed to surface it for its own owner — pinning someone ELSE's returned
+    request above every open item was noise for admin/devops, who have nothing to
+    do with it until the requester resubmits. It now sorts with finished work
+    (withdrawn, completed, ...), newest first, same as those. A request that IS
+    resubmitted (pending_approval/approved) goes right back to the open, oldest-
+    first ordering — this only concerns it while it is actually sitting `returned`."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    make_user(session, id=2, name="Dev Two", username="devtwo")
+    session.commit()
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        DeploymentRequest(
+            task_id="PR-WAIT", requested_by=2, status=RequestStatus.pending_approval,
+            created_at=now - timedelta(days=1),
+        ),
+        DeploymentRequest(
+            task_id="PR-RETURNED", requested_by=2, status=RequestStatus.returned,
+            created_at=now,
+        ),
+        DeploymentRequest(
+            task_id="PR-DONE", requested_by=2, status=RequestStatus.completed,
+            created_at=now - timedelta(hours=1),
+        ),
+    ])
+    session.commit()
+    login_as(client, "rajib")
+
+    response = client.get("/requests")
+
+    # Still open work first (PR-WAIT), then the finished bucket newest-first:
+    # PR-RETURNED (now) ahead of PR-DONE (an hour older) — not PR-RETURNED pinned
+    # above PR-WAIT the way it would have been before this change.
+    assert _row_order(response.text, ["PR-WAIT", "PR-RETURNED", "PR-DONE"]) == [
+        "PR-WAIT", "PR-RETURNED", "PR-DONE",
+    ]
+
+
 def test_finished_requests_stay_newest_first(web):
     """Below the open ones the list is still a reverse-chronological history."""
     client, session = web

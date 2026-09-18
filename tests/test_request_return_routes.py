@@ -155,9 +155,9 @@ def test_returning_from_approved_leaves_other_claims_alone(web):
     assert session.query(RequestReturn).one().returned_from == RequestStatus.approved
 
 
-def _returned_request(session, *, request_type=RequestType.standard, requester_id=2):
+def _returned_request(session, *, request_type=RequestType.standard, requester_id=2, task_id="PR-BACK"):
     request = DeploymentRequest(
-        task_id="PR-BACK", requested_by=requester_id, status=RequestStatus.returned,
+        task_id=task_id, requested_by=requester_id, status=RequestStatus.returned,
         request_type=request_type, created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
     session.add(request)
@@ -625,3 +625,113 @@ def test_non_requester_does_not_see_returned_notification(web):
     assert '"status": "returned"' in payload
     # But isRequester is false for this non-requester user
     assert '"isRequester": false' in payload
+
+
+def _main_table_body(response_text):
+    """The main queue's <tbody> only — scoped so a task id embedded elsewhere on the
+    page (the notification script's active-requests-data JSON blob, or the
+    "Returned to you" box's own <tbody> above it) can't produce a false pass/fail.
+    Empty string when the main table doesn't render at all (the empty-state message
+    instead) — that's the strongest possible "not visible", not a test failure."""
+    if "<tbody>" not in response_text:
+        return ""
+    start = response_text.rindex("<tbody>")
+    return response_text[start : response_text.index("</tbody>", start)]
+
+
+def test_admin_without_override_does_not_see_others_returned_requests(web):
+    """Some admins manage the deploy queue and never touch returns — a returned
+    request pinned at the top of their queue regardless of who owns it, or whether
+    they will ever act on it, is pure noise. User.can_manage_other_returns
+    (set per admin from /admin/users, default off) is what opts a specific admin
+    back into seeing it. (It still reaches the notification-feed JSON blob — that
+    is a separate mechanism, already gated to the actual requester elsewhere — this
+    test is about the visible queue table only.)"""
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _returned_request(session, task_id="PR-NOISY")
+    login_as(client, "root")
+
+    page = client.get("/requests").text
+
+    assert "PR-NOISY" not in _main_table_body(page)
+
+
+def test_admin_with_override_sees_others_returned_requests(web):
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=True,
+    )
+    session.commit()
+    request = _returned_request(session, task_id="PR-VISIBLE")
+    login_as(client, "root")
+
+    page = client.get("/requests").text
+
+    assert "PR-VISIBLE" in page
+
+
+def test_non_admin_always_sees_others_returned_requests(web):
+    """The flag exists to quiet admin noise specifically — devops/team_lead/developer
+    are unaffected either way, same as before this feature."""
+    client, session = web
+    make_user(session, id=9, name="Devops One", username="devops1", password=DEFAULT_TEST_PASSWORD, role=UserRole.devops)
+    session.commit()
+    request = _returned_request(session, task_id="PR-STILLTHERE")
+    login_as(client, "devops1")
+
+    page = client.get("/requests").text
+
+    assert "PR-STILLTHERE" in page
+
+
+def test_admin_without_override_still_sees_their_own_returned_request(web):
+    """The flag governs OTHER people's returns only — an admin's own returned
+    request still shows, in the "Returned to you" box, exactly as for anyone else."""
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    session.commit()
+    request = _returned_request(session, task_id="PR-MINE", requester_id=9)
+    login_as(client, "root")
+
+    page = client.get("/requests").text
+
+    assert "PR-MINE" in page
+    assert "Returned to you" in page
+
+
+def test_pagination_excludes_hidden_returns_for_admin_without_override(web):
+    """Hidden rows must come out of the query, not just the template, or the stated
+    total and the last page's row count disagree — the same trap the returned-to-you
+    exclusion already guards against. Seeded past the default page size (15) so the
+    pagination footer actually renders."""
+    client, session = web
+    make_user(
+        session, id=9, name="Root Admin", username="root", password=DEFAULT_TEST_PASSWORD,
+        role=UserRole.admin, can_manage_other_returns=False,
+    )
+    make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    for i in range(16):
+        r = DeploymentRequest(
+            task_id=f"PR-HIST-{i}", requested_by=2, status=RequestStatus.completed,
+            created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+        session.add(r)
+    session.commit()
+    _returned_request(session, task_id="PR-HIDDEN")
+    login_as(client, "root")
+
+    response = client.get("/requests")
+
+    # 16 completed rows, the returned one excluded — not 17.
+    assert "(16 total)" in response.text
+    assert "PR-HIDDEN" not in _main_table_body(response.text)
