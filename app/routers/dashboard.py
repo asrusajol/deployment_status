@@ -48,6 +48,7 @@ from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import (
+    DB_DUMP_START_CHECKLIST,
     DeploymentEnvironment,
     DeploymentRequest,
     RequestStatus,
@@ -831,6 +832,7 @@ def list_requests(
             "RequestStatus": RequestStatus,
             "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
             "RequestType": RequestType,
+            "db_dump_start_checklist": DB_DUMP_START_CHECKLIST,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,
@@ -1059,6 +1061,9 @@ def start_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
+    # Only required for db_dump_restore — see DB_DUMP_START_CHECKLIST. Form([]), not
+    # Form(...), so the plain Start button on every other request type still works.
+    checklist: list[str] = Form([]),
 ):
     """The first half of execution tracking (project_plan.md Section 4/Phase 2, previously
     unsurfaced): a deploy-team member marks a request as picked up, moving it to
@@ -1068,6 +1073,16 @@ def start_request(
     deployment_request = _get_request_or_404(db, request_id)
     if deployment_request.status != RequestStatus.approved:
         raise HTTPException(status_code=409, detail="Request is not pending deployment")
+
+    # After the permission and status checks so a rejected attempt says the same thing
+    # it always did, and before the execution row exists so it leaves nothing behind.
+    if deployment_request.request_type == RequestType.db_dump_restore:
+        missing = [label for item_id, label in DB_DUMP_START_CHECKLIST if item_id not in checklist]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail="Complete the DB dump checklist first: " + "; ".join(missing),
+            )
 
     now = datetime.now(timezone.utc)
     db.add(

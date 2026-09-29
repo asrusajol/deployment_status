@@ -474,6 +474,34 @@ h1 {
   gap: 0.6rem;
 }
 
+/* One row per pre-flight confirmation in the DB dump Start pop-up. The whole row is the
+   <label>, so the text is as clickable as the box. */
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  margin: 0 0 0.5rem;
+  background: var(--panel-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--paper);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.checklist-item:hover { border-color: var(--hairline-strong); }
+.checklist-item input { margin-top: 0.2rem; accent-color: var(--teal); }
+
+/* Nothing else in the app disables a button, so there was no disabled look; without one
+   the pop-up's Start reads as clickable while it still refuses to submit. */
+.changes-modal-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
 /* Standardized icon-only button — square, currentColor SVG, same footprint regardless
    of what it does. Currently just the modal's copy button, but not named after that one
    use so any future icon-only action (e.g. a copy-to-clipboard elsewhere) matches it

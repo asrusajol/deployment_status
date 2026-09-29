@@ -192,9 +192,19 @@
                 {% endif %}
               {% elif r.status == RequestStatus.approved %}
                 {% if can_deploy %}
-                  <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
-                    <button type="submit" class="start">Start Deployment</button>
-                  </form>
+                  {# A DB dump can't be started with one click: the pre-flight checklist
+                     pop-up (request_list.html) collects the confirmations, and the route
+                     re-checks them — this button alone is not the gate. #}
+                  {% if r.request_type == RequestType.db_dump_restore %}
+                    <button
+                      type="button" class="start"
+                      data-start-action="/requests/{{ r.id }}/start"
+                    >Start Deployment</button>
+                  {% else %}
+                    <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
+                      <button type="submit" class="start">Start Deployment</button>
+                    </form>
+                  {% endif %}
                   <button
                     type="button" class="return"
                     data-return-action="/requests/{{ r.id }}/return"

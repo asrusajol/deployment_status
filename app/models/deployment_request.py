@@ -88,6 +88,25 @@ class RequestType(str, enum.Enum):
     test_local = "test_local"
 
 
+# What DevOps must confirm before a db_dump_restore request can move to in_progress.
+# A restored dump carries the source system's cron schedules, worker config and email
+# settings, so a restore target started blind begins mailing real customers. Shared by
+# the Start pop-up (request_list.html) and start_request()'s server-side check, so the
+# two cannot drift — the route is the actual gate, the pop-up is just how a person
+# fills it in. The last item is a commitment, not a proof: it describes what happens
+# *after* the restore, which hasn't run yet when Start is pressed.
+DB_DUMP_START_CHECKLIST = (
+    ("close_scheduled_jobs", "Close cronjobs / scheduled jobs"),
+    ("restart_workers", "Restart workers to apply the change"),
+    ("check_env_email", "Check .env for anything that can trigger emails"),
+    (
+        "remove_email_settings",
+        "After restoration, remove email settings from the settings table and the "
+        "web UI (basevisu module)",
+    ),
+)
+
+
 def initial_status_for(request_type: RequestType) -> RequestStatus:
     """The status a freshly created request of this type starts in.
 
