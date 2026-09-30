@@ -22,7 +22,7 @@ This design replaces it with:
 | # | Decision |
 |---|---|
 | D1 | Checklists run **only at Start Deployment** (not at Mark Deployed). |
-| D2 | **One request type per term.** The same wording on two types is two independent rows; editing one never changes the other. |
+| D2 | **One term, many request types** (revised 2026-09-30). A term is assigned to any set of types via `checklist_item_types`; each type keeps its own order. Editing the wording changes it everywhere. Assigning is refused if that type already has an active term with the same wording. |
 | D3 | Management access is a **per-user permission switch**, not a role. A user keeps their one existing role (`developer`/`team_lead`/`devops`/`admin`); a fifth role would strip a DevOps user of deploy rights. |
 | D4 | **Admin**: view, add, edit, reorder, deactivate/reactivate checklist terms. **Management access**: view and add only. Everyone else: no tab, 403 on the URLs. |
 | D5 | The checklist audit on a request row is its own access: visible to **admins always**, and to any other user **only if an admin grants it** ("Checklist audit access", off by default). Team or role grants nothing on its own. |
@@ -36,14 +36,23 @@ This design replaces it with:
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int PK | |
-| `request_type` | `requesttype` enum, NOT NULL, indexed | Reuses the existing Postgres enum type (`create_type=False`) |
 | `label` | `String(500)`, NOT NULL | Stripped; blank rejected |
-| `position` | int, NOT NULL | Order within its type; new terms append at the end |
-| `is_active` | bool, NOT NULL, default true | Only active terms are shown and required |
+| `is_active` | bool, NOT NULL, default true | Retiring a term removes it from every type's checklist |
 | `created_by` | FK `users.id`, nullable | Null only for the rows seeded by the migration |
 | `created_at` | DateTime, NOT NULL | |
-| `updated_by` | FK `users.id`, nullable | Last edit / reorder / (de)activation |
+| `updated_by` | FK `users.id`, nullable | Last edit / assignment / reorder / (de)activation |
 | `updated_at` | DateTime, nullable | |
+
+### `checklist_item_types` — which types a term applies to
+
+| Column | Type | Notes |
+|---|---|---|
+| `item_id` | FK `checklist_items.id`, PK | |
+| `request_type` | `requesttype` enum, PK | Reuses the existing Postgres enum type (`create_type=False`) |
+| `position` | int, NOT NULL | Order within that type; a newly assigned type appends at the end |
+
+Unassigning a type deletes its row (nothing references an assignment). A term with no
+rows is "not assigned" — kept, required nowhere.
 
 ### `checklist_confirmations` — the audit trail
 
@@ -172,7 +181,6 @@ on, never the whole page.
 ## Out of scope
 
 - Checklists at any stage other than Start.
-- Sharing one term across several types (D2).
 - Moving Clients / Seeder Collection / Release Tracker under Management (D6).
 - Drag-and-drop ordering; bulk import of terms.
 - Recording that item 4 ("after restoration…") was actually done — the audit records the

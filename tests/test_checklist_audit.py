@@ -3,10 +3,10 @@ with User.can_view_checklist_audit. Without it, the audit must not be in the pag
 
 from datetime import datetime, timezone
 
-from app.models.checklist import ChecklistConfirmation, ChecklistItem
+from app.models.checklist import ChecklistConfirmation
 from app.models.deployment_request import DeploymentRequest, RequestStatus, RequestType
 from app.models.user import User, UserRole
-from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
+from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_checklist_item, make_user
 
 # Differs from the term's current label on purpose: proves the dialog shows the snapshot,
 # and gives the leak test a string that can only come from the audit.
@@ -18,12 +18,11 @@ def _seed(session, *, dev_audit=False):
     dev = make_user(session, id=2, name="Dev One", username="devone", password=DEFAULT_TEST_PASSWORD)
     dev.can_view_checklist_audit = dev_audit
     session.flush()
-    item = ChecklistItem(request_type=RequestType.db_dump_restore, label="Reworded later", position=1,
-                         created_at=datetime.now(timezone.utc))
+    item = make_checklist_item(session, label="Reworded later")
     request = DeploymentRequest(task_id="PR-A", requested_by=2, status=RequestStatus.in_progress,
                                 request_type=RequestType.db_dump_restore, dump_source="crm-live",
                                 restore_source="crm-staging", created_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
-    session.add_all([item, request])
+    session.add(request)
     session.flush()
     session.add(ChecklistConfirmation(request_id=request.id, checklist_item_id=item.id, item_label=SNAPSHOT,
                                       confirmed_by=1, confirmed_at=datetime(2026, 9, 2, 9, 30)))

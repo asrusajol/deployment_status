@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models.checklist import ChecklistConfirmation, ChecklistItem
+from app.models.checklist import ChecklistConfirmation
 from app.models.deployment_execution import DeploymentExecution
 from app.models.deployment_request import DeploymentRequest, RequestStatus, RequestType
 from app.models.user import UserRole
-from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_user
+from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_checklist_item, make_user
 
 DUMP_TERMS = (
     "Close cronjobs / scheduled jobs",
@@ -31,13 +31,10 @@ def _users(session):
 
 
 def _terms(session, request_type=RequestType.db_dump_restore, labels=DUMP_TERMS):
-    items = [
-        ChecklistItem(request_type=request_type, label=label, position=n, created_at=datetime.now(timezone.utc))
+    return [
+        make_checklist_item(session, label=label, request_types=(request_type,), position=n)
         for n, label in enumerate(labels, start=1)
     ]
-    session.add_all(items)
-    session.commit()
-    return items
 
 
 def _request(session, request_type=RequestType.db_dump_restore):
@@ -142,6 +139,23 @@ def test_type_without_terms_starts_with_one_click(web, request_type):
 
     assert _start(client, request).status_code == 303
     assert session.query(ChecklistConfirmation).count() == 0
+
+
+def test_term_assigned_to_two_types_is_required_for_both(web):
+    client, session = web
+    _users(session)
+    shared = make_checklist_item(
+        session, label="Close cronjobs", request_types=(RequestType.db_dump_restore, RequestType.test_local)
+    )
+    dump_request = _request(session, RequestType.db_dump_restore)
+    local_request = _request(session, RequestType.test_local)
+    login_as(client, "zunayed")
+
+    assert _start(client, dump_request).status_code == 400
+    assert _start(client, local_request).status_code == 400
+    assert _start(client, dump_request, _ids(client, [shared])).status_code == 303
+    assert _start(client, local_request, _ids(client, [shared])).status_code == 303
+    assert session.query(ChecklistConfirmation).filter_by(checklist_item_id=shared.id).count() == 2
 
 
 def test_terms_added_to_standard_are_enforced(web):

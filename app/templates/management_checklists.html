@@ -1,36 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Checklists — Management — Deployment Tracker{% endblock %}
 
-{# One term's row. `number` is its place within its own type — the order DevOps sees in
-   that type's Start pop-up. Admin controls sit beside the text; the edit form stays
-   hidden until ✎ opens it, so the list reads as a list rather than a wall of inputs. #}
-{% macro term_row(item, number) %}
-  <li class="checklist-term{% if not item.is_active %} is-retired{% endif %}" data-item-id="{{ item.id }}" data-request-type="{{ item.request_type.value }}">
+{# "Applies to" checkboxes, shared by the Add form and every Edit form. #}
+{% macro type_checkboxes(checked_types) %}
+  <fieldset class="checklist-types">
+    <legend class="cell-label">Applies to</legend>
+    {% for request_type in type_labels %}
+      <label class="checklist-type-option">
+        <input type="checkbox" name="request_types" value="{{ request_type.value }}" {% if request_type in checked_types %}checked{% endif %}>
+        <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
+      </label>
+    {% endfor %}
+  </fieldset>
+{% endmacro %}
+
+{# One term's row. A term assigned to several types appears under each of them;
+   `group_type` is the type this row sits under (None for "not assigned" and retired),
+   and `number` is its place in that type's Start pop-up. Admin controls sit beside the
+   text; the edit form stays hidden until ✎ opens it. #}
+{% macro term_row(item, number, group_type) %}
+  <li class="checklist-term{% if not item.is_active %} is-retired{% endif %}" data-item-id="{{ item.id }}">
     <span class="checklist-num">{{ number }}</span>
     <div class="checklist-body">
       <span class="checklist-text">{{ item.label }}</span>
       {% if is_admin %}
         <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit" hidden>
+          <input type="hidden" name="types_submitted" value="1">
           <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
-          <select name="request_type" title="Request type">
-            {% for request_type in type_labels %}
-              <option value="{{ request_type.value }}" {% if request_type == item.request_type %}selected{% endif %}>{{ type_labels[request_type] }}</option>
-            {% endfor %}
-          </select>
-          <button type="submit" class="start">Save</button>
-          <button type="button" class="button-secondary" data-edit-cancel="{{ item.id }}">Cancel</button>
+          {{ type_checkboxes(item.types | map(attribute="request_type") | list) }}
+          <div class="checklist-edit-actions">
+            <button type="submit" class="start">Save</button>
+            <button type="button" class="button-secondary" data-edit-cancel>Cancel</button>
+          </div>
         </form>
       {% endif %}
-      <span class="badge badge-type-{{ item.request_type.value }}">{{ type_labels[item.request_type] }}</span>
+      <span class="checklist-chips">
+        {% for assignment in item.types %}
+          <span class="badge badge-type-{{ assignment.request_type.value }}">{{ type_labels[assignment.request_type] }}</span>
+        {% else %}
+          <span class="muted">Not assigned</span>
+        {% endfor %}
+      </span>
     </div>
     {% if is_admin %}
       <div class="checklist-actions">
         {% if item.is_active %}
-          <button type="button" class="icon-action" title="Edit wording" data-edit-toggle="{{ item.id }}">✎</button>
-          <form method="post" action="/management/checklists/{{ item.id }}/move">
-            <button type="submit" name="direction" value="up" class="icon-action" title="Move up">↑</button>
-            <button type="submit" name="direction" value="down" class="icon-action" title="Move down">↓</button>
-          </form>
+          <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>✎</button>
+          {% if group_type %}
+            <form method="post" action="/management/checklists/{{ item.id }}/move">
+              <input type="hidden" name="request_type" value="{{ group_type.value }}">
+              <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">↑</button>
+              <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">↓</button>
+            </form>
+          {% endif %}
           <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
             <button type="submit" class="text-action is-danger">Retire</button>
           </form>
@@ -49,7 +71,7 @@
   <div class="checklist-head">
     <div>
       <h1>Checklists</h1>
-      <p class="subtitle">Terms DevOps must tick before Start Deployment. A request type with no active terms starts with one click.</p>
+      <p class="subtitle">Terms DevOps must tick before Start Deployment. One term can apply to several request types; a type with no active terms starts with one click.</p>
     </div>
     <button type="button" class="start" id="checklist-add-toggle">+ Add term</button>
   </div>
@@ -59,14 +81,7 @@
       <span class="cell-label">Term</span>
       <input type="text" name="label" maxlength="500" required placeholder="e.g. Snapshot the target database">
     </label>
-    <label class="checklist-add-field checklist-add-type">
-      <span class="cell-label">Request type</span>
-      <select name="request_type">
-        {% for request_type, _items in sections %}
-          <option value="{{ request_type.value }}">{{ type_labels[request_type] }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    {{ type_checkboxes([]) }}
     <div class="checklist-add-actions">
       <button type="submit" class="start">Add</button>
       <button type="button" class="button-secondary" id="checklist-add-cancel">Cancel</button>
@@ -76,24 +91,31 @@
   {# Filters only the view in this browser — no request, no state. #}
   <div class="checklist-filter" role="group" aria-label="Filter by request type">
     <button type="button" class="filter-chip is-active" data-checklist-filter="all">All</button>
-    {% for request_type, _items in sections %}
+    {% for request_type, _rows in sections %}
       <button type="button" class="filter-chip" data-checklist-filter="{{ request_type.value }}">{{ type_labels[request_type] }}</button>
     {% endfor %}
   </div>
 
   <div class="checklist-panel">
-    {% for request_type, items in sections %}
-      <ol class="checklist-list" data-request-type="{{ request_type.value }}">
-        {% for item in items %}
-          {{ term_row(item, loop.index) }}
-        {% else %}
-          <li class="checklist-empty" data-request-type="{{ request_type.value }}">
-            <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
-            <span class="muted">No terms — Start Deployment is one click.</span>
-          </li>
+    {% for request_type, rows in sections %}
+      <ol class="checklist-list" data-group="{{ request_type.value }}">
+        <li class="checklist-group-head">
+          <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
+          <span class="muted">{% if rows %}{{ rows | length }} active{% else %}No terms — Start Deployment is one click.{% endif %}</span>
+        </li>
+        {% for item, _position in rows %}
+          {{ term_row(item, loop.index, request_type) }}
         {% endfor %}
       </ol>
     {% endfor %}
+    {% if unassigned %}
+      <ol class="checklist-list" data-group="unassigned">
+        <li class="checklist-group-head"><span class="muted">Not assigned to any type — required nowhere until assigned.</span></li>
+        {% for item in unassigned %}
+          {{ term_row(item, "–", None) }}
+        {% endfor %}
+      </ol>
+    {% endif %}
   </div>
 
   {% if retired %}
@@ -101,7 +123,7 @@
       <summary>Retired ({{ retired | length }})</summary>
       <ol class="checklist-list">
         {% for item in retired %}
-          {{ term_row(item, "–") }}
+          {{ term_row(item, "–", None) }}
         {% endfor %}
       </ol>
     </details>
@@ -119,21 +141,21 @@
         addForm.hidden = true;
       });
 
-      // ✎ swaps a term's text for its edit form; Cancel swaps back.
-      function setEditing(id, editing) {
-        var row = document.querySelector('.checklist-term[data-item-id="' + id + '"]');
-        if (!row) return;
+      // ✎ swaps a row's text for its edit form; Cancel swaps back. Scoped to the row
+      // clicked — a term assigned to several types has one row under each.
+      function setEditing(row, editing) {
         var form = row.querySelector(".checklist-edit");
         form.hidden = !editing;
         row.querySelector(".checklist-text").hidden = editing;
+        row.querySelector(".checklist-chips").hidden = editing;
         if (editing) form.querySelector('input[name="label"]').focus();
         else form.reset();
       }
       document.querySelectorAll("[data-edit-toggle]").forEach(function (button) {
-        button.addEventListener("click", function () { setEditing(button.getAttribute("data-edit-toggle"), true); });
+        button.addEventListener("click", function () { setEditing(button.closest(".checklist-term"), true); });
       });
       document.querySelectorAll("[data-edit-cancel]").forEach(function (button) {
-        button.addEventListener("click", function () { setEditing(button.getAttribute("data-edit-cancel"), false); });
+        button.addEventListener("click", function () { setEditing(button.closest(".checklist-term"), false); });
       });
 
       var chips = document.querySelectorAll("[data-checklist-filter]");
@@ -142,7 +164,7 @@
           var type = chip.getAttribute("data-checklist-filter");
           chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
           document.querySelectorAll(".checklist-panel .checklist-list").forEach(function (list) {
-            list.hidden = type !== "all" && list.getAttribute("data-request-type") !== type;
+            list.hidden = type !== "all" && list.getAttribute("data-group") !== type;
           });
         });
       });

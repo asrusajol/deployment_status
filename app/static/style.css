@@ -1497,7 +1497,6 @@ code {
 }
 .checklist-add[hidden] { display: none; }
 .checklist-add-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1 1 320px; }
-.checklist-add-type { flex: 0 1 240px; }
 .checklist-add-actions { display: flex; gap: 0.5rem; }
 
 .checklist-add input[type="text"],
@@ -1613,6 +1612,36 @@ code {
   cursor: pointer;
 }
 .checklist-retired[open] summary { border-bottom: 1px solid var(--hairline); }
+
+/* Every type's list opens with its own labelled header, so in the All view a term can
+   never read as belonging to the group above it. */
+.checklist-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1.1rem;
+  background: var(--panel-raised);
+  font-size: 0.85rem;
+}
+.checklist-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.checklist-chips[hidden], .checklist-text[hidden] { display: none; }
+
+/* "Applies to" — one checkbox per request type, labelled with its badge. */
+.checklist-types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.8rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.checklist-types legend { float: left; margin-right: 0.4rem; }
+.checklist-type-option { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.checklist-type-option input { accent-color: var(--teal); }
+.checklist-add .checklist-types { flex: 1 1 100%; }
+.checklist-edit .checklist-types { flex: 1 1 100%; }
+.checklist-edit-actions { display: flex; gap: 0.4rem; }
 
 @media (max-width: 640px) {
   .checklist-term { flex-wrap: wrap; }

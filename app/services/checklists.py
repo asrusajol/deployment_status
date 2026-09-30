@@ -8,9 +8,9 @@ saved together or not at all.
 import hashlib
 from datetime import datetime
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
-from app.models.checklist import ChecklistConfirmation, ChecklistItem
+from app.models.checklist import ChecklistConfirmation, ChecklistItem, ChecklistItemType
 from app.models.deployment_request import DeploymentRequest, RequestType
 from app.models.user import User
 
@@ -30,17 +30,19 @@ def checklist_token(item: ChecklistItem) -> str:
 
 
 def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
-    """Active terms grouped by request type, in display order. One query for the whole
-    request listing — never per row."""
-    items = (
-        db.query(ChecklistItem)
+    """Active terms grouped by every request type they're assigned to, in each type's own
+    order. One query for the whole request listing — never per row."""
+    assignments = (
+        db.query(ChecklistItemType)
+        .join(ChecklistItemType.item)
         .filter(ChecklistItem.is_active.is_(True))
-        .order_by(ChecklistItem.position, ChecklistItem.id)
+        .options(contains_eager(ChecklistItemType.item))
+        .order_by(ChecklistItemType.position, ChecklistItemType.item_id)
         .all()
     )
     grouped: dict[RequestType, list[ChecklistItem]] = {}
-    for item in items:
-        grouped.setdefault(item.request_type, []).append(item)
+    for assignment in assignments:
+        grouped.setdefault(assignment.request_type, []).append(assignment.item)
     return grouped
 
 

@@ -1,8 +1,10 @@
-"""add checklist_items and checklist_confirmations, seed the DB dump terms
+"""add checklist tables, seed the DB dump terms
 
 Replaces the hard-coded DB_DUMP_START_CHECKLIST (commit 7356a1e) with terms admins
-manage from /management/checklists, plus an audit row per confirmed term. Seeds the
-four existing db_dump_restore terms so behaviour is identical straight after upgrade.
+manage from /management/checklists. A term can apply to several request types
+(checklist_item_types, which also holds each type's order), and every confirmed term is
+kept as an audit row. Seeds the four existing db_dump_restore terms so behaviour is
+identical straight after upgrade.
 
 Revision ID: c2e8f5a1d6b7
 Revises: a7c1e4d2f9b3
@@ -35,16 +37,19 @@ def upgrade() -> None:
     op.create_table(
         "checklist_items",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("request_type", request_type, nullable=False),
         sa.Column("label", sa.String(500), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
         sa.Column("updated_at", sa.DateTime(), nullable=True),
     )
-    op.create_index("ix_checklist_items_request_type", "checklist_items", ["request_type"])
+    op.create_table(
+        "checklist_item_types",
+        sa.Column("item_id", sa.Integer(), sa.ForeignKey("checklist_items.id"), primary_key=True),
+        sa.Column("request_type", request_type, primary_key=True),
+        sa.Column("position", sa.Integer(), nullable=False),
+    )
     op.create_table(
         "checklist_confirmations",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -58,24 +63,28 @@ def upgrade() -> None:
 
     items = sa.table(
         "checklist_items",
-        sa.column("request_type", request_type),
+        sa.column("id", sa.Integer),
         sa.column("label", sa.String),
-        sa.column("position", sa.Integer),
         sa.column("is_active", sa.Boolean),
         sa.column("created_at", sa.DateTime),
     )
-    now = datetime.now(timezone.utc)
-    op.bulk_insert(
-        items,
-        [
-            {"request_type": "db_dump_restore", "label": label, "position": position, "is_active": True, "created_at": now}
-            for position, label in enumerate(SEED_DB_DUMP_TERMS, start=1)
-        ],
+    item_types = sa.table(
+        "checklist_item_types",
+        sa.column("item_id", sa.Integer),
+        sa.column("request_type", request_type),
+        sa.column("position", sa.Integer),
     )
+    now = datetime.now(timezone.utc)
+    conn = op.get_bind()
+    for position, label in enumerate(SEED_DB_DUMP_TERMS, start=1):
+        item_id = conn.execute(
+            items.insert().values(label=label, is_active=True, created_at=now).returning(items.c.id)
+        ).scalar_one()
+        conn.execute(item_types.insert().values(item_id=item_id, request_type="db_dump_restore", position=position))
 
 
 def downgrade() -> None:
     op.drop_index("ix_checklist_confirmations_request_id", table_name="checklist_confirmations")
     op.drop_table("checklist_confirmations")
-    op.drop_index("ix_checklist_items_request_type", table_name="checklist_items")
+    op.drop_table("checklist_item_types")
     op.drop_table("checklist_items")
