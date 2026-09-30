@@ -248,3 +248,89 @@ def test_unknown_item_is_404(web):
     # The handler's own 404, not the router's "Not Found" for a route that doesn't exist.
     assert response.status_code == 404
     assert response.json()["detail"] == "Checklist term not found"
+
+
+def test_admin_reassigns_term_to_the_end_of_another_type(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    _item(session, request_type=RequestType.test_local, label="Ping box", position=1)
+    login_as(client, "root")
+
+    response = client.post(
+        f"/management/checklists/{item.id}/edit",
+        data={"label": "Close cronjobs", "request_type": "test_local"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session.refresh(item)
+    assert item.request_type == RequestType.test_local
+    assert item.position == 2
+    assert item.updated_by == 1
+
+
+@pytest.mark.parametrize("wording", ["Close cronjobs", "  close CRONJOBS "])
+def test_reassign_blocked_when_target_type_already_has_it(web, wording):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    _item(session, request_type=RequestType.test_local, label="Close cronjobs", position=1)
+    login_as(client, "root")
+
+    response = client.post(
+        f"/management/checklists/{item.id}/edit", data={"label": wording, "request_type": "test_local"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "already assigned" in response.json()["detail"]
+    session.refresh(item)
+    assert (item.request_type, item.label, item.position) == (RequestType.db_dump_restore, "Close cronjobs", 1)
+
+
+def test_reassign_allowed_when_target_only_has_it_retired(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    _item(session, request_type=RequestType.test_local, label="Close cronjobs", position=1, is_active=False)
+    login_as(client, "root")
+
+    response = client.post(
+        f"/management/checklists/{item.id}/edit", data={"label": "Close cronjobs", "request_type": "test_local"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session.refresh(item)
+    assert item.request_type == RequestType.test_local
+
+
+def test_reassign_rejects_unknown_type(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    login_as(client, "root")
+
+    response = client.post(
+        f"/management/checklists/{item.id}/edit", data={"label": "Close cronjobs", "request_type": "nope"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    session.refresh(item)
+    assert item.request_type == RequestType.db_dump_restore
+
+
+def test_edit_form_offers_type_picker_preset_to_current_type(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    login_as(client, "root")
+
+    row = _row(client.get("/management/checklists").text, item.id)
+    form = re.search(r'<form[^>]*action="/management/checklists/\d+/edit".*?</form>', row, re.S).group(0)
+
+    assert '<select name="request_type"' in form
+    assert re.search(r'<option value="db_dump_restore"[^>]*\bselected\b', form)
+    assert not re.search(r'<option value="test_local"[^>]*\bselected\b', form)

@@ -105,13 +105,44 @@ def add_checklist_item(
     return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
 
 
+def _same_wording(a: str, b: str) -> bool:
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
 @router.post("/checklists/{item_id}/edit")
 def edit_checklist_item(
-    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin), label: str = Form(""),
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+    label: str = Form(""),
+    # Optional so a wording-only edit keeps the term's type. Reassigning is how a term
+    # is reused on another type — still one type per term (decision D2).
+    request_type: str | None = Form(None),
 ):
-    # Safe to reword: ChecklistConfirmation snapshots the label it was confirmed with.
+    # Safe to reword or reassign: ChecklistConfirmation snapshots the label, and each
+    # confirmation's request carries its own type, so history is unaffected either way.
     item = _get_item_or_404(db, item_id)
-    item.label = _clean_label(label)
+    new_label = _clean_label(label)
+    new_type = item.request_type
+    if request_type:
+        try:
+            new_type = RequestType(request_type)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Unknown request type")
+
+    # "Assign only if not assigned before": an active term with the same wording on the
+    # target type would make DevOps tick the same step twice. Retired ones don't count.
+    others = db.query(ChecklistItem).filter(
+        ChecklistItem.request_type == new_type, ChecklistItem.is_active.is_(True), ChecklistItem.id != item.id
+    )
+    if any(_same_wording(other.label, new_label) for other in others):
+        raise HTTPException(status_code=400, detail="That term is already assigned to this request type.")
+
+    if new_type != item.request_type:
+        last = db.query(func.max(ChecklistItem.position)).filter(ChecklistItem.request_type == new_type).scalar()
+        item.request_type = new_type
+        item.position = (last or 0) + 1
+    item.label = new_label
     _touch(item, current_user)
     db.commit()
     return RedirectResponse(url=CHECKLISTS_URL, status_code=303)

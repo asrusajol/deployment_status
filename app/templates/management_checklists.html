@@ -12,6 +12,11 @@
       {% if is_admin %}
         <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit" hidden>
           <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
+          <select name="request_type" title="Request type">
+            {% for request_type in type_labels %}
+              <option value="{{ request_type.value }}" {% if request_type == item.request_type %}selected{% endif %}>{{ type_labels[request_type] }}</option>
+            {% endfor %}
+          </select>
           <button type="submit" class="start">Save</button>
           <button type="button" class="button-secondary" data-edit-cancel="{{ item.id }}">Cancel</button>
         </form>
