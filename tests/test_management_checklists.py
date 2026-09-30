@@ -24,7 +24,7 @@ def _item(session, *, label, types=(DUMP,), position=1, is_active=True):
 
 def _group(page, key):
     """One type's list (key = RequestType value), or "unassigned"."""
-    match = re.search(rf'<ol class="checklist-list" data-group="{key}">.*?</ol>', page, re.S)
+    match = re.search(rf'<ol class="checklist-list" data-group="{key}"[^>]*>.*?</ol>', page, re.S)
     assert match, f"no group {key}"
     return match.group(0)
 
@@ -420,3 +420,22 @@ def test_every_type_group_is_labelled_so_terms_never_look_like_another_types(web
         assert head, f"{request_type.value} group has no header"
         assert f"badge-type-{request_type.value}" in head.group(0)
     assert "1 active" in _group(page, "db_dump_restore")
+
+
+def test_all_view_does_not_pin_empty_types_at_the_top(web):
+    # Regression: under "All", Standard's empty "No terms" row sat first, so the All
+    # view opened looking like the Standard filter. Empty types start hidden and are
+    # named once in a note below the list instead.
+    client, session = web
+    _seed_users(session)
+    _item(session, label="Close cronjobs", types=(DUMP,))
+    login_as(client, "mgr")
+
+    page = client.get("/management/checklists").text
+
+    assert re.search(r'<ol class="checklist-list" data-group="standard" data-empty hidden>', page)
+    assert re.search(r'<ol class="checklist-list" data-group="test_local" data-empty hidden>', page)
+    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore">', page)
+    note = re.search(r'<p class="checklist-empty-note"[^>]*>.*?</p>', page, re.S).group(0)
+    assert "Standard Deployment" in note and "Test.local Deployment" in note
+    assert "Database Dump" not in note

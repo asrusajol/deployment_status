@@ -98,7 +98,9 @@
 
   <div class="checklist-panel">
     {% for request_type, rows in sections %}
-      <ol class="checklist-list" data-group="{{ request_type.value }}">
+      {# An empty type starts hidden: in "All" it would sit pinned above the real terms
+         and make All look like that type's filter. Its chip still shows it. #}
+      <ol class="checklist-list" data-group="{{ request_type.value }}"{% if not rows %} data-empty hidden{% endif %}>
         <li class="checklist-group-head">
           <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
           <span class="muted">{% if rows %}{{ rows | length }} active{% else %}No terms — Start Deployment is one click.{% endif %}</span>
@@ -117,6 +119,15 @@
       </ol>
     {% endif %}
   </div>
+
+  {% set empty_types = sections | selectattr(1, "equalto", []) | map(attribute=0) | list %}
+  {% if empty_types %}
+    <p class="checklist-empty-note" data-empty-note>
+      No terms yet:
+      {% for request_type in empty_types %}{{ type_labels[request_type] }}{% if not loop.last %} · {% endif %}{% endfor %}
+      — Start Deployment is one click for these.
+    </p>
+  {% endif %}
 
   {% if retired %}
     <details class="checklist-retired">
@@ -164,8 +175,10 @@
           var type = chip.getAttribute("data-checklist-filter");
           chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
           document.querySelectorAll(".checklist-panel .checklist-list").forEach(function (list) {
-            list.hidden = type !== "all" && list.getAttribute("data-group") !== type;
+            list.hidden = type === "all" ? list.hasAttribute("data-empty") : list.getAttribute("data-group") !== type;
           });
+          var note = document.querySelector("[data-empty-note]");
+          if (note) note.hidden = type !== "all";
         });
       });
     })();

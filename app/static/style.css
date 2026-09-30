@@ -1549,7 +1549,9 @@ code {
   font-size: 0.8rem;
   cursor: pointer;
 }
-.filter-chip:hover { color: var(--paper); }
+/* Hover only firms up the border — changing the text colour made a hovered chip look
+   selected next to the real one. */
+.filter-chip:not(.is-active):hover { border-color: var(--fog); }
 .filter-chip.is-active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
 
 .checklist-panel, .checklist-retired {
@@ -1604,6 +1606,8 @@ code {
 .text-action.is-danger { color: var(--red); border-color: var(--red-dim); }
 .text-action.is-danger:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
 
+.checklist-empty-note { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--fog); }
+.checklist-empty-note[hidden] { display: none; }
 .checklist-retired { margin-top: 1rem; }
 .checklist-retired summary {
   padding: 0.7rem 1.1rem;
