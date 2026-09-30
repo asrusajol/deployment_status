@@ -48,7 +48,6 @@ from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
 from app.models.deployment_execution import DeploymentExecution, ExecutionStatus
 from app.models.deployment_request import (
-    DB_DUMP_START_CHECKLIST,
     DeploymentEnvironment,
     DeploymentRequest,
     RequestStatus,
@@ -57,6 +56,7 @@ from app.models.deployment_request import (
 )
 from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
+from app.services.checklists import ChecklistIncomplete, active_items_by_type, record_start_confirmations
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
 from app.services.release_tracker import current_version_for, record_client_deploy
@@ -832,7 +832,8 @@ def list_requests(
             "RequestStatus": RequestStatus,
             "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
             "RequestType": RequestType,
-            "db_dump_start_checklist": DB_DUMP_START_CHECKLIST,
+            # Only deployers get Start buttons, so only they need the pop-ups.
+            "start_checklists": active_items_by_type(db) if can_deploy else {},
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,
@@ -1061,8 +1062,8 @@ def start_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
-    # Only required for db_dump_restore — see DB_DUMP_START_CHECKLIST. Form([]), not
-    # Form(...), so the plain Start button on every other request type still works.
+    # Ids of the checklist terms ticked in the Start pop-up (app/services/checklists.py).
+    # Form([]), not Form(...): a type with no active terms has no pop-up and posts nothing.
     checklist: list[str] = Form([]),
 ):
     """The first half of execution tracking (project_plan.md Section 4/Phase 2, previously
@@ -1074,17 +1075,17 @@ def start_request(
     if deployment_request.status != RequestStatus.approved:
         raise HTTPException(status_code=409, detail="Request is not pending deployment")
 
-    # After the permission and status checks so a rejected attempt says the same thing
-    # it always did, and before the execution row exists so it leaves nothing behind.
-    if deployment_request.request_type == RequestType.db_dump_restore:
-        missing = [label for item_id, label in DB_DUMP_START_CHECKLIST if item_id not in checklist]
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail="Complete the DB dump checklist first: " + "; ".join(missing),
-            )
-
     now = datetime.now(timezone.utc)
+    # After the permission and status checks so a rejected attempt says what it always
+    # did; before the execution row so a 400 leaves nothing behind.
+    try:
+        record_start_confirmations(db, deployment_request, checklist, current_user, now)
+    except ChecklistIncomplete as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="The checklist for this request is incomplete or has changed — reload and confirm: "
+            + "; ".join(item.label for item in exc.missing),
+        )
     db.add(
         DeploymentExecution(
             request_id=request_id,

@@ -142,22 +142,24 @@
     </form>
   </dialog>
 
-  <dialog id="start-checklist-modal" class="changes-modal">
-    <h2>Before you start this DB dump</h2>
-    <form method="post" id="start-checklist-form" class="form">
-      <p class="hint">Every item is required. The restored data carries the source system's schedules and email settings.</p>
-      {% for item_id, label in db_dump_start_checklist %}
-        <label class="checklist-item">
-          <input type="checkbox" name="checklist" value="{{ item_id }}">
-          <span>{{ label }}</span>
-        </label>
-      {% endfor %}
-      <div class="changes-modal-actions">
-        <button type="submit" class="start" id="start-checklist-submit" disabled>Start Deployment</button>
-        <button type="button" class="button-secondary" id="start-checklist-cancel">Cancel</button>
-      </div>
-    </form>
-  </dialog>
+  {% for checklist_type, checklist_items in start_checklists.items() %}
+    <dialog id="start-checklist-modal-{{ checklist_type.value }}" class="changes-modal" data-start-checklist>
+      <h2>Before you start this {{ request_type_labels[checklist_type] }}</h2>
+      <form method="post" class="form">
+        <p class="hint">Every item is required.</p>
+        {% for item in checklist_items %}
+          <label class="checklist-item">
+            <input type="checkbox" name="checklist" value="{{ item.id }}">
+            <span>{{ item.label }}</span>
+          </label>
+        {% endfor %}
+        <div class="changes-modal-actions">
+          <button type="submit" class="start" disabled>Start Deployment</button>
+          <button type="button" class="button-secondary" data-start-checklist-cancel>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  {% endfor %}
 
   <dialog id="return-modal" class="changes-modal">
     <h2>Return to requester</h2>
@@ -430,33 +432,37 @@
         });
       }
 
-      // --- DB dump pre-flight checklist ----------------------------------------------
-      // Same shape as the Return dialog below: the button's data attribute is the single
-      // source of truth for the action URL, one dialog reused across every row. Start
-      // stays disabled until every box is ticked; start_request() enforces the same list
-      // server-side, so this only keeps a person from submitting something doomed.
+      // --- Start checklist pop-ups -----------------------------------------------------
+      // One dialog per request type that has active terms. The row button names its type
+      // and carries the action URL; Start stays disabled until every box is ticked.
+      // start_request() enforces the same list server-side, so this only stops a person
+      // submitting something doomed.
       (function () {
-        var startModal = document.getElementById("start-checklist-modal");
-        var startForm = document.getElementById("start-checklist-form");
-        var startSubmit = document.getElementById("start-checklist-submit");
-        var boxes = startForm.querySelectorAll('input[name="checklist"]');
-        function syncStartSubmit() {
-          startSubmit.disabled = !Array.prototype.every.call(boxes, function (box) { return box.checked; });
-        }
-        boxes.forEach(function (box) { box.addEventListener("change", syncStartSubmit); });
-        document.querySelectorAll("[data-start-action]").forEach(function (button) {
-          button.addEventListener("click", function () {
-            startForm.action = button.getAttribute("data-start-action");
-            startForm.reset();
-            syncStartSubmit();
-            startModal.showModal();
+        document.querySelectorAll("dialog[data-start-checklist]").forEach(function (modal) {
+          var submit = modal.querySelector('button[type="submit"]');
+          var boxes = modal.querySelectorAll('input[name="checklist"]');
+          boxes.forEach(function (box) {
+            box.addEventListener("change", function () {
+              submit.disabled = !Array.prototype.every.call(boxes, function (b) { return b.checked; });
+            });
+          });
+          modal.querySelector("[data-start-checklist-cancel]").addEventListener("click", function () {
+            modal.close();
+          });
+          modal.addEventListener("click", function (event) {
+            if (event.target === modal) modal.close();
           });
         });
-        document.getElementById("start-checklist-cancel").addEventListener("click", function () {
-          startModal.close();
-        });
-        startModal.addEventListener("click", function (event) {
-          if (event.target === startModal) startModal.close();
+        document.querySelectorAll("[data-start-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var modal = document.getElementById("start-checklist-modal-" + button.getAttribute("data-checklist-type"));
+            if (!modal) return;
+            var form = modal.querySelector("form");
+            form.action = button.getAttribute("data-start-action");
+            form.reset();
+            form.querySelector('button[type="submit"]').disabled = true;
+            modal.showModal();
+          });
         });
       })();
 

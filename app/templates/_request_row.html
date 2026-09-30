@@ -192,13 +192,14 @@
                 {% endif %}
               {% elif r.status == RequestStatus.approved %}
                 {% if can_deploy %}
-                  {# A DB dump can't be started with one click: the pre-flight checklist
-                     pop-up (request_list.html) collects the confirmations, and the route
-                     re-checks them — this button alone is not the gate. #}
-                  {% if r.request_type == RequestType.db_dump_restore %}
+                  {# A type with active checklist terms can't be started with one click:
+                     its pop-up (request_list.html) collects the confirmations, and
+                     start_request() re-checks them — this button alone is not the gate. #}
+                  {% if start_checklists.get(r.request_type) %}
                     <button
                       type="button" class="start"
                       data-start-action="/requests/{{ r.id }}/start"
+                      data-checklist-type="{{ r.request_type.value }}"
                     >Start Deployment</button>
                   {% else %}
                     <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
