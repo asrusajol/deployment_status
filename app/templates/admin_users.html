@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Admin — Users — Deployment Tracker{% endblock %}
 {% block content %}
+  <p><a href="/management" class="back-link">← Management</a></p>
   <h1>Users</h1>
   <p class="subtitle">Grant/reset login access and manage roles. Every user here comes from the CRM sync — this page never creates a new person, only enables/changes access for one that already exists.</p>
 
@@ -18,6 +19,7 @@
         <th>Login Access</th>
         <th>Grant / Reset Password</th>
         <th>Show others' returns</th>
+        <th>Management access</th>
       </tr>
     </thead>
     <tbody>
@@ -69,6 +71,18 @@
             </form>
           {% else %}
             <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.role.value == "admin" %}
+            <span class="muted">Always</span>
+          {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/set-management-access" class="inline-form">
+              <label>
+                <input type="checkbox" name="can_access_management" {% if u.can_access_management %}checked{% endif %}>
+              </label>
+              <button type="submit">Save</button>
+            </form>
           {% endif %}
         </td>
       </tr>

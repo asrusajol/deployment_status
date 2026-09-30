@@ -82,6 +82,23 @@ def require_admin_or_devops(current_user: User = Depends(require_login)) -> User
 require_devops = require_admin_or_devops
 
 
+def can_access_management(user: User) -> bool:
+    """Admins always; anyone else only with the per-user switch (User.can_access_management)."""
+    return user.role == UserRole.admin or user.can_access_management
+
+
+def require_management(current_user: User = Depends(require_login)) -> User:
+    if not can_access_management(current_user):
+        raise HTTPException(status_code=403, detail="Management access required")
+    return current_user
+
+
+def can_view_checklist_audit(user: User) -> bool:
+    """Admins always; anyone else only with the per-user switch. Deliberately not tied to
+    role or deploy-team membership — the audit is granted, not inherited."""
+    return user.role == UserRole.admin or user.can_view_checklist_audit
+
+
 def _is_deploy_team_member(user: User, settings: Settings) -> bool:
     # The whole app is already scoped to this one team's deploy tasks (deployable-tasks
     # only ever pulls hall/machine-group task_api_deployable_hall_id /

@@ -102,6 +102,21 @@ def set_return_override(
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+@router.post("/users/{user_id}/set-management-access")
+def set_management_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    # Absent from the POST body when unchecked — same parsing as set_return_override.
+    can_access_management: bool = Form(False),
+):
+    """Grants or revokes the Management tab (User.can_access_management)."""
+    user = _get_user_or_404(db, user_id)
+    user.can_access_management = can_access_management
+    db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
 def _rerender_with_error(request: Request, db: Session, admin: User, error: str):
     users = db.query(User).order_by(User.name).all()
     return templates.TemplateResponse(

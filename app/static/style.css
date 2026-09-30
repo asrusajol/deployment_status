@@ -1450,3 +1450,25 @@ code {
 
 .inline-form button.return:hover,
 .actions-inner > button.return:hover { background: var(--amber-dim); }
+
+/* Management hub (management.html): one card per tool, only the ones the viewer may open. */
+.management-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+.management-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--paper);
+  text-decoration: none;
+}
+.management-card:hover { border-color: var(--teal); }
+.management-card-title { font-family: var(--font-display); font-weight: 600; }
+.management-card-text { font-size: 0.85rem; color: var(--fog); }
