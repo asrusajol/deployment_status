@@ -1484,8 +1484,23 @@ code {
 .checklist-section h2 { margin: 0 0 0.75rem; font-family: var(--font-display); font-size: 1rem; }
 .checklist-table { margin-bottom: 0.75rem; }
 .checklist-table tr.is-retired .checklist-label { color: var(--fog-dim); }
+/* Same look as .inline-form select — these inputs sit in an .inline-form, not a .form,
+   so without this they rendered as white browser defaults on the dark panel. */
 .checklist-edit input[type="text"],
-.checklist-add input[type="text"] { width: min(520px, 100%); }
+.checklist-add input[type="text"] {
+  width: min(520px, 100%);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  font-family: var(--font-body);
+  border-radius: 5px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-raised);
+  color: var(--paper);
+}
+.checklist-edit input[type="text"]::placeholder,
+.checklist-add input[type="text"]::placeholder { color: var(--fog-dim); }
+.checklist-edit input[type="text"]:focus,
+.checklist-add input[type="text"]:focus { outline: none; border-color: var(--teal); }
 .checklist-actions { white-space: nowrap; }
 
 /* Checklist audit dialog: the terms confirmed at one start. */
