@@ -1,58 +1,146 @@
 {% extends "base.html" %}
 {% block title %}Checklists — Management — Deployment Tracker{% endblock %}
+
+{# One term's row. `number` is its place within its own type — the order DevOps sees in
+   that type's Start pop-up. Admin controls sit beside the text; the edit form stays
+   hidden until ✎ opens it, so the list reads as a list rather than a wall of inputs. #}
+{% macro term_row(item, number) %}
+  <li class="checklist-term{% if not item.is_active %} is-retired{% endif %}" data-item-id="{{ item.id }}" data-request-type="{{ item.request_type.value }}">
+    <span class="checklist-num">{{ number }}</span>
+    <div class="checklist-body">
+      <span class="checklist-text">{{ item.label }}</span>
+      {% if is_admin %}
+        <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit" hidden>
+          <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
+          <button type="submit" class="start">Save</button>
+          <button type="button" class="button-secondary" data-edit-cancel="{{ item.id }}">Cancel</button>
+        </form>
+      {% endif %}
+      <span class="badge badge-type-{{ item.request_type.value }}">{{ type_labels[item.request_type] }}</span>
+    </div>
+    {% if is_admin %}
+      <div class="checklist-actions">
+        {% if item.is_active %}
+          <button type="button" class="icon-action" title="Edit wording" data-edit-toggle="{{ item.id }}">✎</button>
+          <form method="post" action="/management/checklists/{{ item.id }}/move">
+            <button type="submit" name="direction" value="up" class="icon-action" title="Move up">↑</button>
+            <button type="submit" name="direction" value="down" class="icon-action" title="Move down">↓</button>
+          </form>
+          <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
+            <button type="submit" class="text-action is-danger">Retire</button>
+          </form>
+        {% else %}
+          <form method="post" action="/management/checklists/{{ item.id }}/activate">
+            <button type="submit" class="text-action">Restore</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  </li>
+{% endmacro %}
+
 {% block content %}
   <p><a href="/management" class="back-link">← Management</a></p>
-  <h1>Checklists</h1>
-  <p class="subtitle">Terms DevOps must tick before Start Deployment, per request type. A type with no active terms starts with one click.</p>
+  <div class="checklist-head">
+    <div>
+      <h1>Checklists</h1>
+      <p class="subtitle">Terms DevOps must tick before Start Deployment. A request type with no active terms starts with one click.</p>
+    </div>
+    <button type="button" class="start" id="checklist-add-toggle">+ Add term</button>
+  </div>
 
-  {% for request_type, type_label, items in sections %}
-    <section class="checklist-section" data-request-type="{{ request_type.value }}">
-      <h2>{{ type_label }}</h2>
-      {% if items %}
-        <table class="status-table checklist-table">
-          <tbody>
-            {% for item in items %}
-              <tr data-item-id="{{ item.id }}" {% if not item.is_active %}class="is-retired"{% endif %}>
-                <td class="checklist-label">
-                  {% if is_admin %}
-                    <form method="post" action="/management/checklists/{{ item.id }}/edit" class="inline-form checklist-edit">
-                      <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
-                      <button type="submit">Save</button>
-                    </form>
-                  {% else %}
-                    {{ item.label }}
-                  {% endif %}
-                  {% if not item.is_active %}<span class="status status-withdrawn">Retired</span>{% endif %}
-                </td>
-                {% if is_admin %}
-                  <td class="checklist-actions">
-                    <form method="post" action="/management/checklists/{{ item.id }}/move" class="inline-form">
-                      <button type="submit" name="direction" value="up" class="button-secondary" title="Move up">↑</button>
-                      <button type="submit" name="direction" value="down" class="button-secondary" title="Move down">↓</button>
-                    </form>
-                    {% if item.is_active %}
-                      <form method="post" action="/management/checklists/{{ item.id }}/deactivate" class="inline-form">
-                        <button type="submit" class="reject">Retire</button>
-                      </form>
-                    {% else %}
-                      <form method="post" action="/management/checklists/{{ item.id }}/activate" class="inline-form">
-                        <button type="submit" class="approve">Restore</button>
-                      </form>
-                    {% endif %}
-                  </td>
-                {% endif %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="muted">No terms — Start Deployment is one click for this type.</p>
-      {% endif %}
-      <form method="post" action="/management/checklists" class="inline-form checklist-add">
-        <input type="hidden" name="request_type" value="{{ request_type.value }}">
-        <input type="text" name="label" placeholder="New term" maxlength="500" required>
-        <button type="submit" class="start">Add term</button>
-      </form>
-    </section>
-  {% endfor %}
+  <form method="post" action="/management/checklists" class="checklist-add" id="checklist-add-form" hidden>
+    <label class="checklist-add-field">
+      <span class="cell-label">Term</span>
+      <input type="text" name="label" maxlength="500" required placeholder="e.g. Snapshot the target database">
+    </label>
+    <label class="checklist-add-field checklist-add-type">
+      <span class="cell-label">Request type</span>
+      <select name="request_type">
+        {% for request_type, _items in sections %}
+          <option value="{{ request_type.value }}">{{ type_labels[request_type] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="checklist-add-actions">
+      <button type="submit" class="start">Add</button>
+      <button type="button" class="button-secondary" id="checklist-add-cancel">Cancel</button>
+    </div>
+  </form>
+
+  {# Filters only the view in this browser — no request, no state. #}
+  <div class="checklist-filter" role="group" aria-label="Filter by request type">
+    <button type="button" class="filter-chip is-active" data-checklist-filter="all">All</button>
+    {% for request_type, _items in sections %}
+      <button type="button" class="filter-chip" data-checklist-filter="{{ request_type.value }}">{{ type_labels[request_type] }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="checklist-panel">
+    {% for request_type, items in sections %}
+      <ol class="checklist-list" data-request-type="{{ request_type.value }}">
+        {% for item in items %}
+          {{ term_row(item, loop.index) }}
+        {% else %}
+          <li class="checklist-empty" data-request-type="{{ request_type.value }}">
+            <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
+            <span class="muted">No terms — Start Deployment is one click.</span>
+          </li>
+        {% endfor %}
+      </ol>
+    {% endfor %}
+  </div>
+
+  {% if retired %}
+    <details class="checklist-retired">
+      <summary>Retired ({{ retired | length }})</summary>
+      <ol class="checklist-list">
+        {% for item in retired %}
+          {{ term_row(item, "–") }}
+        {% endfor %}
+      </ol>
+    </details>
+  {% endif %}
+
+  <script>
+    (function () {
+      var addForm = document.getElementById("checklist-add-form");
+      document.getElementById("checklist-add-toggle").addEventListener("click", function () {
+        addForm.hidden = false;
+        addForm.querySelector('input[name="label"]').focus();
+      });
+      document.getElementById("checklist-add-cancel").addEventListener("click", function () {
+        addForm.reset();
+        addForm.hidden = true;
+      });
+
+      // ✎ swaps a term's text for its edit form; Cancel swaps back.
+      function setEditing(id, editing) {
+        var row = document.querySelector('.checklist-term[data-item-id="' + id + '"]');
+        if (!row) return;
+        var form = row.querySelector(".checklist-edit");
+        form.hidden = !editing;
+        row.querySelector(".checklist-text").hidden = editing;
+        if (editing) form.querySelector('input[name="label"]').focus();
+        else form.reset();
+      }
+      document.querySelectorAll("[data-edit-toggle]").forEach(function (button) {
+        button.addEventListener("click", function () { setEditing(button.getAttribute("data-edit-toggle"), true); });
+      });
+      document.querySelectorAll("[data-edit-cancel]").forEach(function (button) {
+        button.addEventListener("click", function () { setEditing(button.getAttribute("data-edit-cancel"), false); });
+      });
+
+      var chips = document.querySelectorAll("[data-checklist-filter]");
+      chips.forEach(function (chip) {
+        chip.addEventListener("click", function () {
+          var type = chip.getAttribute("data-checklist-filter");
+          chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
+          document.querySelectorAll(".checklist-panel .checklist-list").forEach(function (list) {
+            list.hidden = type !== "all" && list.getAttribute("data-request-type") !== type;
+          });
+        });
+      });
+    })();
+  </script>
 {% endblock %}

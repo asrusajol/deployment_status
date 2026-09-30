@@ -65,13 +65,22 @@ def list_checklists(request: Request, db: Session = Depends(get_db), current_use
     # Grouped in Python, in RequestType declaration order: Postgres sorts an enum column
     # by declaration and SQLite by string, so ORDER BY request_type would differ by DB.
     sections = [
-        (request_type, REQUEST_TYPE_LABELS[request_type], [i for i in items if i.request_type == request_type])
+        (request_type, [i for i in items if i.request_type == request_type and i.is_active])
         for request_type in RequestType
     ]
+    # Retired terms are folded away below the list rather than mixed into it — they no
+    # longer gate anything, and interleaved they read as live steps.
+    retired = [i for request_type in RequestType for i in items if i.request_type == request_type and not i.is_active]
     return templates.TemplateResponse(
         request,
         "management_checklists.html",
-        {"current_user": current_user, "sections": sections, "is_admin": current_user.role == UserRole.admin},
+        {
+            "current_user": current_user,
+            "sections": sections,
+            "retired": retired,
+            "type_labels": REQUEST_TYPE_LABELS,
+            "is_admin": current_user.role == UserRole.admin,
+        },
     )
 
 

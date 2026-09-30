@@ -25,15 +25,22 @@ def _item(session, *, request_type=RequestType.db_dump_restore, label, position,
     return item
 
 
-def _section(page, request_type):
-    match = re.search(rf'<section class="checklist-section" data-request-type="{request_type.value}">.*?</section>', page, re.S)
-    assert match, f"no section for {request_type.value}"
+def _row(page, item_id):
+    """One term's <li> — scoped so assertions can't match another term's controls."""
+    match = re.search(rf'<li class="checklist-term[^"]*" data-item-id="{item_id}".*?</li>', page, re.S)
+    assert match, f"no row for item {item_id}"
     return match.group(0)
 
 
-def _row(page, item_id):
-    match = re.search(rf'<tr data-item-id="{item_id}".*?</tr>', page, re.S)
-    assert match, f"no row for item {item_id}"
+def _retired_fold(page):
+    match = re.search(r'<details class="checklist-retired">.*?</details>', page, re.S)
+    assert match, "retired fold missing"
+    return match.group(0)
+
+
+def _add_form(page):
+    match = re.search(r'<form[^>]*class="checklist-add"[^>]*>.*?</form>', page, re.S)
+    assert match, "add form missing"
     return match.group(0)
 
 
@@ -61,9 +68,54 @@ def test_page_groups_terms_by_request_type(web):
 
     page = client.get("/management/checklists").text
 
-    assert f'data-item-id="{dump.id}"' in _section(page, RequestType.db_dump_restore)
-    assert f'data-item-id="{local.id}"' in _section(page, RequestType.test_local)
-    assert "data-item-id" not in _section(page, RequestType.standard)
+    dump_row, local_row = _row(page, dump.id), _row(page, local.id)
+    assert 'data-request-type="db_dump_restore"' in dump_row
+    assert "badge-type-db_dump_restore" in dump_row
+    assert 'data-request-type="test_local"' in local_row
+    assert "badge-type-test_local" in local_row
+    # Grouped by type in RequestType order: db_dump_restore is declared before test_local.
+    assert page.index(f'data-item-id="{dump.id}"') < page.index(f'data-item-id="{local.id}"')
+
+
+def test_add_form_picks_exactly_one_type(web):
+    # One type per term (decision D2) — a picker, never "applies to" checkboxes.
+    client, session = web
+    _seed_users(session)
+    login_as(client, "mgr")
+
+    form = _add_form(client.get("/management/checklists").text)
+
+    assert '<select name="request_type"' in form
+    for request_type in RequestType:
+        assert f'<option value="{request_type.value}"' in form
+    assert 'type="checkbox"' not in form
+
+
+def test_edit_form_stays_hidden_until_opened(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", position=1)
+    login_as(client, "root")
+
+    row = _row(client.get("/management/checklists").text, item.id)
+
+    assert re.search(r'<form[^>]*action="/management/checklists/\d+/edit"[^>]*\bhidden\b', row)
+    assert f'data-edit-toggle="{item.id}"' in row
+
+
+def test_retired_terms_are_folded_away(web):
+    client, session = web
+    _seed_users(session)
+    active = _item(session, label="Close cronjobs", position=1)
+    retired = _item(session, label="Old step", position=2, is_active=False)
+    login_as(client, "mgr")
+
+    page = client.get("/management/checklists").text
+
+    fold = _retired_fold(page)
+    assert f'data-item-id="{retired.id}"' in fold
+    assert f'data-item-id="{active.id}"' not in fold
+    assert "Retired (1)" in fold
 
 
 def test_management_user_adds_term_at_end_of_its_type(web):
@@ -181,7 +233,7 @@ def test_admin_retires_and_restores_term(web):
     client.post(f"/management/checklists/{item.id}/deactivate")
     session.refresh(item)
     assert item.is_active is False
-    assert "Retired" in _row(client.get("/management/checklists").text, item.id)
+    assert f'data-item-id="{item.id}"' in _retired_fold(client.get("/management/checklists").text)
 
     client.post(f"/management/checklists/{item.id}/activate")
     session.refresh(item)

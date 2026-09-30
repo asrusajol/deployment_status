@@ -1473,35 +1473,149 @@ code {
 .management-card-title { font-family: var(--font-display); font-weight: 600; }
 .management-card-text { font-size: 0.85rem; color: var(--fog); }
 
-/* Checklists page (management_checklists.html): one panel per request type. */
-.checklist-section {
-  margin: 1.25rem 0;
+/* Checklists page (management_checklists.html): one list of terms grouped by type,
+   each row the wording + its type badge, with admin controls beside it. */
+.checklist-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.checklist-head .subtitle { margin-bottom: 0; }
+
+.checklist-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
   padding: 1rem 1.1rem;
   background: var(--panel);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--teal);
   border-radius: var(--radius);
 }
-.checklist-section h2 { margin: 0 0 0.75rem; font-family: var(--font-display); font-size: 1rem; }
-.checklist-table { margin-bottom: 0.75rem; }
-.checklist-table tr.is-retired .checklist-label { color: var(--fog-dim); }
-/* Same look as .inline-form select — these inputs sit in an .inline-form, not a .form,
-   so without this they rendered as white browser defaults on the dark panel. */
-.checklist-edit input[type="text"],
-.checklist-add input[type="text"] {
-  width: min(520px, 100%);
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
+.checklist-add[hidden] { display: none; }
+.checklist-add-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1 1 320px; }
+.checklist-add-type { flex: 0 1 240px; }
+.checklist-add-actions { display: flex; gap: 0.5rem; }
+
+.checklist-add input[type="text"],
+.checklist-add select,
+.checklist-edit input[type="text"] {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
   font-family: var(--font-body);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--hairline-strong);
   background: var(--panel-raised);
   color: var(--paper);
 }
-.checklist-edit input[type="text"]::placeholder,
-.checklist-add input[type="text"]::placeholder { color: var(--fog-dim); }
-.checklist-edit input[type="text"]:focus,
-.checklist-add input[type="text"]:focus { outline: none; border-color: var(--teal); }
-.checklist-actions { white-space: nowrap; }
+.checklist-add input::placeholder { color: var(--fog-dim); }
+.checklist-add input:focus, .checklist-add select:focus,
+.checklist-edit input:focus { outline: none; border-color: var(--teal); }
+
+/* Primary buttons only — .button-secondary (Cancel) keeps its own outlined style;
+   including it here stripped its border and left it as bare text. */
+.checklist-add button:not(.button-secondary), .checklist-edit button:not(.button-secondary) {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.checklist-add button.start, .checklist-edit button.start,
+.checklist-head button.start {
+  background: var(--teal);
+  color: var(--ink);
+}
+.checklist-head button.start {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checklist-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0.75rem; }
+.filter-chip {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.filter-chip:hover { color: var(--paper); }
+.filter-chip.is-active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+
+.checklist-panel, .checklist-retired {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+.checklist-list { list-style: none; margin: 0; padding: 0; }
+.checklist-list[hidden] { display: none; }
+.checklist-panel .checklist-list + .checklist-list { border-top: 1px solid var(--hairline-strong); }
+
+.checklist-term, .checklist-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--hairline);
+}
+.checklist-list > li:first-child { border-top: none; }
+.checklist-empty { align-items: center; gap: 0.6rem; font-size: 0.88rem; }
+
+.checklist-num {
+  flex: none;
+  width: 1.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fog-dim);
+  padding-top: 0.1rem;
+}
+.checklist-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+.checklist-text { color: var(--paper); font-size: 0.92rem; line-height: 1.45; }
+.checklist-term.is-retired .checklist-text { color: var(--fog-dim); text-decoration: line-through; }
+.checklist-edit { display: flex; flex-wrap: wrap; gap: 0.4rem; width: 100%; }
+.checklist-edit[hidden] { display: none; }
+.checklist-edit input[type="text"] { flex: 1 1 320px; width: auto; }
+
+.checklist-actions { flex: none; display: flex; align-items: center; gap: 0.3rem; }
+.checklist-actions form { display: flex; gap: 0.3rem; margin: 0; }
+.icon-action, .text-action {
+  height: 1.9rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.icon-action { width: 1.9rem; padding: 0; }
+.text-action { padding: 0 0.65rem; font-weight: 600; }
+.icon-action:hover, .text-action:hover { border-color: var(--teal); color: var(--teal); }
+.text-action.is-danger { color: var(--red); border-color: var(--red-dim); }
+.text-action.is-danger:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+.checklist-retired { margin-top: 1rem; }
+.checklist-retired summary {
+  padding: 0.7rem 1.1rem;
+  color: var(--fog);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.checklist-retired[open] summary { border-bottom: 1px solid var(--hairline); }
+
+@media (max-width: 640px) {
+  .checklist-term { flex-wrap: wrap; }
+  .checklist-actions { width: 100%; padding-left: 2.45rem; }
+}
 
 /* Checklist audit dialog: the terms confirmed at one start. */
 .checklist-log-items {
