@@ -193,6 +193,13 @@ class DeploymentRequest(Base):
     returns = relationship(
         "RequestReturn", back_populates="request", order_by="RequestReturn.returned_at.desc()"
     )
+    # Newest first, for the audit dialog. The listing must eager-load this (and
+    # confirmer) — one lazy load per row is an N+1 across the queue.
+    checklist_confirmations = relationship(
+        "ChecklistConfirmation",
+        back_populates="request",
+        order_by="(ChecklistConfirmation.confirmed_at.desc(), ChecklistConfirmation.id)",
+    )
 
     @property
     def current_executor(self) -> "User | None":
