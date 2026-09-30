@@ -5,6 +5,7 @@ adds the DeploymentExecution row and commits once, so a start and its confirmati
 saved together or not at all.
 """
 
+import hashlib
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,14 @@ class ChecklistIncomplete(Exception):
     def __init__(self, missing: list[ChecklistItem]):
         super().__init__("checklist incomplete")
         self.missing = missing
+
+
+def checklist_token(item: ChecklistItem) -> str:
+    """The value a Start pop-up checkbox posts: the term id plus a fingerprint of the
+    wording shown. A term reworded while the pop-up was open no longer matches, so the
+    confirmation snapshot can only ever record wording the deployer actually saw."""
+    digest = hashlib.sha256(item.label.encode("utf-8")).hexdigest()[:16]
+    return f"{item.id}:{digest}"
 
 
 def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
@@ -40,14 +49,14 @@ def record_start_confirmations(
 ) -> None:
     """Adds one confirmation per required term, or raises ChecklistIncomplete.
 
-    Required is re-read here, not trusted from the page: a term added while the pop-up
-    was open must block the start. Submitted ids that aren't required (a term retired
-    meanwhile, junk) are ignored. Does not commit — the caller's commit covers this and
-    the execution row together.
+    Required is re-read here, not trusted from the page: a term added or reworded while
+    the pop-up was open must block the start (see checklist_token). Submitted values that
+    aren't required (a term retired meanwhile, junk) are ignored. Does not commit — the
+    caller's commit covers this and the execution row together.
     """
     required = active_items_by_type(db).get(deployment_request.request_type, [])
     submitted = set(submitted_ids)
-    missing = [item for item in required if str(item.id) not in submitted]
+    missing = [item for item in required if checklist_token(item) not in submitted]
     if missing:
         raise ChecklistIncomplete(missing)
     for item in required:

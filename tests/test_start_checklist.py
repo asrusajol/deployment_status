@@ -50,8 +50,12 @@ def _request(session, request_type=RequestType.db_dump_restore):
     return request
 
 
-def _ids(items):
-    return [str(i.id) for i in items]
+def _ids(client, items):
+    """The checkbox values the Start pop-ups actually render for these terms — read from
+    the page, so the tests submit exactly what a browser would."""
+    values = dict(re.findall(r'name="checklist" value="((\d+)[^"]*)"', client.get("/requests").text))
+    by_id = {int(item_id): value for value, item_id in values.items()}
+    return [by_id[item.id] for item in items]
 
 
 def _start(client, request, ids=None):
@@ -84,14 +88,14 @@ def test_start_without_checklist_is_rejected(dump):
 
 def test_start_with_partial_checklist_is_rejected(dump):
     client, session, items, request = dump
-    assert _start(client, request, _ids(items[:3])).status_code == 400
+    assert _start(client, request, _ids(client, items[:3])).status_code == 400
     _assert_nothing_written(session, request)
 
 
 def test_start_with_full_checklist_records_each_confirmation(dump):
     client, session, items, request = dump
 
-    assert _start(client, request, _ids(items)).status_code == 303
+    assert _start(client, request, _ids(client, items)).status_code == 303
 
     session.refresh(request)
     assert request.status == RequestStatus.in_progress
@@ -103,7 +107,7 @@ def test_start_with_full_checklist_records_each_confirmation(dump):
 
 def test_extra_unknown_ids_are_ignored(dump):
     client, session, items, request = dump
-    assert _start(client, request, _ids(items) + ["99999", "not-a-number"]).status_code == 303
+    assert _start(client, request, _ids(client, items) + ["99999", "not-a-number"]).status_code == 303
     assert session.query(ChecklistConfirmation).filter_by(request_id=request.id).count() == 4
 
 
@@ -112,13 +116,13 @@ def test_retired_term_is_not_required(dump):
     items[3].is_active = False
     session.commit()
 
-    assert _start(client, request, _ids(items[:3])).status_code == 303
+    assert _start(client, request, _ids(client, items[:3])).status_code == 303
     assert session.query(ChecklistConfirmation).filter_by(request_id=request.id).count() == 3
 
 
 def test_term_added_after_page_load_blocks_start(dump):
     client, session, items, request = dump
-    seen_on_page = _ids(items)
+    seen_on_page = _ids(client, items)
     _terms(session, labels=("Snapshot the target DB",))
 
     response = _start(client, request, seen_on_page)
@@ -158,19 +162,32 @@ def test_confirmations_survive_return_and_restart(web):
     request = _request(session, RequestType.test_local)
 
     login_as(client, "zunayed")
-    assert _start(client, request, _ids(items)).status_code == 303
+    assert _start(client, request, _ids(client, items)).status_code == 303
     assert client.post(f"/requests/{request.id}/return", data={"reason": "wrong branch"}, follow_redirects=False).status_code == 303
     login_as(client, "devone")
     assert client.post(f"/requests/{request.id}/resubmit", follow_redirects=False).status_code == 303
     login_as(client, "zunayed")
-    assert _start(client, request, _ids(items)).status_code == 303
+    assert _start(client, request, _ids(client, items)).status_code == 303
 
     assert session.query(ChecklistConfirmation).filter_by(request_id=request.id).count() == 2
 
 
+def test_term_reworded_after_page_load_blocks_start(dump):
+    # The audit must record wording the deployer actually saw: a term reworded while the
+    # pop-up was open is a changed checklist, same as one added.
+    client, session, items, request = dump
+    seen_on_page = _ids(client, items)
+    client.post(f"/management/checklists/{items[0].id}/edit", data={"label": "Close cronjobs and disable SMTP relay"})
+
+    response = _start(client, request, seen_on_page)
+
+    assert response.status_code == 400
+    _assert_nothing_written(session, request)
+
+
 def test_confirmation_keeps_label_snapshot_after_edit(dump):
     client, session, items, request = dump
-    _start(client, request, _ids(items))
+    _start(client, request, _ids(client, items))
 
     client.post(f"/management/checklists/{items[0].id}/edit", data={"label": "Reworded"})
 
@@ -210,8 +227,8 @@ def test_dialog_lists_active_terms_only(dump):
     dialog = _dialog_html(client.get("/requests").text, RequestType.db_dump_restore)
 
     for item in items[:3]:
-        assert f'name="checklist" value="{item.id}"' in dialog
-    assert f'value="{items[3].id}"' not in dialog
+        assert f'name="checklist" value="{item.id}:' in dialog
+    assert f'value="{items[3].id}:' not in dialog
 
 
 def test_row_without_terms_keeps_direct_start_and_no_dialog(web):

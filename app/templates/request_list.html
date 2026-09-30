@@ -149,7 +149,7 @@
         <p class="hint">Every item is required.</p>
         {% for item in checklist_items %}
           <label class="checklist-item">
-            <input type="checkbox" name="checklist" value="{{ item.id }}">
+            <input type="checkbox" name="checklist" value="{{ checklist_token(item) }}">
             <span>{{ item.label }}</span>
           </label>
         {% endfor %}

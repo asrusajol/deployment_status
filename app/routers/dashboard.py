@@ -58,7 +58,12 @@ from app.models.deployment_request import (
 )
 from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
-from app.services.checklists import ChecklistIncomplete, active_items_by_type, record_start_confirmations
+from app.services.checklists import (
+    ChecklistIncomplete,
+    active_items_by_type,
+    checklist_token,
+    record_start_confirmations,
+)
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
 from app.services.release_tracker import current_version_for, record_client_deploy
@@ -840,6 +845,7 @@ def list_requests(
             "RequestType": RequestType,
             # Only deployers get Start buttons, so only they need the pop-ups.
             "start_checklists": active_items_by_type(db) if can_deploy else {},
+            "checklist_token": checklist_token,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,
