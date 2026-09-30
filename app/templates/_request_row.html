@@ -142,14 +142,6 @@
                   title="{{ 'Why this was returned' if r.returns else 'Withdrawal note' }}"
                 >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
               {% endif %}
-              {# Gated here, not just hidden: without the grant the confirmations never
-                 reach this viewer's HTML (can_view_checklist_audit in app/auth.py). #}
-              {% if can_view_audit and r.checklist_confirmations %}
-                <button
-                  type="button" class="return-log-button is-muted" data-checklist-log="{{ r.id }}"
-                  title="Checklist confirmations"
-                >✓</button>
-              {% endif %}
             </div>
             {% if r.returns or r.withdrawn_note %}
               <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
@@ -283,6 +275,18 @@
               {% endif %}
               {% if can_edit_request(r) %}
                 <a href="/requests/{{ r.id }}/edit" class="action-link edit">Edit</a>
+              {% endif %}
+              {# In the Action cell, not beside the status: next to the return (i) in the
+                 fixed-width Status column it ran under this pinned column. Gated here, not
+                 just hidden — without the grant the confirmations never reach this viewer's
+                 HTML (can_view_checklist_audit in app/auth.py). #}
+              {% if can_view_audit and r.checklist_confirmations %}
+                <div class="action-audit">
+                  <button
+                    type="button" class="checklist-log-button" data-checklist-log="{{ r.id }}"
+                    title="Who confirmed the start checklist, and when"
+                  >✓ Checklist</button>
+                </div>
               {% endif %}
               {% if can_delete_request(r) %}
                 <form

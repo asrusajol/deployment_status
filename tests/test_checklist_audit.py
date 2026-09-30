@@ -85,3 +85,27 @@ def test_non_admin_cannot_toggle_audit_access(web):
     assert client.post("/admin/users/2/set-checklist-audit-access", data={}).status_code == 403
     session.expire_all()
     assert session.get(User, 2).can_view_checklist_audit is True
+
+
+def test_audit_button_lives_in_the_action_cell_not_the_status_cell(web):
+    # Regression: beside the return (i) in the fixed-width Status column, the audit mark
+    # ran under the pinned Action column. It belongs with the row's actions instead.
+    import re
+
+    from app.models.request_return import RequestReturn
+
+    client, session = web
+    request = _seed(session)
+    session.add(RequestReturn(request_id=request.id, reason="wrong branch", returned_by=1,
+                              returned_at=datetime(2026, 9, 2, 8, 0), returned_from=RequestStatus.in_progress))
+    session.commit()
+    login_as(client, "root")
+
+    page = client.get("/requests").text
+
+    status = re.search(r'<div class="status-cell">.*?</div>', page, re.S).group(0)
+    actions = re.search(r'<div class="actions-inner">.*?</td>', page, re.S).group(0)
+    assert f'data-return-log="{request.id}"' in status
+    assert "data-checklist-log" not in status
+    assert f'data-checklist-log="{request.id}"' in actions
+    assert "Checklist" in actions

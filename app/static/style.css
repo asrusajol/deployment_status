@@ -1617,16 +1617,6 @@ code {
 }
 .checklist-retired[open] summary { border-bottom: 1px solid var(--hairline); }
 
-/* Every type's list opens with its own labelled header, so in the All view a term can
-   never read as belonging to the group above it. */
-.checklist-group-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.65rem 1.1rem;
-  background: var(--panel-raised);
-  font-size: 0.85rem;
-}
 .checklist-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .checklist-chips[hidden], .checklist-text[hidden] { display: none; }
 
@@ -1660,3 +1650,21 @@ code {
   font-size: 0.88rem;
   line-height: 1.5;
 }
+
+
+/* "✓ Checklist" in the Action cell: an audit link, not an action, so it is quiet —
+   outlined, small — rather than a filled button like Start / Mark Deployed. Wrapped in
+   .action-audit so the `.actions-inner > button` fill doesn't apply. */
+.checklist-log-button {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.checklist-log-button:hover,
+.checklist-log-button:focus-visible { border-color: var(--teal); color: var(--teal); }

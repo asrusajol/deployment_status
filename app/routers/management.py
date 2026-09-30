@@ -115,7 +115,8 @@ def list_checklists(request: Request, db: Session = Depends(get_db), current_use
         {
             "current_user": current_user,
             "sections": sections,
-            "unassigned": [i for i in active if not i.types],
+            # The All view: every active term once, assigned or not, with all its types.
+            "all_items": active,
             # Retired terms are folded away below the list rather than mixed into it —
             # they no longer gate anything, and interleaved they read as live steps.
             "retired": [i for i in items if not i.is_active],

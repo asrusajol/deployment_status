@@ -119,13 +119,6 @@ def test_term_shows_under_every_type_it_is_assigned_to_with_all_its_chips(web):
     assert f'data-item-id="{shared.id}"' not in _group(page, "standard")
 
 
-def test_unassigned_term_is_listed_as_not_assigned(web):
-    client, session = web
-    _seed_users(session)
-    loose = _item(session, label="Snapshot DB", types=())
-    login_as(client, "mgr")
-
-    assert f'data-item-id="{loose.id}"' in _group(client.get("/management/checklists").text, "unassigned")
 
 
 def test_retired_terms_are_folded_away(web):
@@ -404,9 +397,49 @@ def test_link_rows_have_no_orphans_after_unassign(web):
     assert session.query(ChecklistItemType).count() == 0
 
 
-def test_every_type_group_is_labelled_so_terms_never_look_like_another_types(web):
-    # Regression: in the All view only an empty type showed a label, so DB Dump's terms
-    # sat directly under "Standard Deployment — No terms" and read as Standard's.
+
+
+
+
+def test_all_view_lists_each_term_once_with_all_its_types(web):
+    # Regression: the All view repeated a shared term under every type it belongs to,
+    # separated by per-type header rows — cluttered, and the same term twice.
+    client, session = web
+    _seed_users(session)
+    shared = _item(session, label="Close cronjobs", types=(STD, DUMP))
+    only_dump = _item(session, label="Restart workers", types=(DUMP,), position=2)
+    login_as(client, "root")
+
+    all_view = _group(client.get("/management/checklists").text, "all")
+
+    assert all_view.count(f'data-item-id="{shared.id}"') == 1
+    assert all_view.count(f'data-item-id="{only_dump.id}"') == 1
+    row = _row(all_view, shared.id)
+    assert "badge-type-standard" in row and "badge-type-db_dump_restore" in row
+    assert "checklist-group-head" not in all_view
+    # Order is per type, so ↑↓ belong to a type's own view, not the mixed list.
+    assert "/move" not in all_view
+    assert "data-edit-toggle" in row
+
+
+def test_type_view_shows_only_that_types_terms_in_its_order_with_move_controls(web):
+    client, session = web
+    _seed_users(session)
+    first = _item(session, label="A", types=(DUMP,), position=2)
+    second = _item(session, label="B", types=(DUMP, LOCAL), position=1)
+    _item(session, label="Only local", types=(LOCAL,), position=2)
+    login_as(client, "root")
+
+    page = client.get("/management/checklists").text
+    dump_view = _group(page, "db_dump_restore")
+
+    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore" hidden>', page)
+    assert dump_view.index(f'data-item-id="{second.id}"') < dump_view.index(f'data-item-id="{first.id}"')
+    assert "Only local" not in dump_view
+    assert "/move" in _row(dump_view, first.id)
+
+
+def test_empty_type_view_says_start_is_one_click(web):
     client, session = web
     _seed_users(session)
     _item(session, label="Close cronjobs", types=(DUMP,))
@@ -414,28 +447,20 @@ def test_every_type_group_is_labelled_so_terms_never_look_like_another_types(web
 
     page = client.get("/management/checklists").text
 
-    for request_type in RequestType:
-        group = _group(page, request_type.value)
-        head = re.search(r'<li class="checklist-group-head">.*?</li>', group, re.S)
-        assert head, f"{request_type.value} group has no header"
-        assert f"badge-type-{request_type.value}" in head.group(0)
-    assert "1 active" in _group(page, "db_dump_restore")
-
-
-def test_all_view_does_not_pin_empty_types_at_the_top(web):
-    # Regression: under "All", Standard's empty "No terms" row sat first, so the All
-    # view opened looking like the Standard filter. Empty types start hidden and are
-    # named once in a note below the list instead.
-    client, session = web
-    _seed_users(session)
-    _item(session, label="Close cronjobs", types=(DUMP,))
-    login_as(client, "mgr")
-
-    page = client.get("/management/checklists").text
-
-    assert re.search(r'<ol class="checklist-list" data-group="standard" data-empty hidden>', page)
-    assert re.search(r'<ol class="checklist-list" data-group="test_local" data-empty hidden>', page)
-    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore">', page)
+    assert "No terms" in _group(page, "standard")
     note = re.search(r'<p class="checklist-empty-note"[^>]*>.*?</p>', page, re.S).group(0)
     assert "Standard Deployment" in note and "Test.local Deployment" in note
     assert "Database Dump" not in note
+
+
+def test_unassigned_term_is_in_the_all_view_marked_not_assigned(web):
+    client, session = web
+    _seed_users(session)
+    loose = _item(session, label="Snapshot DB", types=())
+    login_as(client, "mgr")
+
+    page = client.get("/management/checklists").text
+
+    assert "Not assigned" in _row(_group(page, "all"), loose.id)
+    for request_type in RequestType:
+        assert f'data-item-id="{loose.id}"' not in _group(page, request_type.value)

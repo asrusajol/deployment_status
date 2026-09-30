@@ -97,27 +97,26 @@
   </div>
 
   <div class="checklist-panel">
+    {# All: each term once, with every type it applies to. Order is per type, so the
+       ↑↓ controls live only in a type's own view below. #}
+    <ol class="checklist-list" data-group="all">
+      {% for item in all_items %}
+        {{ term_row(item, loop.index, None) }}
+      {% else %}
+        <li class="checklist-empty"><span class="muted">No terms yet — use + Add term.</span></li>
+      {% endfor %}
+    </ol>
+    {# One type's view: its terms in its Start pop-up order, with ↑↓. Hidden until its
+       chip is picked. #}
     {% for request_type, rows in sections %}
-      {# An empty type starts hidden: in "All" it would sit pinned above the real terms
-         and make All look like that type's filter. Its chip still shows it. #}
-      <ol class="checklist-list" data-group="{{ request_type.value }}"{% if not rows %} data-empty hidden{% endif %}>
-        <li class="checklist-group-head">
-          <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
-          <span class="muted">{% if rows %}{{ rows | length }} active{% else %}No terms — Start Deployment is one click.{% endif %}</span>
-        </li>
+      <ol class="checklist-list" data-group="{{ request_type.value }}" hidden>
         {% for item, _position in rows %}
           {{ term_row(item, loop.index, request_type) }}
+        {% else %}
+          <li class="checklist-empty"><span class="muted">No terms — Start Deployment is one click for this type.</span></li>
         {% endfor %}
       </ol>
     {% endfor %}
-    {% if unassigned %}
-      <ol class="checklist-list" data-group="unassigned">
-        <li class="checklist-group-head"><span class="muted">Not assigned to any type — required nowhere until assigned.</span></li>
-        {% for item in unassigned %}
-          {{ term_row(item, "–", None) }}
-        {% endfor %}
-      </ol>
-    {% endif %}
   </div>
 
   {% set empty_types = sections | selectattr(1, "equalto", []) | map(attribute=0) | list %}
@@ -175,7 +174,7 @@
           var type = chip.getAttribute("data-checklist-filter");
           chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
           document.querySelectorAll(".checklist-panel .checklist-list").forEach(function (list) {
-            list.hidden = type === "all" ? list.hasAttribute("data-empty") : list.getAttribute("data-group") !== type;
+            list.hidden = list.getAttribute("data-group") !== type;
           });
           var note = document.querySelector("[data-empty-note]");
           if (note) note.hidden = type !== "all";
