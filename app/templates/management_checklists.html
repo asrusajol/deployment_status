@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Checklists — Management — Deployment Tracker{% endblock %}
+{% block content %}
+  <p><a href="/management" class="back-link">← Management</a></p>
+  <h1>Checklists</h1>
+  <p class="subtitle">Terms DevOps must tick before Start Deployment, per request type. A type with no active terms starts with one click.</p>
+
+  {% for request_type, type_label, items in sections %}
+    <section class="checklist-section" data-request-type="{{ request_type.value }}">
+      <h2>{{ type_label }}</h2>
+      {% if items %}
+        <table class="status-table checklist-table">
+          <tbody>
+            {% for item in items %}
+              <tr data-item-id="{{ item.id }}" {% if not item.is_active %}class="is-retired"{% endif %}>
+                <td class="checklist-label">
+                  {% if is_admin %}
+                    <form method="post" action="/management/checklists/{{ item.id }}/edit" class="inline-form checklist-edit">
+                      <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
+                      <button type="submit">Save</button>
+                    </form>
+                  {% else %}
+                    {{ item.label }}
+                  {% endif %}
+                  {% if not item.is_active %}<span class="status status-withdrawn">Retired</span>{% endif %}
+                </td>
+                {% if is_admin %}
+                  <td class="checklist-actions">
+                    <form method="post" action="/management/checklists/{{ item.id }}/move" class="inline-form">
+                      <button type="submit" name="direction" value="up" class="button-secondary" title="Move up">↑</button>
+                      <button type="submit" name="direction" value="down" class="button-secondary" title="Move down">↓</button>
+                    </form>
+                    {% if item.is_active %}
+                      <form method="post" action="/management/checklists/{{ item.id }}/deactivate" class="inline-form">
+                        <button type="submit" class="reject">Retire</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="/management/checklists/{{ item.id }}/activate" class="inline-form">
+                        <button type="submit" class="approve">Restore</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No terms — Start Deployment is one click for this type.</p>
+      {% endif %}
+      <form method="post" action="/management/checklists" class="inline-form checklist-add">
+        <input type="hidden" name="request_type" value="{{ request_type.value }}">
+        <input type="text" name="label" placeholder="New term" maxlength="500" required>
+        <button type="submit" class="start">Add term</button>
+      </form>
+    </section>
+  {% endfor %}
+{% endblock %}

@@ -1472,3 +1472,18 @@ code {
 .management-card:hover { border-color: var(--teal); }
 .management-card-title { font-family: var(--font-display); font-weight: 600; }
 .management-card-text { font-size: 0.85rem; color: var(--fog); }
+
+/* Checklists page (management_checklists.html): one panel per request type. */
+.checklist-section {
+  margin: 1.25rem 0;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+.checklist-section h2 { margin: 0 0 0.75rem; font-family: var(--font-display); font-size: 1rem; }
+.checklist-table { margin-bottom: 0.75rem; }
+.checklist-table tr.is-retired .checklist-label { color: var(--fog-dim); }
+.checklist-edit input[type="text"],
+.checklist-add input[type="text"] { width: min(520px, 100%); }
+.checklist-actions { white-space: nowrap; }
