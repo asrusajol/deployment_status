@@ -142,6 +142,14 @@
                   title="{{ 'Why this was returned' if r.returns else 'Withdrawal note' }}"
                 >i{% if r.returns | length > 1 %}<span class="return-log-count">{{ r.returns | length }}</span>{% endif %}</button>
               {% endif %}
+              {# Gated here, not just hidden: without the grant the confirmations never
+                 reach this viewer's HTML (can_view_checklist_audit in app/auth.py). #}
+              {% if can_view_audit and r.checklist_confirmations %}
+                <button
+                  type="button" class="return-log-button is-muted" data-checklist-log="{{ r.id }}"
+                  title="Checklist confirmations"
+                >✓</button>
+              {% endif %}
             </div>
             {% if r.returns or r.withdrawn_note %}
               <div class="return-log-data" id="return-log-{{ r.id }}" hidden>
@@ -166,6 +174,22 @@
                       from {{ status_labels.get(entry.returned_from, entry.returned_from.value) }}
                     </div>
                     <p class="return-log-reason">{{ entry.reason }}</p>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if can_view_audit and r.checklist_confirmations %}
+              <div class="return-log-data" id="checklist-log-{{ r.id }}" hidden>
+                {# One group per start (a start writes all its rows with one timestamp);
+                   newest first, same as the return history. #}
+                {% for confirmed_at, rows in r.checklist_confirmations | groupby("confirmed_at") | reverse %}
+                  <div class="return-log-entry">
+                    <div class="return-log-meta">
+                      {{ localtime(confirmed_at) }} · {{ rows[0].confirmer.name if rows[0].confirmer else "—" }}
+                    </div>
+                    <ul class="checklist-log-items">
+                      {% for c in rows %}<li>{{ c.item_label }}</li>{% endfor %}
+                    </ul>
                   </div>
                 {% endfor %}
               </div>

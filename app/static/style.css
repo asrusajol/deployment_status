@@ -1487,3 +1487,12 @@ code {
 .checklist-edit input[type="text"],
 .checklist-add input[type="text"] { width: min(520px, 100%); }
 .checklist-actions { white-space: nowrap; }
+
+/* Checklist audit dialog: the terms confirmed at one start. */
+.checklist-log-items {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--fog);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}

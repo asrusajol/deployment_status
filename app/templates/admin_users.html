@@ -20,6 +20,7 @@
         <th>Grant / Reset Password</th>
         <th>Show others' returns</th>
         <th>Management access</th>
+        <th>Checklist audit</th>
       </tr>
     </thead>
     <tbody>
@@ -80,6 +81,18 @@
             <form method="post" action="/admin/users/{{ u.id }}/set-management-access" class="inline-form">
               <label>
                 <input type="checkbox" name="can_access_management" {% if u.can_access_management %}checked{% endif %}>
+              </label>
+              <button type="submit">Save</button>
+            </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.role.value == "admin" %}
+            <span class="muted">Always</span>
+          {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/set-checklist-audit-access" class="inline-form">
+              <label>
+                <input type="checkbox" name="can_view_checklist_audit" {% if u.can_view_checklist_audit %}checked{% endif %}>
               </label>
               <button type="submit">Save</button>
             </form>

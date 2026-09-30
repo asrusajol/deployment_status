@@ -200,6 +200,14 @@
     </div>
   </dialog>
 
+  <dialog id="checklist-log-modal" class="changes-modal">
+    <h2>Checklist confirmations</h2>
+    <div id="checklist-log-body"></div>
+    <div class="changes-modal-actions">
+      <button type="button" class="button-secondary" id="checklist-log-close">Close</button>
+    </div>
+  </dialog>
+
   <script>
     (function () {
       var SNAPSHOT_KEY = "deployment_tracker_request_snapshot";
@@ -513,6 +521,20 @@
         });
         document.getElementById("return-log-close").addEventListener("click", function () {
           logModal.close();
+        });
+
+        // Same shape as the return history: the hidden per-row div is the source.
+        var checklistLogModal = document.getElementById("checklist-log-modal");
+        var checklistLogBody = document.getElementById("checklist-log-body");
+        document.querySelectorAll("[data-checklist-log]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var source = document.getElementById("checklist-log-" + button.getAttribute("data-checklist-log"));
+            checklistLogBody.innerHTML = source ? source.innerHTML : "";
+            checklistLogModal.showModal();
+          });
+        });
+        document.getElementById("checklist-log-close").addEventListener("click", function () {
+          checklistLogModal.close();
         });
       })();
     })();

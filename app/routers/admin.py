@@ -117,6 +117,20 @@ def set_management_access(
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+@router.post("/users/{user_id}/set-checklist-audit-access")
+def set_checklist_audit_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    can_view_checklist_audit: bool = Form(False),
+):
+    """Grants or revokes the checklist audit view on request rows (User.can_view_checklist_audit)."""
+    user = _get_user_or_404(db, user_id)
+    user.can_view_checklist_audit = can_view_checklist_audit
+    db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
 def _rerender_with_error(request: Request, db: Session, admin: User, error: str):
     users = db.query(User).order_by(User.name).all()
     return templates.TemplateResponse(

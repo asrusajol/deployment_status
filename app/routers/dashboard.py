@@ -37,12 +37,14 @@ from app.auth import (
     can_delete_request,
     can_edit_request,
     can_resubmit_request,
+    can_view_checklist_audit,
     require_deploy_team_member,
     require_login,
 )
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
+from app.models.checklist import ChecklistConfirmation
 from app.models.client import Client
 from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
@@ -742,6 +744,8 @@ def list_requests(
             joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
             selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
             joinedload(DeploymentRequest.withdrawer),
+            # Every row with confirmations renders its audit dialog — N+1 otherwise.
+            selectinload(DeploymentRequest.checklist_confirmations).joinedload(ChecklistConfirmation.confirmer),
         )
         # Oldest-first, same as the open-work ordering below (_requests_ordering) —
         # the one waiting longest is the one most likely to have been forgotten.
@@ -766,6 +770,8 @@ def list_requests(
             # Every withdrawn row's [i] dialog renders "Withdrawn · ... · <who>" —
             # same N+1 reasoning as returner above.
             joinedload(DeploymentRequest.withdrawer),
+            # Every row with confirmations renders its audit dialog — N+1 otherwise.
+            selectinload(DeploymentRequest.checklist_confirmations).joinedload(ChecklistConfirmation.confirmer),
         )
         # Ordered before the offset/limit below, so an old open request lands on
         # page 1 rather than only being hoisted within the page it already sat on.
@@ -842,6 +848,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "can_view_audit": can_view_checklist_audit(current_user),
             "uses_release_tracker": _uses_release_tracker,
             "previous_versions": previous_versions,
             "page": page,
