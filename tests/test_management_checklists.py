@@ -52,12 +52,7 @@ def _add_form(page):
 
 def _types(session, item):
     session.expire_all()
-    return {t.request_type for t in session.get(ChecklistItem, item.id).types}
-
-
-def _position(session, item):
-    session.expire_all()
-    return session.get(ChecklistItem, item.id).position
+    return {t.request_type: t.position for t in session.get(ChecklistItem, item.id).types}
 
 
 def _edit(client, item, label, types):
@@ -90,11 +85,11 @@ def test_management_user_cannot_edit_move_or_retire(web):
     login_as(client, "mgr")
 
     assert _edit(client, first, "changed", (LOCAL,)).status_code == 403
-    assert client.post(f"/management/checklists/{first.id}/move", data={"direction": "down"}).status_code == 403
+    assert client.post(f"/management/checklists/{first.id}/move", data={"direction": "down", "request_type": "db_dump_restore"}).status_code == 403
     assert client.post(f"/management/checklists/{first.id}/deactivate").status_code == 403
     session.expire_all()
     assert session.get(ChecklistItem, first.id).label == "Close cronjobs"
-    assert _types(session, first) == {DUMP}
+    assert _types(session, first) == {DUMP: 1}
 
 
 def test_management_user_sees_no_admin_controls(web):
@@ -184,8 +179,7 @@ def test_management_user_adds_term_to_several_types_at_the_end_of_each(web):
 
     assert response.status_code == 303
     added = session.query(ChecklistItem).filter_by(label="Check .env").one()
-    assert _types(session, added) == {DUMP, LOCAL}
-    assert _position(session, added) == 3
+    assert _types(session, added) == {DUMP: 3, LOCAL: 1}
     assert added.created_by == 2
 
 
@@ -233,7 +227,7 @@ def test_admin_rewords_and_records_who(web):
     edited = session.get(ChecklistItem, item.id)
     assert edited.label == "Stop cron"
     assert edited.updated_by == 1 and edited.updated_at is not None
-    assert _types(session, item) == {DUMP}
+    assert _types(session, item) == {DUMP: 1}
 
 
 def test_admin_assigns_another_type_keeping_existing_order(web):
@@ -245,8 +239,7 @@ def test_admin_assigns_another_type_keeping_existing_order(web):
 
     assert _edit(client, item, "Close cronjobs", (DUMP, LOCAL)).status_code == 303
 
-    assert _types(session, item) == {DUMP, LOCAL}
-    assert _position(session, item) == 4
+    assert _types(session, item) == {DUMP: 4, LOCAL: 2}
 
 
 def test_admin_unassigns_a_type(web):
@@ -257,7 +250,7 @@ def test_admin_unassigns_a_type(web):
 
     assert _edit(client, item, "Close cronjobs", (DUMP,)).status_code == 303
 
-    assert _types(session, item) == {DUMP}
+    assert _types(session, item) == {DUMP: 1}
 
 
 def test_admin_can_unassign_every_type(web):
@@ -268,7 +261,7 @@ def test_admin_can_unassign_every_type(web):
 
     assert _edit(client, item, "Close cronjobs", ()).status_code == 303
 
-    assert _types(session, item) == set()
+    assert _types(session, item) == {}
     assert session.get(ChecklistItem, item.id).is_active is True
 
 
@@ -282,7 +275,7 @@ def test_wording_only_post_keeps_assignments(web):
     response = client.post(f"/management/checklists/{item.id}/edit", data={"label": "Stop cron"}, follow_redirects=False)
 
     assert response.status_code == 303
-    assert _types(session, item) == {DUMP, LOCAL}
+    assert _types(session, item) == {DUMP: 1, LOCAL: 1}
 
 
 @pytest.mark.parametrize("wording", ["Close cronjobs", "  close CRONJOBS "])
@@ -297,7 +290,7 @@ def test_assign_blocked_when_target_type_already_has_it(web, wording):
 
     assert response.status_code == 400
     assert "already assigned" in response.json()["detail"]
-    assert _types(session, item) == {DUMP}
+    assert _types(session, item) == {DUMP: 1}
 
 
 def test_assign_allowed_when_target_only_has_it_retired(web):
@@ -324,34 +317,22 @@ def test_edit_rejects_unknown_type(web):
     )
 
     assert response.status_code == 400
-    assert _types(session, item) == {DUMP}
+    assert _types(session, item) == {DUMP: 1}
 
 
 # --- move / retire ------------------------------------------------------------------
 
-def test_admin_moves_term_in_the_shared_order(web):
+def test_admin_moves_term_within_one_type_only(web):
     client, session = web
     _seed_users(session)
-    a = _item(session, label="A", types=(DUMP,), position=1)
-    b = _item(session, label="B", types=(LOCAL,), position=2)
+    a = _item(session, label="A", types=(DUMP, LOCAL), position=1)
+    b = _item(session, label="B", types=(DUMP, LOCAL), position=2)
     login_as(client, "root")
 
-    assert client.post(f"/management/checklists/{b.id}/move", data={"direction": "up"}, follow_redirects=False).status_code == 303
+    client.post(f"/management/checklists/{b.id}/move", data={"direction": "up", "request_type": "db_dump_restore"})
 
-    assert (_position(session, a), _position(session, b)) == (2, 1)
-
-
-def test_move_skips_retired_terms(web):
-    client, session = web
-    _seed_users(session)
-    a = _item(session, label="A", position=1)
-    _item(session, label="Retired", position=2, is_active=False)
-    c = _item(session, label="C", position=3)
-    login_as(client, "root")
-
-    client.post(f"/management/checklists/{c.id}/move", data={"direction": "up"})
-
-    assert (_position(session, a), _position(session, c)) == (3, 1)
+    assert _types(session, a) == {DUMP: 2, LOCAL: 1}
+    assert _types(session, b) == {DUMP: 1, LOCAL: 2}
 
 
 def test_move_past_the_end_is_a_no_op(web):
@@ -360,18 +341,23 @@ def test_move_past_the_end_is_a_no_op(web):
     a = _item(session, label="A")
     login_as(client, "root")
 
-    response = client.post(f"/management/checklists/{a.id}/move", data={"direction": "up"}, follow_redirects=False)
+    response = client.post(f"/management/checklists/{a.id}/move", data={"direction": "up", "request_type": "db_dump_restore"},
+                           follow_redirects=False)
 
     assert response.status_code == 303
-    assert _position(session, a) == 1
+    assert _types(session, a) == {DUMP: 1}
 
 
-def test_move_rejects_unknown_direction(web):
+@pytest.mark.parametrize("data", [
+    {"direction": "sideways", "request_type": "db_dump_restore"},
+    {"direction": "up", "request_type": "test_local"},  # not assigned there
+])
+def test_move_rejects_bad_input(web, data):
     client, session = web
     _seed_users(session)
     a = _item(session, label="A")
     login_as(client, "root")
-    assert client.post(f"/management/checklists/{a.id}/move", data={"direction": "sideways"}).status_code == 400
+    assert client.post(f"/management/checklists/{a.id}/move", data=data).status_code == 400
 
 
 def test_admin_retires_and_restores_term(web):
@@ -431,39 +417,26 @@ def test_all_view_lists_each_term_once_with_all_its_types(web):
     row = _row(all_view, shared.id)
     assert "badge-type-standard" in row and "badge-type-db_dump_restore" in row
     assert "checklist-group-head" not in all_view
-    # One shared order, so ↑↓ live in the All list.
-    assert "/move" in row
+    # Order is per type, so ↑↓ belong to a type's own view, not the mixed list.
+    assert "/move" not in all_view
     assert "data-edit-toggle" in row
 
 
-def test_type_view_shows_only_that_types_terms_in_the_shared_order(web):
+def test_type_view_shows_only_that_types_terms_in_its_order_with_move_controls(web):
     client, session = web
     _seed_users(session)
-    later = _item(session, label="A", types=(DUMP,), position=2)
-    earlier = _item(session, label="B", types=(DUMP, LOCAL), position=1)
-    _item(session, label="Only local", types=(LOCAL,), position=3)
+    first = _item(session, label="A", types=(DUMP,), position=2)
+    second = _item(session, label="B", types=(DUMP, LOCAL), position=1)
+    _item(session, label="Only local", types=(LOCAL,), position=2)
     login_as(client, "root")
 
     page = client.get("/management/checklists").text
     dump_view = _group(page, "db_dump_restore")
 
     assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore" hidden>', page)
-    assert dump_view.index(f'data-item-id="{earlier.id}"') < dump_view.index(f'data-item-id="{later.id}"')
+    assert dump_view.index(f'data-item-id="{second.id}"') < dump_view.index(f'data-item-id="{first.id}"')
     assert "Only local" not in dump_view
-    # Reordering happens in All; a type's view just shows the result.
-    assert "/move" not in dump_view
-
-
-def test_all_view_follows_the_shared_order(web):
-    client, session = web
-    _seed_users(session)
-    second = _item(session, label="Second", types=(DUMP,), position=2)
-    first = _item(session, label="First", types=(LOCAL,), position=1)
-    login_as(client, "mgr")
-
-    all_view = _group(client.get("/management/checklists").text, "all")
-
-    assert all_view.index(f'data-item-id="{first.id}"') < all_view.index(f'data-item-id="{second.id}"')
+    assert "/move" in _row(dump_view, first.id)
 
 
 def test_empty_type_view_says_start_is_one_click(web):

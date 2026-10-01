@@ -2,8 +2,8 @@
 
 Replaces the hard-coded DB_DUMP_START_CHECKLIST (commit 7356a1e) with terms admins
 manage from /management/checklists. A term can apply to several request types
-(checklist_item_types); all terms share one order, and every confirmed term is kept as
-an audit row. Seeds the four existing db_dump_restore terms so behaviour is
+(checklist_item_types, which also holds each type's order), and every confirmed term is
+kept as an audit row. Seeds the four existing db_dump_restore terms so behaviour is
 identical straight after upgrade.
 
 Revision ID: c2e8f5a1d6b7
@@ -38,7 +38,6 @@ def upgrade() -> None:
         "checklist_items",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("label", sa.String(500), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -49,6 +48,7 @@ def upgrade() -> None:
         "checklist_item_types",
         sa.Column("item_id", sa.Integer(), sa.ForeignKey("checklist_items.id"), primary_key=True),
         sa.Column("request_type", request_type, primary_key=True),
+        sa.Column("position", sa.Integer(), nullable=False),
     )
     op.create_table(
         "checklist_confirmations",
@@ -65,7 +65,6 @@ def upgrade() -> None:
         "checklist_items",
         sa.column("id", sa.Integer),
         sa.column("label", sa.String),
-        sa.column("position", sa.Integer),
         sa.column("is_active", sa.Boolean),
         sa.column("created_at", sa.DateTime),
     )
@@ -73,14 +72,15 @@ def upgrade() -> None:
         "checklist_item_types",
         sa.column("item_id", sa.Integer),
         sa.column("request_type", request_type),
+        sa.column("position", sa.Integer),
     )
     now = datetime.now(timezone.utc)
     conn = op.get_bind()
     for position, label in enumerate(SEED_DB_DUMP_TERMS, start=1):
         item_id = conn.execute(
-            items.insert().values(label=label, position=position, is_active=True, created_at=now).returning(items.c.id)
+            items.insert().values(label=label, is_active=True, created_at=now).returning(items.c.id)
         ).scalar_one()
-        conn.execute(item_types.insert().values(item_id=item_id, request_type="db_dump_restore"))
+        conn.execute(item_types.insert().values(item_id=item_id, request_type="db_dump_restore", position=position))
 
 
 def downgrade() -> None:

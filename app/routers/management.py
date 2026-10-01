@@ -89,23 +89,24 @@ def _refuse_duplicates(db: Session, label: str, request_types: list[RequestType]
             )
 
 
-def _next_position(db: Session) -> int:
-    last = db.query(func.max(ChecklistItem.position)).scalar()
+def _next_position(db: Session, request_type: RequestType) -> int:
+    last = db.query(func.max(ChecklistItemType.position)).filter(ChecklistItemType.request_type == request_type).scalar()
     return (last or 0) + 1
 
 
 @router.get("/checklists")
 def list_checklists(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_management)):
-    items = (
-        db.query(ChecklistItem)
-        .options(selectinload(ChecklistItem.types))
-        .order_by(ChecklistItem.position, ChecklistItem.id)
-        .all()
-    )
+    items = db.query(ChecklistItem).options(selectinload(ChecklistItem.types)).order_by(ChecklistItem.id).all()
     active = [i for i in items if i.is_active]
-    # One shared order: a type's view is just the All list filtered to that type.
+    # A term appears under every type it's assigned to, in that type's own order.
     sections = [
-        (request_type, [i for i in active if any(t.request_type == request_type for t in i.types)])
+        (
+            request_type,
+            sorted(
+                ((i, t.position) for i in active for t in i.types if t.request_type == request_type),
+                key=lambda pair: (pair[1], pair[0].id),
+            ),
+        )
         for request_type in RequestType
     ]
     return templates.TemplateResponse(
@@ -137,11 +138,8 @@ def add_checklist_item(
     if not types:
         raise HTTPException(status_code=400, detail="Pick at least one request type.")
     _refuse_duplicates(db, label, types, exclude_id=None)
-    item = ChecklistItem(
-        label=label, position=_next_position(db), is_active=True,
-        created_by=current_user.id, created_at=datetime.now(timezone.utc),
-    )
-    item.types = [ChecklistItemType(request_type=t) for t in types]
+    item = ChecklistItem(label=label, is_active=True, created_by=current_user.id, created_at=datetime.now(timezone.utc))
+    item.types = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in types]
     db.add(item)
     db.commit()
     return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
@@ -167,7 +165,7 @@ def edit_checklist_item(
     _refuse_duplicates(db, new_label, wanted, exclude_id=item.id)
 
     kept = [t for t in item.types if t.request_type in wanted]
-    added = [ChecklistItemType(request_type=t) for t in wanted if t not in current]
+    added = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in wanted if t not in current]
     item.types = kept + added
     item.label = new_label
     _touch(item, current_user)
@@ -177,22 +175,29 @@ def edit_checklist_item(
 
 @router.post("/checklists/{item_id}/move")
 def move_checklist_item(
-    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin), direction: str = Form(...),
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+    direction: str = Form(...),
+    request_type: str = Form(...),
 ):
     if direction not in ("up", "down"):
         raise HTTPException(status_code=400, detail="direction must be up or down")
     item = _get_item_or_404(db, item_id)
-    # Swap with the nearest active term: retired ones are folded away, so stepping past
-    # them would look like the click did nothing.
-    others = db.query(ChecklistItem).filter(ChecklistItem.is_active.is_(True), ChecklistItem.id != item.id)
+    (parsed_type,) = _parse_types([request_type])
+    link = next((t for t in item.types if t.request_type == parsed_type), None)
+    if link is None:
+        raise HTTPException(status_code=400, detail="That term isn't assigned to this request type.")
+    same_type = db.query(ChecklistItemType).filter(
+        ChecklistItemType.request_type == parsed_type, ChecklistItemType.item_id != item.id
+    )
     if direction == "up":
-        neighbour = others.filter(ChecklistItem.position < item.position).order_by(ChecklistItem.position.desc()).first()
+        neighbour = same_type.filter(ChecklistItemType.position < link.position).order_by(ChecklistItemType.position.desc()).first()
     else:
-        neighbour = others.filter(ChecklistItem.position > item.position).order_by(ChecklistItem.position.asc()).first()
+        neighbour = same_type.filter(ChecklistItemType.position > link.position).order_by(ChecklistItemType.position.asc()).first()
     if neighbour is not None:
-        item.position, neighbour.position = neighbour.position, item.position
+        link.position, neighbour.position = neighbour.position, link.position
         _touch(item, current_user)
-        _touch(neighbour, current_user)
         db.commit()
     return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
 

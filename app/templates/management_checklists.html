@@ -14,10 +14,11 @@
   </fieldset>
 {% endmacro %}
 
-{# One term's row. `number` is its place in the shared order (a type's Start pop-up
-   lists its terms in that order). ↑↓ appear only in the All list, where the order is
-   set. Admin controls sit beside the text; the edit form stays hidden until ✎ opens it. #}
-{% macro term_row(item, number, show_move) %}
+{# One term's row. A term assigned to several types appears under each of them;
+   `group_type` is the type this row sits under (None for "not assigned" and retired),
+   and `number` is its place in that type's Start pop-up. Admin controls sit beside the
+   text; the edit form stays hidden until ✎ opens it. #}
+{% macro term_row(item, number, group_type) %}
   <li class="checklist-term{% if not item.is_active %} is-retired{% endif %}" data-item-id="{{ item.id }}">
     <span class="checklist-num">{{ number }}</span>
     <div class="checklist-body">
@@ -45,10 +46,11 @@
       <div class="checklist-actions">
         {% if item.is_active %}
           <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>✎</button>
-          {% if show_move %}
+          {% if group_type %}
             <form method="post" action="/management/checklists/{{ item.id }}/move">
-              <button type="submit" name="direction" value="up" class="icon-action" title="Move up">↑</button>
-              <button type="submit" name="direction" value="down" class="icon-action" title="Move down">↓</button>
+              <input type="hidden" name="request_type" value="{{ group_type.value }}">
+              <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">↑</button>
+              <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">↓</button>
             </form>
           {% endif %}
           <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
@@ -95,21 +97,21 @@
   </div>
 
   <div class="checklist-panel">
-    {# All: each term once, with every type it applies to, in the one shared order —
-       ↑↓ here set the order every type's Start pop-up follows. #}
+    {# All: each term once, with every type it applies to. Order is per type, so the
+       ↑↓ controls live only in a type's own view below. #}
     <ol class="checklist-list" data-group="all">
       {% for item in all_items %}
-        {{ term_row(item, loop.index, true) }}
+        {{ term_row(item, loop.index, None) }}
       {% else %}
         <li class="checklist-empty"><span class="muted">No terms yet — use + Add term.</span></li>
       {% endfor %}
     </ol>
-    {# One type's view: the All list filtered to that type — exactly its Start pop-up.
-       Hidden until its chip is picked. #}
+    {# One type's view: its terms in its Start pop-up order, with ↑↓. Hidden until its
+       chip is picked. #}
     {% for request_type, rows in sections %}
       <ol class="checklist-list" data-group="{{ request_type.value }}" hidden>
-        {% for item in rows %}
-          {{ term_row(item, loop.index, false) }}
+        {% for item, _position in rows %}
+          {{ term_row(item, loop.index, request_type) }}
         {% else %}
           <li class="checklist-empty"><span class="muted">No terms — Start Deployment is one click for this type.</span></li>
         {% endfor %}
@@ -131,7 +133,7 @@
       <summary>Retired ({{ retired | length }})</summary>
       <ol class="checklist-list">
         {% for item in retired %}
-          {{ term_row(item, "–", false) }}
+          {{ term_row(item, "–", None) }}
         {% endfor %}
       </ol>
     </details>

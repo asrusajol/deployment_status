@@ -11,8 +11,8 @@ LABEL_MAX_LENGTH = 500
 
 class ChecklistItem(Base):
     """One term DevOps must confirm before starting a request of any type it is assigned
-    to (ChecklistItemType). There is one shared order across all terms (`position`);
-    each type's Start pop-up shows its terms in that order. Never hard-deleted —
+    to (ChecklistItemType). A term can apply to several types and each type orders its
+    own list, so position lives on the assignment, not here. Never hard-deleted —
     ChecklistConfirmation rows point here — `is_active=False` retires a term everywhere.
     See docs/superpowers/specs/2026-09-30-request-checklists-design.md.
     """
@@ -21,7 +21,6 @@ class ChecklistItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(LABEL_MAX_LENGTH))
-    position: Mapped[int] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Null only for the terms seeded by migration c2e8f5a1d6b7.
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -40,12 +39,13 @@ class ChecklistItem(Base):
 
 
 class ChecklistItemType(Base):
-    """Assigns a checklist term to one request type."""
+    """Assigns a checklist term to one request type, at a place in that type's list."""
 
     __tablename__ = "checklist_item_types"
 
     item_id: Mapped[int] = mapped_column(ForeignKey("checklist_items.id"), primary_key=True)
     request_type: Mapped[RequestType] = mapped_column(Enum(RequestType), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer)
 
     item = relationship("ChecklistItem", back_populates="types")
 
