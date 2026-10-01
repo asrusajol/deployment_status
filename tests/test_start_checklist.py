@@ -266,3 +266,35 @@ def test_non_deployer_gets_no_start_dialogs(web):
 
     # The dialog tag, not the bare id: the page's JS always contains the id prefix.
     assert '<dialog id="start-checklist-modal' not in client.get("/requests").text
+
+
+def _share_request(session):
+    request = DeploymentRequest(
+        task_id="PR-SHARE", requested_by=2, status=RequestStatus.approved, request_type=RequestType.db_dump_restore,
+        dump_source="crm-live", share_with_requestor=True, created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    session.add(request)
+    session.commit()
+    return request
+
+
+def test_share_with_requestor_dump_starts_without_checklist(dump):
+    # Nothing is restored when the dump is only handed back, so there are no schedules,
+    # workers or email settings to neutralise — the checklist doesn't apply.
+    client, session, _items, _restore_request = dump
+    request = _share_request(session)
+
+    assert _start(client, request).status_code == 303
+    session.refresh(request)
+    assert request.status == RequestStatus.in_progress
+    assert session.query(ChecklistConfirmation).filter_by(request_id=request.id).count() == 0
+
+
+def test_share_with_requestor_row_keeps_one_click_start(dump):
+    client, session, _items, restore_request = dump
+    request = _share_request(session)
+
+    page = client.get("/requests").text
+
+    assert f'<form method="post" action="/requests/{request.id}/start"' in _row_html(page, request.id)
+    assert f'data-start-action="/requests/{restore_request.id}/start"' in _row_html(page, restore_request.id)

@@ -61,6 +61,7 @@ from app.models.user import User, UserRole
 from app.services.checklists import (
     ChecklistIncomplete,
     active_items_by_type,
+    checklist_applies,
     checklist_token,
     record_start_confirmations,
 )
@@ -846,6 +847,7 @@ def list_requests(
             # Only deployers get Start buttons, so only they need the pop-ups.
             "start_checklists": active_items_by_type(db) if can_deploy else {},
             "checklist_token": checklist_token,
+            "checklist_applies": checklist_applies,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,

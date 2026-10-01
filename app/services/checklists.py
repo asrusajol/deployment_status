@@ -29,6 +29,14 @@ def checklist_token(item: ChecklistItem) -> str:
     return f"{item.id}:{digest}"
 
 
+def checklist_applies(deployment_request: DeploymentRequest) -> bool:
+    """False for a DB dump that is only handed back to the requester: nothing is restored
+    anywhere, so there are no schedules, workers or email settings to neutralise."""
+    return not (
+        deployment_request.request_type == RequestType.db_dump_restore and deployment_request.share_with_requestor
+    )
+
+
 def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
     """Active terms grouped by every request type they're assigned to, in each type's own
     order. One query for the whole request listing — never per row."""
@@ -56,6 +64,8 @@ def record_start_confirmations(
     aren't required (a term retired meanwhile, junk) are ignored. Does not commit — the
     caller's commit covers this and the execution row together.
     """
+    if not checklist_applies(deployment_request):
+        return
     required = active_items_by_type(db).get(deployment_request.request_type, [])
     submitted = set(submitted_ids)
     missing = [item for item in required if checklist_token(item) not in submitted]

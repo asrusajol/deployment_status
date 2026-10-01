@@ -211,7 +211,7 @@
                   {# A type with active checklist terms can't be started with one click:
                      its pop-up (request_list.html) collects the confirmations, and
                      start_request() re-checks them — this button alone is not the gate. #}
-                  {% if start_checklists.get(r.request_type) %}
+                  {% if start_checklists.get(r.request_type) and checklist_applies(r) %}
                     <button
                       type="button" class="start"
                       data-start-action="/requests/{{ r.id }}/start"
