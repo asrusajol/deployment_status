@@ -38,14 +38,14 @@ def checklist_applies(deployment_request: DeploymentRequest) -> bool:
 
 
 def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
-    """Active terms grouped by every request type they're assigned to, in each type's own
+    """Active terms grouped by every request type they're assigned to, in the one shared
     order. One query for the whole request listing — never per row."""
     assignments = (
         db.query(ChecklistItemType)
         .join(ChecklistItemType.item)
         .filter(ChecklistItem.is_active.is_(True))
         .options(contains_eager(ChecklistItemType.item))
-        .order_by(ChecklistItemType.position, ChecklistItemType.item_id)
+        .order_by(ChecklistItem.position, ChecklistItem.id)
         .all()
     )
     grouped: dict[RequestType, list[ChecklistItem]] = {}

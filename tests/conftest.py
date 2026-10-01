@@ -96,8 +96,8 @@ def login_as(client, username, password=DEFAULT_TEST_PASSWORD):
 
 
 def make_checklist_item(session, *, label, request_types=None, position=1, is_active=True):
-    """Seed a checklist term assigned to `request_types` (default: db_dump_restore only),
-    at `position` within each. Pass request_types=() for an unassigned term."""
+    """Seed a checklist term at `position` in the one shared order, assigned to
+    `request_types` (default: db_dump_restore only). request_types=() leaves it unassigned."""
     from datetime import datetime, timezone
 
     from app.models.checklist import ChecklistItem, ChecklistItemType
@@ -105,8 +105,8 @@ def make_checklist_item(session, *, label, request_types=None, position=1, is_ac
 
     if request_types is None:
         request_types = (RequestType.db_dump_restore,)
-    item = ChecklistItem(label=label, is_active=is_active, created_at=datetime.now(timezone.utc))
-    item.types = [ChecklistItemType(request_type=t, position=position) for t in request_types]
+    item = ChecklistItem(label=label, position=position, is_active=is_active, created_at=datetime.now(timezone.utc))
+    item.types = [ChecklistItemType(request_type=t) for t in request_types]
     session.add(item)
     session.commit()
     return item
