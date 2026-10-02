@@ -27,6 +27,19 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
 
 CHECKLISTS_URL = "/management/checklists"
+VIEWS = ("all", *(t.value for t in RequestType))
+
+
+def _view(view: str | None) -> str:
+    return view if view in VIEWS else "all"
+
+
+def _back(view: str | None) -> RedirectResponse:
+    """Back to the view the change was made from — redirecting to the bare page dropped
+    every save, move and retire back to All."""
+    view = _view(view)
+    url = CHECKLISTS_URL if view == "all" else f"{CHECKLISTS_URL}?view={view}"
+    return RedirectResponse(url=url, status_code=303)
 
 
 @router.get("")
@@ -95,7 +108,12 @@ def _next_position(db: Session, request_type: RequestType) -> int:
 
 
 @router.get("/checklists")
-def list_checklists(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_management)):
+def list_checklists(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_management),
+    view: str | None = None,
+):
     items = db.query(ChecklistItem).options(selectinload(ChecklistItem.types)).order_by(ChecklistItem.id).all()
     active = [i for i in items if i.is_active]
     # A term appears under every type it's assigned to, in that type's own order.
@@ -122,6 +140,7 @@ def list_checklists(request: Request, db: Session = Depends(get_db), current_use
             "retired": [i for i in items if not i.is_active],
             "type_labels": REQUEST_TYPE_LABELS,
             "is_admin": current_user.role == UserRole.admin,
+            "view": _view(view),
         },
     )
 
@@ -132,6 +151,7 @@ def add_checklist_item(
     current_user: User = Depends(require_management),
     label: str = Form(""),
     request_types: list[str] = Form([]),
+    view: str | None = Form(None),
 ):
     label = _clean_label(label)
     types = _parse_types(request_types)
@@ -142,7 +162,7 @@ def add_checklist_item(
     item.types = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in types]
     db.add(item)
     db.commit()
-    return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
+    return _back(view)
 
 
 @router.post("/checklists/{item_id}/edit")
@@ -155,6 +175,7 @@ def edit_checklist_item(
     # The edit form always sends this, so "no boxes ticked" means unassign everything;
     # without it (a wording-only POST) the assignments are left alone.
     types_submitted: str | None = Form(None),
+    view: str | None = Form(None),
 ):
     # Safe to reword or reassign: ChecklistConfirmation snapshots the label, and each
     # confirmation's request carries its own type, so history is unaffected either way.
@@ -170,7 +191,7 @@ def edit_checklist_item(
     item.label = new_label
     _touch(item, current_user)
     db.commit()
-    return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
+    return _back(view)
 
 
 @router.post("/checklists/{item_id}/move")
@@ -180,6 +201,7 @@ def move_checklist_item(
     current_user: User = Depends(require_admin),
     direction: str = Form(...),
     request_type: str = Form(...),
+    view: str | None = Form(None),
 ):
     if direction not in ("up", "down"):
         raise HTTPException(status_code=400, detail="direction must be up or down")
@@ -199,23 +221,29 @@ def move_checklist_item(
         link.position, neighbour.position = neighbour.position, link.position
         _touch(item, current_user)
         db.commit()
-    return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
+    return _back(view)
 
 
-def _set_active(db: Session, item_id: int, user: User, active: bool) -> RedirectResponse:
+def _set_active(db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:
     item = _get_item_or_404(db, item_id)
     item.is_active = active
     _touch(item, user)
     db.commit()
-    return RedirectResponse(url=CHECKLISTS_URL, status_code=303)
+    return _back(view)
 
 
 @router.post("/checklists/{item_id}/deactivate")
-def deactivate_checklist_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+def deactivate_checklist_item(
+    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
+    view: str | None = Form(None),
+):
     # Retire, never delete: confirmation rows reference this term.
-    return _set_active(db, item_id, current_user, False)
+    return _set_active(db, item_id, current_user, False, view)
 
 
 @router.post("/checklists/{item_id}/activate")
-def activate_checklist_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    return _set_active(db, item_id, current_user, True)
+def activate_checklist_item(
+    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
+    view: str | None = Form(None),
+):
+    return _set_active(db, item_id, current_user, True, view)

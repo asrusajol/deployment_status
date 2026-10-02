@@ -25,6 +25,7 @@
       <span class="checklist-text">{{ item.label }}</span>
       {% if is_admin %}
         <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit" hidden>
+          <input type="hidden" name="view" value="{{ view }}">
           <input type="hidden" name="types_submitted" value="1">
           <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
           {{ type_checkboxes(item.types | map(attribute="request_type") | list) }}
@@ -48,16 +49,19 @@
           <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>✎</button>
           {% if group_type %}
             <form method="post" action="/management/checklists/{{ item.id }}/move">
+          <input type="hidden" name="view" value="{{ view }}">
               <input type="hidden" name="request_type" value="{{ group_type.value }}">
               <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">↑</button>
               <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">↓</button>
             </form>
           {% endif %}
           <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
+          <input type="hidden" name="view" value="{{ view }}">
             <button type="submit" class="text-action is-danger">Retire</button>
           </form>
         {% else %}
           <form method="post" action="/management/checklists/{{ item.id }}/activate">
+          <input type="hidden" name="view" value="{{ view }}">
             <button type="submit" class="text-action">Restore</button>
           </form>
         {% endif %}
@@ -77,6 +81,7 @@
   </div>
 
   <form method="post" action="/management/checklists" class="checklist-add" id="checklist-add-form" hidden>
+          <input type="hidden" name="view" value="{{ view }}">
     <label class="checklist-add-field">
       <span class="cell-label">Term</span>
       <input type="text" name="label" maxlength="500" required placeholder="e.g. Snapshot the target database">
@@ -90,16 +95,16 @@
 
   {# Filters only the view in this browser — no request, no state. #}
   <div class="checklist-filter" role="group" aria-label="Filter by request type">
-    <button type="button" class="filter-chip is-active" data-checklist-filter="all">All</button>
+    <button type="button" class="filter-chip{% if view == "all" %} is-active{% endif %}" data-checklist-filter="all">All</button>
     {% for request_type, _rows in sections %}
-      <button type="button" class="filter-chip" data-checklist-filter="{{ request_type.value }}">{{ type_labels[request_type] }}</button>
+      <button type="button" class="filter-chip{% if view == request_type.value %} is-active{% endif %}" data-checklist-filter="{{ request_type.value }}">{{ type_labels[request_type] }}</button>
     {% endfor %}
   </div>
 
   <div class="checklist-panel">
     {# All: each term once, with every type it applies to. Order is per type, so the
        ↑↓ controls live only in a type's own view below. #}
-    <ol class="checklist-list" data-group="all">
+    <ol class="checklist-list" data-group="all"{% if view != "all" %} hidden{% endif %}>
       {% for item in all_items %}
         {{ term_row(item, loop.index, None) }}
       {% else %}
@@ -109,7 +114,7 @@
     {# One type's view: its terms in its Start pop-up order, with ↑↓. Hidden until its
        chip is picked. #}
     {% for request_type, rows in sections %}
-      <ol class="checklist-list" data-group="{{ request_type.value }}" hidden>
+      <ol class="checklist-list" data-group="{{ request_type.value }}"{% if view != request_type.value %} hidden{% endif %}>
         {% for item, _position in rows %}
           {{ term_row(item, loop.index, request_type) }}
         {% else %}
@@ -121,7 +126,7 @@
 
   {% set empty_types = sections | selectattr(1, "equalto", []) | map(attribute=0) | list %}
   {% if empty_types %}
-    <p class="checklist-empty-note" data-empty-note>
+    <p class="checklist-empty-note" data-empty-note{% if view != "all" %} hidden{% endif %}>
       No terms yet:
       {% for request_type in empty_types %}{{ type_labels[request_type] }}{% if not loop.last %} · {% endif %}{% endfor %}
       — Start Deployment is one click for these.
@@ -178,6 +183,10 @@
           });
           var note = document.querySelector("[data-empty-note]");
           if (note) note.hidden = type !== "all";
+          // Every form posts the view back so the redirect lands here again; the URL
+          // keeps it across a manual refresh too.
+          document.querySelectorAll('input[name="view"]').forEach(function (input) { input.value = type; });
+          history.replaceState(null, "", type === "all" ? location.pathname : location.pathname + "?view=" + type);
         });
       });
     })();

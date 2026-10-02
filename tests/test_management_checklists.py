@@ -464,3 +464,59 @@ def test_unassigned_term_is_in_the_all_view_marked_not_assigned(web):
     assert "Not assigned" in _row(_group(page, "all"), loose.id)
     for request_type in RequestType:
         assert f'data-item-id="{loose.id}"' not in _group(page, request_type.value)
+
+
+def test_page_opens_on_the_view_named_in_the_url(web):
+    client, session = web
+    _seed_users(session)
+    _item(session, label="Close cronjobs", types=(DUMP,))
+    login_as(client, "mgr")
+
+    page = client.get("/management/checklists?view=db_dump_restore").text
+
+    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore">', page)
+    assert re.search(r'<ol class="checklist-list" data-group="all" hidden>', page)
+    assert re.search(r'class="filter-chip is-active" data-checklist-filter="db_dump_restore"', page)
+
+
+def test_unknown_view_falls_back_to_all(web):
+    client, session = web
+    _seed_users(session)
+    login_as(client, "mgr")
+
+    page = client.get("/management/checklists?view=nope").text
+
+    assert re.search(r'<ol class="checklist-list" data-group="all">', page)
+
+
+@pytest.mark.parametrize("action,data", [
+    ("move", {"direction": "down", "request_type": "db_dump_restore"}),
+    ("deactivate", {}),
+    ("edit", {"label": "Stop cron", "request_types": "db_dump_restore", "types_submitted": "1"}),
+])
+def test_actions_return_to_the_view_they_were_made_from(web, action, data):
+    # Regression: every save/move/retire redirected to the bare page, dropping back to All.
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs", types=(DUMP,))
+    login_as(client, "root")
+
+    response = client.post(f"/management/checklists/{item.id}/{action}", data={**data, "view": "db_dump_restore"},
+                           follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/management/checklists?view=db_dump_restore"
+
+
+def test_add_returns_to_its_view_and_forms_carry_the_view(web):
+    client, session = web
+    _seed_users(session)
+    login_as(client, "mgr")
+
+    response = client.post("/management/checklists",
+                           data={"label": "Snapshot DB", "request_types": "test_local", "view": "test_local"},
+                           follow_redirects=False)
+    page = client.get("/management/checklists?view=test_local").text
+
+    assert response.headers["location"] == "/management/checklists?view=test_local"
+    assert 'name="view" value="test_local"' in _add_form(page)
