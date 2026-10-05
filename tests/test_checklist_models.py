@@ -37,8 +37,9 @@ def test_request_lists_confirmations_newest_first(db_session):
     db_session.add(request)
     item = make_checklist_item(db_session, label="Close cronjobs")
     older = datetime(2026, 9, 1, 10, 0)
-    for at in (older, older + timedelta(hours=1)):
-        db_session.add(ChecklistConfirmation(request_id=request.id, checklist_item_id=item.id,
+    # One tick per term per attempt (unique key), so the two ticks are two attempts.
+    for round_, at in enumerate((older, older + timedelta(hours=1))):
+        db_session.add(ChecklistConfirmation(request_id=request.id, checklist_item_id=item.id, round=round_,
                                              item_label=item.label, confirmed_by=1, confirmed_at=at))
     db_session.commit()
     db_session.refresh(request)
@@ -46,3 +47,19 @@ def test_request_lists_confirmations_newest_first(db_session):
     times = [c.confirmed_at for c in request.checklist_confirmations]
     assert times == sorted(times, reverse=True)
     assert request.checklist_confirmations[0].confirmer.name == "Zunayed"
+
+
+def test_one_tick_per_term_per_attempt(db_session):
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    make_user(db_session, id=1, name="Zunayed")
+    request = DeploymentRequest(request_type=RequestType.db_dump_restore, status=RequestStatus.approved,
+                                created_at=datetime(2026, 9, 1))
+    db_session.add(request)
+    item = make_checklist_item(db_session, label="Close cronjobs")
+    for _ in range(2):
+        db_session.add(ChecklistConfirmation(request_id=request.id, checklist_item_id=item.id, round=0,
+                                             item_label=item.label, confirmed_by=1, confirmed_at=datetime(2026, 9, 1)))
+    with pytest.raises(IntegrityError):
+        db_session.commit()

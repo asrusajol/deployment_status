@@ -1668,3 +1668,24 @@ code {
 }
 .checklist-log-button:hover,
 .checklist-log-button:focus-visible { border-color: var(--teal); color: var(--teal); }
+
+/* Checklist pop-ups: save-failure note, the checklist inside the V12 version pop-up, and
+   who / when beside each ticked term in the audit dialog. */
+.checklist-error { margin: 0.5rem 0 0; color: var(--red); font-size: 0.85rem; }
+.checklist-error[hidden] { display: none; }
+.checklist-fieldset { margin: 0.75rem 0 0; padding: 0; border: none; }
+.checklist-fieldset[hidden] { display: none; }
+.checklist-fieldset legend { margin-bottom: 0.4rem; }
+.checklist-log-who { display: block; color: var(--fog-dim); font-size: 0.8rem; }
+
+/* Checklists page: when a term is due. Teal for Start (the in-flight colour Start uses),
+   green for Mark Deployed (the success colour Mark Deployed uses). */
+.checklist-due {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--hairline-strong);
+}
+.checklist-due-before_start { color: var(--teal); border-color: var(--teal-dim); }
+.checklist-due-before_complete { color: var(--green); border-color: var(--green-dim); }

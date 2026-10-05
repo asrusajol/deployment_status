@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import require_admin, require_management
 from app.database import get_db
-from app.models.checklist import LABEL_MAX_LENGTH, ChecklistItem, ChecklistItemType
+from app.models.checklist import DUE_BEFORE_START, DUE_LABELS, LABEL_MAX_LENGTH, ChecklistItem, ChecklistItemType
 from app.models.deployment_request import RequestType
 from app.models.user import User, UserRole
 from app.routers.dashboard import REQUEST_TYPE_LABELS
@@ -65,6 +65,14 @@ def _parse_types(values: list[str]) -> list[RequestType]:
         return list(dict.fromkeys(RequestType(v) for v in values))
     except ValueError:
         raise HTTPException(status_code=400, detail="Unknown request type")
+
+
+def _parse_due(due: str | None, default: str) -> str:
+    if due is None:
+        return default
+    if due not in DUE_LABELS:
+        raise HTTPException(status_code=400, detail="Unknown 'when' for a checklist term")
+    return due
 
 
 def _get_item_or_404(db: Session, item_id: int) -> ChecklistItem:
@@ -139,6 +147,7 @@ def list_checklists(
             # they no longer gate anything, and interleaved they read as live steps.
             "retired": [i for i in items if not i.is_active],
             "type_labels": REQUEST_TYPE_LABELS,
+            "due_labels": DUE_LABELS,
             "is_admin": current_user.role == UserRole.admin,
             "view": _view(view),
         },
@@ -151,14 +160,18 @@ def add_checklist_item(
     current_user: User = Depends(require_management),
     label: str = Form(""),
     request_types: list[str] = Form([]),
+    due: str | None = Form(None),
     view: str | None = Form(None),
 ):
     label = _clean_label(label)
+    due = _parse_due(due, DUE_BEFORE_START)
     types = _parse_types(request_types)
     if not types:
         raise HTTPException(status_code=400, detail="Pick at least one request type.")
     _refuse_duplicates(db, label, types, exclude_id=None)
-    item = ChecklistItem(label=label, is_active=True, created_by=current_user.id, created_at=datetime.now(timezone.utc))
+    item = ChecklistItem(
+        label=label, due=due, is_active=True, created_by=current_user.id, created_at=datetime.now(timezone.utc),
+    )
     item.types = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in types]
     db.add(item)
     db.commit()
@@ -175,6 +188,8 @@ def edit_checklist_item(
     # The edit form always sends this, so "no boxes ticked" means unassign everything;
     # without it (a wording-only POST) the assignments are left alone.
     types_submitted: str | None = Form(None),
+    # Before start / Before Mark Deployed; left as it is when absent.
+    due: str | None = Form(None),
     view: str | None = Form(None),
 ):
     # Safe to reword or reassign: ChecklistConfirmation snapshots the label, and each
@@ -189,6 +204,7 @@ def edit_checklist_item(
     added = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in wanted if t not in current]
     item.types = kept + added
     item.label = new_label
+    item.due = _parse_due(due, item.due)
     _touch(item, current_user)
     db.commit()
     return _back(view)

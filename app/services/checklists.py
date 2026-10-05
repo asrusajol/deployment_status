@@ -1,32 +1,38 @@
-"""Which checklist terms a Start needs, and recording that they were confirmed.
+"""Checklist terms per request: which are due when, and saving ticks one at a time.
 
-start_request() (app/routers/dashboard.py) calls record_start_confirmations() before it
-adds the DeploymentExecution row and commits once, so a start and its confirmations are
-saved together or not at all.
+A term is due either before Start Deployment or before Mark Deployed (ChecklistItem.due).
+DevOps tick terms as they do them — each tick is saved immediately by set_tick(), so a
+closed pop-up or a page reload loses nothing. start_request() and deploy_request() in
+app/routers/dashboard.py refuse while missing_items() for their stage is non-empty.
 """
 
-import hashlib
 from datetime import datetime
 
 from sqlalchemy.orm import Session, contains_eager
 
-from app.models.checklist import ChecklistConfirmation, ChecklistItem, ChecklistItemType
-from app.models.deployment_request import DeploymentRequest, RequestType
+from app.models.checklist import (
+    DUE_BEFORE_COMPLETE,
+    DUE_BEFORE_START,
+    ChecklistConfirmation,
+    ChecklistItem,
+    ChecklistItemType,
+)
+from app.models.deployment_request import DeploymentRequest, RequestStatus, RequestType
 from app.models.user import User
 
+# When each stage's ticks may change. Once a stage has passed its ticks are a record:
+# before-start ticks freeze at Start, before-complete ticks at Mark Deployed.
+TICK_WINDOWS = {
+    DUE_BEFORE_START: (RequestStatus.approved,),
+    DUE_BEFORE_COMPLETE: (RequestStatus.in_progress,),
+}
 
-class ChecklistIncomplete(Exception):
-    def __init__(self, missing: list[ChecklistItem]):
-        super().__init__("checklist incomplete")
-        self.missing = missing
 
-
-def checklist_token(item: ChecklistItem) -> str:
-    """The value a Start pop-up checkbox posts: the term id plus a fingerprint of the
-    wording shown. A term reworded while the pop-up was open no longer matches, so the
-    confirmation snapshot can only ever record wording the deployer actually saw."""
-    digest = hashlib.sha256(item.label.encode("utf-8")).hexdigest()[:16]
-    return f"{item.id}:{digest}"
+class ChecklistError(Exception):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
 
 
 def checklist_applies(deployment_request: DeploymentRequest) -> bool:
@@ -37,13 +43,19 @@ def checklist_applies(deployment_request: DeploymentRequest) -> bool:
     )
 
 
-def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
-    """Active terms grouped by every request type they're assigned to, in each type's own
-    order. One query for the whole request listing — never per row."""
+def current_round(deployment_request: DeploymentRequest) -> int:
+    """Which attempt this is: 0 until the first Return, then one more per Return. Each
+    attempt is ticked afresh; earlier attempts' ticks stay for the audit."""
+    return len(deployment_request.returns)
+
+
+def active_items_by_type(db: Session, due: str) -> dict[RequestType, list[ChecklistItem]]:
+    """Active terms due at `due`, grouped by every request type they're assigned to, in
+    each type's own order. One query for the whole request listing — never per row."""
     assignments = (
         db.query(ChecklistItemType)
         .join(ChecklistItemType.item)
-        .filter(ChecklistItem.is_active.is_(True))
+        .filter(ChecklistItem.is_active.is_(True), ChecklistItem.due == due)
         .options(contains_eager(ChecklistItemType.item))
         .order_by(ChecklistItemType.position, ChecklistItemType.item_id)
         .all()
@@ -54,25 +66,57 @@ def active_items_by_type(db: Session) -> dict[RequestType, list[ChecklistItem]]:
     return grouped
 
 
-def record_start_confirmations(
-    db: Session, deployment_request: DeploymentRequest, submitted_ids: list[str], user: User, now: datetime
-) -> None:
-    """Adds one confirmation per required term, or raises ChecklistIncomplete.
-
-    Required is re-read here, not trusted from the page: a term added or reworded while
-    the pop-up was open must block the start (see checklist_token). Submitted values that
-    aren't required (a term retired meanwhile, junk) are ignored. Does not commit — the
-    caller's commit covers this and the execution row together.
-    """
+def required_items(db: Session, deployment_request: DeploymentRequest, due: str) -> list[ChecklistItem]:
     if not checklist_applies(deployment_request):
-        return
-    required = active_items_by_type(db).get(deployment_request.request_type, [])
-    submitted = set(submitted_ids)
-    missing = [item for item in required if checklist_token(item) not in submitted]
-    if missing:
-        raise ChecklistIncomplete(missing)
-    for item in required:
-        db.add(ChecklistConfirmation(
-            request_id=deployment_request.id, checklist_item_id=item.id, item_label=item.label,
-            confirmed_by=user.id, confirmed_at=now,
-        ))
+        return []
+    return active_items_by_type(db, due).get(deployment_request.request_type, [])
+
+
+def counted_item_ids(deployment_request: DeploymentRequest) -> set[int]:
+    """Terms ticked in the current round whose wording hasn't changed since — a tick on
+    reworded wording doesn't count, so the audit only ever holds what was actually seen.
+    Reads the loaded relationships, so the request listing can call it per row without a
+    query when confirmations (and their items) are eager-loaded."""
+    round_ = current_round(deployment_request)
+    return {
+        c.checklist_item_id
+        for c in deployment_request.checklist_confirmations
+        if c.round == round_ and c.item is not None and c.item_label == c.item.label
+    }
+
+
+def missing_items(db: Session, deployment_request: DeploymentRequest, due: str) -> list[ChecklistItem]:
+    ticked = counted_item_ids(deployment_request)
+    return [item for item in required_items(db, deployment_request, due) if item.id not in ticked]
+
+
+def set_tick(
+    db: Session, deployment_request: DeploymentRequest, item: ChecklistItem, user: User, checked: bool, now: datetime
+) -> None:
+    """Saves (or removes) one tick for the current round. Does not commit."""
+    if item not in required_items(db, deployment_request, item.due):
+        raise ChecklistError(400, "That term isn't on this request's checklist.")
+    if deployment_request.status not in TICK_WINDOWS[item.due]:
+        raise ChecklistError(409, "This part of the checklist can't be changed at this stage.")
+
+    round_ = current_round(deployment_request)
+    existing = (
+        db.query(ChecklistConfirmation)
+        .filter_by(request_id=deployment_request.id, checklist_item_id=item.id, round=round_)
+        .one_or_none()
+    )
+    if checked:
+        if existing is None:
+            db.add(ChecklistConfirmation(
+                request_id=deployment_request.id, checklist_item_id=item.id, item_label=item.label,
+                round=round_, confirmed_by=user.id, confirmed_at=now,
+            ))
+        else:
+            # Re-ticking after the term was reworded records the new wording and who saw it.
+            existing.item_label = item.label
+            existing.confirmed_by = user.id
+            existing.confirmed_at = now
+    elif existing is not None:
+        db.delete(existing)
+    db.flush()
+    db.expire(deployment_request, ["checklist_confirmations"])
