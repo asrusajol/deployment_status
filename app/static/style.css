@@ -474,6 +474,34 @@ h1 {
   gap: 0.6rem;
 }
 
+/* One row per pre-flight confirmation in the DB dump Start pop-up. The whole row is the
+   <label>, so the text is as clickable as the box. */
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  margin: 0 0 0.5rem;
+  background: var(--panel-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--paper);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.checklist-item:hover { border-color: var(--hairline-strong); }
+.checklist-item input { margin-top: 0.2rem; accent-color: var(--teal); }
+
+/* Nothing else in the app disables a button, so there was no disabled look; without one
+   the pop-up's Start reads as clickable while it still refuses to submit. */
+.changes-modal-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
 /* Standardized icon-only button — square, currentColor SVG, same footprint regardless
    of what it does. Currently just the modal's copy button, but not named after that one
    use so any future icon-only action (e.g. a copy-to-clipboard elsewhere) matches it
@@ -1422,3 +1450,221 @@ code {
 
 .inline-form button.return:hover,
 .actions-inner > button.return:hover { background: var(--amber-dim); }
+
+/* Management hub (management.html): one card per tool, only the ones the viewer may open. */
+.management-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+.management-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--paper);
+  text-decoration: none;
+}
+.management-card:hover { border-color: var(--teal); }
+.management-card-title { font-family: var(--font-display); font-weight: 600; }
+.management-card-text { font-size: 0.85rem; color: var(--fog); }
+
+/* Checklists page (management_checklists.html): one list of terms grouped by type,
+   each row the wording + its type badge, with admin controls beside it. */
+.checklist-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.checklist-head .subtitle { margin-bottom: 0; }
+
+.checklist-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--teal);
+  border-radius: var(--radius);
+}
+.checklist-add[hidden] { display: none; }
+.checklist-add-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1 1 320px; }
+.checklist-add-actions { display: flex; gap: 0.5rem; }
+
+.checklist-add input[type="text"],
+.checklist-add select,
+.checklist-edit input[type="text"],
+.checklist-edit select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-raised);
+  color: var(--paper);
+}
+.checklist-add input::placeholder { color: var(--fog-dim); }
+.checklist-add input:focus, .checklist-add select:focus,
+.checklist-edit input:focus, .checklist-edit select:focus { outline: none; border-color: var(--teal); }
+
+/* Primary buttons only — .button-secondary (Cancel) keeps its own outlined style;
+   including it here stripped its border and left it as bare text. */
+.checklist-add button:not(.button-secondary), .checklist-edit button:not(.button-secondary) {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.checklist-add button.start, .checklist-edit button.start,
+.checklist-head button.start {
+  background: var(--teal);
+  color: var(--ink);
+}
+.checklist-head button.start {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checklist-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0.75rem; }
+.filter-chip {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+/* Hover only firms up the border — changing the text colour made a hovered chip look
+   selected next to the real one. */
+.filter-chip:not(.is-active):hover { border-color: var(--fog); }
+.filter-chip.is-active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+
+.checklist-panel, .checklist-retired {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+.checklist-list { list-style: none; margin: 0; padding: 0; }
+.checklist-list[hidden] { display: none; }
+.checklist-panel .checklist-list + .checklist-list { border-top: 1px solid var(--hairline-strong); }
+
+.checklist-term, .checklist-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--hairline);
+}
+.checklist-list > li:first-child { border-top: none; }
+.checklist-empty { align-items: center; gap: 0.6rem; font-size: 0.88rem; }
+
+.checklist-num {
+  flex: none;
+  width: 1.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fog-dim);
+  padding-top: 0.1rem;
+}
+.checklist-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+.checklist-text { color: var(--paper); font-size: 0.92rem; line-height: 1.45; }
+.checklist-term.is-retired .checklist-text { color: var(--fog-dim); text-decoration: line-through; }
+.checklist-edit { display: flex; flex-wrap: wrap; gap: 0.4rem; width: 100%; }
+.checklist-edit[hidden] { display: none; }
+.checklist-edit input[type="text"] { flex: 1 1 320px; width: auto; }
+.checklist-edit select { flex: 0 1 220px; width: auto; }
+
+.checklist-actions { flex: none; display: flex; align-items: center; gap: 0.3rem; }
+.checklist-actions form { display: flex; gap: 0.3rem; margin: 0; }
+.icon-action, .text-action {
+  height: 1.9rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.icon-action { width: 1.9rem; padding: 0; }
+.text-action { padding: 0 0.65rem; font-weight: 600; }
+.icon-action:hover, .text-action:hover { border-color: var(--teal); color: var(--teal); }
+.text-action.is-danger { color: var(--red); border-color: var(--red-dim); }
+.text-action.is-danger:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+.checklist-empty-note { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--fog); }
+.checklist-empty-note[hidden] { display: none; }
+.checklist-retired { margin-top: 1rem; }
+.checklist-retired summary {
+  padding: 0.7rem 1.1rem;
+  color: var(--fog);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.checklist-retired[open] summary { border-bottom: 1px solid var(--hairline); }
+
+.checklist-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.checklist-chips[hidden], .checklist-text[hidden] { display: none; }
+
+/* "Applies to" — one checkbox per request type, labelled with its badge. */
+.checklist-types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.8rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.checklist-types legend { float: left; margin-right: 0.4rem; }
+.checklist-type-option { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.checklist-type-option input { accent-color: var(--teal); }
+.checklist-add .checklist-types { flex: 1 1 100%; }
+.checklist-edit .checklist-types { flex: 1 1 100%; }
+.checklist-edit-actions { display: flex; gap: 0.4rem; }
+
+@media (max-width: 640px) {
+  .checklist-term { flex-wrap: wrap; }
+  .checklist-actions { width: 100%; padding-left: 2.45rem; }
+}
+
+/* Checklist audit dialog: the terms confirmed at one start. */
+.checklist-log-items {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--fog);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+
+/* "✓ Checklist" in the Action cell: an audit link, not an action, so it is quiet —
+   outlined, small — rather than a filled button like Start / Mark Deployed. Wrapped in
+   .action-audit so the `.actions-inner > button` fill doesn't apply. */
+.checklist-log-button {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fog);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.checklist-log-button:hover,
+.checklist-log-button:focus-visible { border-color: var(--teal); color: var(--teal); }

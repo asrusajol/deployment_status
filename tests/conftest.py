@@ -93,3 +93,20 @@ def login_as(client, username, password=DEFAULT_TEST_PASSWORD):
     response = client.post("/login", data={"username": username, "password": password}, follow_redirects=False)
     assert response.status_code == 303, f"login as {username!r} failed: {response.text}"
     return response
+
+
+def make_checklist_item(session, *, label, request_types=None, position=1, is_active=True):
+    """Seed a checklist term assigned to `request_types` (default: db_dump_restore only),
+    at `position` within each. Pass request_types=() for an unassigned term."""
+    from datetime import datetime, timezone
+
+    from app.models.checklist import ChecklistItem, ChecklistItemType
+    from app.models.deployment_request import RequestType
+
+    if request_types is None:
+        request_types = (RequestType.db_dump_restore,)
+    item = ChecklistItem(label=label, is_active=is_active, created_at=datetime.now(timezone.utc))
+    item.types = [ChecklistItemType(request_type=t, position=position) for t in request_types]
+    session.add(item)
+    session.commit()
+    return item

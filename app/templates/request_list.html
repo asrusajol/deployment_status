@@ -142,6 +142,25 @@
     </form>
   </dialog>
 
+  {% for checklist_type, checklist_items in start_checklists.items() %}
+    <dialog id="start-checklist-modal-{{ checklist_type.value }}" class="changes-modal" data-start-checklist>
+      <h2>Before you start this {{ request_type_labels[checklist_type] }}</h2>
+      <form method="post" class="form">
+        <p class="hint">Every item is required.</p>
+        {% for item in checklist_items %}
+          <label class="checklist-item">
+            <input type="checkbox" name="checklist" value="{{ checklist_token(item) }}">
+            <span>{{ item.label }}</span>
+          </label>
+        {% endfor %}
+        <div class="changes-modal-actions">
+          <button type="submit" class="start" disabled>Start Deployment</button>
+          <button type="button" class="button-secondary" data-start-checklist-cancel>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  {% endfor %}
+
   <dialog id="return-modal" class="changes-modal">
     <h2>Return to requester</h2>
     <form method="post" id="return-form" class="form">
@@ -178,6 +197,14 @@
     <div id="return-log-body"></div>
     <div class="changes-modal-actions">
       <button type="button" class="button-secondary" id="return-log-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="checklist-log-modal" class="changes-modal">
+    <h2>Checklist confirmations</h2>
+    <div id="checklist-log-body"></div>
+    <div class="changes-modal-actions">
+      <button type="button" class="button-secondary" id="checklist-log-close">Close</button>
     </div>
   </dialog>
 
@@ -413,6 +440,40 @@
         });
       }
 
+      // --- Start checklist pop-ups -----------------------------------------------------
+      // One dialog per request type that has active terms. The row button names its type
+      // and carries the action URL; Start stays disabled until every box is ticked.
+      // start_request() enforces the same list server-side, so this only stops a person
+      // submitting something doomed.
+      (function () {
+        document.querySelectorAll("dialog[data-start-checklist]").forEach(function (modal) {
+          var submit = modal.querySelector('button[type="submit"]');
+          var boxes = modal.querySelectorAll('input[name="checklist"]');
+          boxes.forEach(function (box) {
+            box.addEventListener("change", function () {
+              submit.disabled = !Array.prototype.every.call(boxes, function (b) { return b.checked; });
+            });
+          });
+          modal.querySelector("[data-start-checklist-cancel]").addEventListener("click", function () {
+            modal.close();
+          });
+          modal.addEventListener("click", function (event) {
+            if (event.target === modal) modal.close();
+          });
+        });
+        document.querySelectorAll("[data-start-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var modal = document.getElementById("start-checklist-modal-" + button.getAttribute("data-checklist-type"));
+            if (!modal) return;
+            var form = modal.querySelector("form");
+            form.action = button.getAttribute("data-start-action");
+            form.reset();
+            form.querySelector('button[type="submit"]').disabled = true;
+            modal.showModal();
+          });
+        });
+      })();
+
       (function () {
         var returnModal = document.getElementById("return-modal");
         var returnForm = document.getElementById("return-form");
@@ -460,6 +521,20 @@
         });
         document.getElementById("return-log-close").addEventListener("click", function () {
           logModal.close();
+        });
+
+        // Same shape as the return history: the hidden per-row div is the source.
+        var checklistLogModal = document.getElementById("checklist-log-modal");
+        var checklistLogBody = document.getElementById("checklist-log-body");
+        document.querySelectorAll("[data-checklist-log]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var source = document.getElementById("checklist-log-" + button.getAttribute("data-checklist-log"));
+            checklistLogBody.innerHTML = source ? source.innerHTML : "";
+            checklistLogModal.showModal();
+          });
+        });
+        document.getElementById("checklist-log-close").addEventListener("click", function () {
+          checklistLogModal.close();
         });
       })();
     })();

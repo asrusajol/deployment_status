@@ -37,12 +37,14 @@ from app.auth import (
     can_delete_request,
     can_edit_request,
     can_resubmit_request,
+    can_view_checklist_audit,
     require_deploy_team_member,
     require_login,
 )
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models.approval import Approval, ApprovalDecision
+from app.models.checklist import ChecklistConfirmation
 from app.models.client import Client
 from app.models.client_system_url import ClientSystemUrl
 from app.models.deployable_task import DeployableTask
@@ -56,6 +58,13 @@ from app.models.deployment_request import (
 )
 from app.models.request_return import RequestReturn
 from app.models.user import User, UserRole
+from app.services.checklists import (
+    ChecklistIncomplete,
+    active_items_by_type,
+    checklist_applies,
+    checklist_token,
+    record_start_confirmations,
+)
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
 from app.services.export import rows_to_xlsx
 from app.services.release_tracker import current_version_for, record_client_deploy
@@ -741,6 +750,8 @@ def list_requests(
             joinedload(DeploymentRequest.executions).joinedload(DeploymentExecution.executor),
             selectinload(DeploymentRequest.returns).joinedload(RequestReturn.returner),
             joinedload(DeploymentRequest.withdrawer),
+            # Every row with confirmations renders its audit dialog — N+1 otherwise.
+            selectinload(DeploymentRequest.checklist_confirmations).joinedload(ChecklistConfirmation.confirmer),
         )
         # Oldest-first, same as the open-work ordering below (_requests_ordering) —
         # the one waiting longest is the one most likely to have been forgotten.
@@ -765,6 +776,8 @@ def list_requests(
             # Every withdrawn row's [i] dialog renders "Withdrawn · ... · <who>" —
             # same N+1 reasoning as returner above.
             joinedload(DeploymentRequest.withdrawer),
+            # Every row with confirmations renders its audit dialog — N+1 otherwise.
+            selectinload(DeploymentRequest.checklist_confirmations).joinedload(ChecklistConfirmation.confirmer),
         )
         # Ordered before the offset/limit below, so an old open request lands on
         # page 1 rather than only being hoisted within the page it already sat on.
@@ -831,6 +844,10 @@ def list_requests(
             "RequestStatus": RequestStatus,
             "FINISHED_REQUEST_STATUSES": FINISHED_REQUEST_STATUSES,
             "RequestType": RequestType,
+            # Only deployers get Start buttons, so only they need the pop-ups.
+            "start_checklists": active_items_by_type(db) if can_deploy else {},
+            "checklist_token": checklist_token,
+            "checklist_applies": checklist_applies,
             "request_type_labels": REQUEST_TYPE_LABELS,
             "rail_stages": RAIL_STAGES,
             "neutral_rail": NEUTRAL_RAIL,
@@ -839,6 +856,7 @@ def list_requests(
             "can_delete_request": lambda r: can_delete_request(current_user, r),
             "can_edit_request": lambda r: can_edit_request(current_user, r),
             "can_deploy": can_deploy,
+            "can_view_audit": can_view_checklist_audit(current_user),
             "uses_release_tracker": _uses_release_tracker,
             "previous_versions": previous_versions,
             "page": page,
@@ -1059,6 +1077,9 @@ def start_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
+    # Ids of the checklist terms ticked in the Start pop-up (app/services/checklists.py).
+    # Form([]), not Form(...): a type with no active terms has no pop-up and posts nothing.
+    checklist: list[str] = Form([]),
 ):
     """The first half of execution tracking (project_plan.md Section 4/Phase 2, previously
     unsurfaced): a deploy-team member marks a request as picked up, moving it to
@@ -1070,6 +1091,16 @@ def start_request(
         raise HTTPException(status_code=409, detail="Request is not pending deployment")
 
     now = datetime.now(timezone.utc)
+    # After the permission and status checks so a rejected attempt says what it always
+    # did; before the execution row so a 400 leaves nothing behind.
+    try:
+        record_start_confirmations(db, deployment_request, checklist, current_user, now)
+    except ChecklistIncomplete as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="The checklist for this request is incomplete or has changed — reload and confirm: "
+            + "; ".join(item.label for item in exc.missing),
+        )
     db.add(
         DeploymentExecution(
             request_id=request_id,

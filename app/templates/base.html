@@ -33,8 +33,10 @@
           <a href="/seeder-collection">Seeder Collection</a>
         {% endif %}
         <a href="/clients">Clients</a>
-        {% if current_user.role.value == "admin" %}
-          <a href="/admin/users">Admin</a>
+        {# Mirrors app.auth.can_access_management — the route's require_management is
+           the actual gate; this only hides a link that would 403. #}
+        {% if current_user.role.value == "admin" or current_user.can_access_management %}
+          <a href="/management">Management</a>
         {% endif %}
         <a href="/requests/new" class="button-link">+ New Request</a>
       {% endif %}

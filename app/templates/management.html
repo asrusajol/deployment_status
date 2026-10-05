@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Management — Deployment Tracker{% endblock %}
+{% block content %}
+  <h1>Management</h1>
+  <p class="subtitle">Tools for managing who can do what, and how requests are handled.</p>
+  <div class="management-cards">
+    {% if is_admin %}
+      <a class="management-card" href="/admin/users">
+        <span class="management-card-title">Users</span>
+        <span class="management-card-text">Login access, roles and per-user switches.</span>
+      </a>
+    {% endif %}
+    <a class="management-card" href="/management/checklists">
+      <span class="management-card-title">Checklists</span>
+      <span class="management-card-text">Terms DevOps confirm before starting each request type.</span>
+    </a>
+  </div>
+{% endblock %}

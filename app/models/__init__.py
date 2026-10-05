@@ -1,6 +1,7 @@
 from app.models.approval import Approval
 from app.models.audit_log import AuditLog
 from app.models.bitbucket_main_branch_status import BitbucketMainBranchStatus
+from app.models.checklist import ChecklistConfirmation, ChecklistItem, ChecklistItemType
 from app.models.client import Client
 from app.models.client_system_url import ClientSystemUrl
 from app.models.client_version_status import ClientVersionStatus
@@ -16,6 +17,9 @@ __all__ = [
     "Approval",
     "AuditLog",
     "BitbucketMainBranchStatus",
+    "ChecklistConfirmation",
+    "ChecklistItem",
+    "ChecklistItemType",
     "Client",
     "ClientSystemUrl",
     "ClientVersionStatus",

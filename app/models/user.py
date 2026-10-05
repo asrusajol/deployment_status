@@ -46,6 +46,16 @@ class User(Base):
     # (app/auth.py), which still let an admin act on any request they can reach.
     can_manage_other_returns: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Opens the Management tab (app/routers/management.py) and view+add on checklist
+    # terms. A switch rather than a fifth role: a user holds exactly one role, and making
+    # "management" a role would strip a DevOps user of deploy rights. Ignored for admins,
+    # who always have full access. Granted per user on /admin/users.
+    can_access_management: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Shows the checklist audit (who confirmed which start-checklist term, when) on
+    # request rows. Its own grant, independent of role or team — see
+    # docs/superpowers/specs/2026-09-30-request-checklists-design.md. Ignored for admins.
+    can_view_checklist_audit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Mirrored from the in-house API's daily user-roster sync (project_plan.md, Section 6):
     # employees are represented as "Machine" records in that system, hence machine_group_id.
     source_system_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
