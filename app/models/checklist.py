@@ -1,12 +1,18 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.deployment_request import RequestType
 
 LABEL_MAX_LENGTH = 500
+
+# When a term is due. A plain string column (not a Postgres enum) so adding a stage later
+# needs no ALTER TYPE; validated in app/routers/management.py.
+DUE_BEFORE_START = "before_start"
+DUE_BEFORE_COMPLETE = "before_complete"
+DUE_LABELS = {DUE_BEFORE_START: "Before start", DUE_BEFORE_COMPLETE: "Before Mark Deployed"}
 
 
 class ChecklistItem(Base):
@@ -21,6 +27,9 @@ class ChecklistItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(LABEL_MAX_LENGTH))
+    # Before start: gates Start Deployment. Before complete: done during the work (after
+    # a restore / deploy) and gates Mark Deployed instead.
+    due: Mapped[str] = mapped_column(String(16), default=DUE_BEFORE_START, server_default=DUE_BEFORE_START)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Null only for the terms seeded by migration c2e8f5a1d6b7.
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -51,20 +60,26 @@ class ChecklistItemType(Base):
 
 
 class ChecklistConfirmation(Base):
-    """One term confirmed by one person when starting one request.
+    """One term ticked by one person for one attempt (`round`) at a request.
 
-    Keyed on the request, not the DeploymentExecution: Return deletes the execution
-    row, and the audit must outlive it. No unique constraint — a request started,
-    returned and started again keeps both sets. `item_label` is a snapshot, so
-    rewording a term later never changes what someone agreed to.
+    Saved the moment it's ticked, so closing the pop-up loses nothing; unticking deletes
+    it while its stage is still open. Keyed on the request, not the DeploymentExecution:
+    Return deletes the execution row, and the audit must outlive it. `round` is how many
+    times the request had been returned when it was ticked, so each attempt is ticked
+    afresh and earlier attempts stay in the audit. `item_label` is a snapshot — a tick
+    only counts while it still matches the term's wording.
     """
 
     __tablename__ = "checklist_confirmations"
+    __table_args__ = (
+        UniqueConstraint("request_id", "checklist_item_id", "round", name="uq_checklist_confirmations_request_item_round"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     request_id: Mapped[int] = mapped_column(ForeignKey("deployment_requests.id"), index=True)
     checklist_item_id: Mapped[int] = mapped_column(ForeignKey("checklist_items.id"))
     item_label: Mapped[str] = mapped_column(String(LABEL_MAX_LENGTH))
+    round: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     confirmed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     confirmed_at: Mapped[datetime] = mapped_column(DateTime)
 

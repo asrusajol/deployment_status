@@ -135,6 +135,20 @@
         <label for="deploy-version-current">Current version</label>
         <input type="text" id="deploy-version-current" name="current_version" required placeholder="e.g. 2026.34.34">
       </div>
+      {# The "before Mark Deployed" terms for the row's type; JS shows the matching one.
+         Ticks save as they're clicked (no name — never part of this form's POST). #}
+      {% for checklist_type, checklist_items in complete_checklists.items() %}
+        <fieldset class="checklist-fieldset" data-complete-checklist-type="{{ checklist_type.value }}" hidden>
+          <legend class="cell-label">Before you mark this Deployed</legend>
+          {% for item in checklist_items %}
+            <label class="checklist-item">
+              <input type="checkbox" data-item-id="{{ item.id }}">
+              <span>{{ item.label }}</span>
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      <p class="checklist-error" hidden></p>
       <div class="changes-modal-actions">
         <button type="submit" class="deploy">Confirm Deployment</button>
         <button type="button" class="button-secondary" id="deploy-version-cancel">Cancel</button>
@@ -142,23 +156,34 @@
     </form>
   </dialog>
 
-  {% for checklist_type, checklist_items in start_checklists.items() %}
-    <dialog id="start-checklist-modal-{{ checklist_type.value }}" class="changes-modal" data-start-checklist>
-      <h2>Before you start this {{ request_type_labels[checklist_type] }}</h2>
+  {# Checklist pop-ups, one per request type and stage. Every tick is saved the moment
+     it's clicked (POST /requests/{id}/checklist/{item}), so closing a pop-up to go and do
+     the work loses nothing; the submit button enables once every box is ticked, and the
+     route re-checks the saved ticks. #}
+  {% macro checklist_dialog(dialog_id, title, items, submit_label, submit_class) %}
+    <dialog id="{{ dialog_id }}" class="changes-modal" data-checklist-dialog>
+      <h2>{{ title }}</h2>
       <form method="post" class="form">
-        <p class="hint">Every item is required.</p>
-        {% for item in checklist_items %}
+        <p class="hint">Ticks are saved as you go — you can close this and come back.</p>
+        {% for item in items %}
           <label class="checklist-item">
-            <input type="checkbox" name="checklist" value="{{ checklist_token(item) }}">
+            <input type="checkbox" data-item-id="{{ item.id }}">
             <span>{{ item.label }}</span>
           </label>
         {% endfor %}
+        <p class="checklist-error" hidden></p>
         <div class="changes-modal-actions">
-          <button type="submit" class="start" disabled>Start Deployment</button>
-          <button type="button" class="button-secondary" data-start-checklist-cancel>Cancel</button>
+          <button type="submit" class="{{ submit_class }}" disabled>{{ submit_label }}</button>
+          <button type="button" class="button-secondary" data-checklist-cancel>Close</button>
         </div>
       </form>
     </dialog>
+  {% endmacro %}
+  {% for checklist_type, checklist_items in start_checklists.items() %}
+    {{ checklist_dialog("start-checklist-modal-" ~ checklist_type.value, "Before you start this " ~ request_type_labels[checklist_type], checklist_items, "Start Deployment", "start") }}
+  {% endfor %}
+  {% for checklist_type, checklist_items in complete_checklists.items() %}
+    {{ checklist_dialog("complete-checklist-modal-" ~ checklist_type.value, "Before you mark this Deployed", checklist_items, "Mark Deployed", "deploy") }}
   {% endfor %}
 
   <dialog id="return-modal" class="changes-modal">
@@ -395,7 +420,7 @@
         var socket = new WebSocket(protocol + "//" + window.location.host + "/ws/requests");
 
         socket.onmessage = function () {
-          window.location.reload();
+          reloadWhenNoDialogOpen();
         };
         socket.onclose = function () {
           setTimeout(connectLiveUpdateSocket, RECONNECT_DELAY_MS);
@@ -405,10 +430,85 @@
         };
       }
 
-      connectLiveUpdateSocket();
-      setTimeout(function () {
+      // Never reload under an open pop-up: someone mid-checklist or mid-form would lose
+      // their place. Retry shortly instead; closing the pop-up lets the next try through.
+      function reloadWhenNoDialogOpen() {
+        if (document.querySelector("dialog[open]")) {
+          setTimeout(reloadWhenNoDialogOpen, 5000);
+          return;
+        }
         window.location.reload();
-      }, FALLBACK_RELOAD_MS);
+      }
+
+      connectLiveUpdateSocket();
+      setTimeout(reloadWhenNoDialogOpen, FALLBACK_RELOAD_MS);
+
+      // --- Checklist ticks -----------------------------------------------------------
+      // Pre-checks a pop-up's boxes from the opener's data-ticked and saves each change
+      // immediately. On success the opener's data-ticked is updated too, so reopening
+      // without a reload shows the same state. A failed save reverts the box and says so.
+      function wireChecklist(container, opener, onChange) {
+        var requestId = opener.getAttribute("data-request-id");
+        var ticked = (opener.getAttribute("data-ticked") || "").split(",").filter(Boolean);
+        var error = container.querySelector(".checklist-error") || container.closest("form").querySelector(".checklist-error");
+        if (error) error.hidden = true;
+        container.querySelectorAll("input[data-item-id]").forEach(function (box) {
+          var itemId = box.getAttribute("data-item-id");
+          box.checked = ticked.indexOf(itemId) !== -1;
+          box.onchange = function () {
+            box.disabled = true;
+            fetch("/requests/" + requestId + "/checklist/" + itemId, {
+              method: "POST",
+              body: new URLSearchParams({ checked: box.checked ? "1" : "0" }),
+            })
+              .then(function (response) {
+                if (!response.ok) throw new Error(response.status);
+                var now = (opener.getAttribute("data-ticked") || "").split(",").filter(function (id) { return id && id !== itemId; });
+                if (box.checked) now.push(itemId);
+                opener.setAttribute("data-ticked", now.join(","));
+              })
+              .catch(function () {
+                box.checked = !box.checked;
+                if (error) { error.textContent = "Couldn't save that tick — try again."; error.hidden = false; }
+              })
+              .then(function () {
+                box.disabled = false;
+                onChange();
+              });
+          };
+        });
+        onChange();
+      }
+
+      function allTicked(container) {
+        return Array.prototype.every.call(container.querySelectorAll("input[data-item-id]"), function (b) { return b.checked; });
+      }
+
+      (function () {
+        document.querySelectorAll("dialog[data-checklist-dialog]").forEach(function (modal) {
+          modal.querySelector("[data-checklist-cancel]").addEventListener("click", function () { modal.close(); });
+          modal.addEventListener("click", function (event) { if (event.target === modal) modal.close(); });
+        });
+        function openChecklist(opener, prefix, action) {
+          var modal = document.getElementById(prefix + opener.getAttribute("data-checklist-type"));
+          if (!modal) return;
+          var form = modal.querySelector("form");
+          var submit = form.querySelector('button[type="submit"]');
+          form.action = action;
+          wireChecklist(form, opener, function () { submit.disabled = !allTicked(form); });
+          modal.showModal();
+        }
+        document.querySelectorAll("[data-start-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            openChecklist(button, "start-checklist-modal-", button.getAttribute("data-start-action"));
+          });
+        });
+        document.querySelectorAll("[data-complete-action]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            openChecklist(button, "complete-checklist-modal-", button.getAttribute("data-complete-action"));
+          });
+        });
+      })();
 
       // --- Deploy-confirmation popup (Standard Deployment only) ---------------------
       var deployDialog = document.getElementById("deploy-version-modal");
@@ -428,6 +528,21 @@
             deploySystemEl.textContent = deploySystem ? deploySystem.charAt(0).toUpperCase() + deploySystem.slice(1) : "—";
             deployPreviousEl.textContent = button.getAttribute("data-deploy-previous-version") || "—";
             deployCurrentInput.value = "";
+            // The row's "before Mark Deployed" terms, if its type has any: Confirm needs
+            // the version AND every box ticked.
+            var type = button.getAttribute("data-checklist-type");
+            var section = null;
+            deployForm.querySelectorAll("[data-complete-checklist-type]").forEach(function (fieldset) {
+              var match = fieldset.getAttribute("data-complete-checklist-type") === type;
+              fieldset.hidden = !match;
+              if (match) section = fieldset;
+            });
+            var confirm = deployForm.querySelector('button[type="submit"]');
+            var sync = function () {
+              confirm.disabled = !deployCurrentInput.value.trim() || (section !== null && !allTicked(section));
+            };
+            deployCurrentInput.oninput = sync;
+            if (section) wireChecklist(section, button, sync); else sync();
             deployDialog.showModal();
           });
         });
@@ -440,39 +555,6 @@
         });
       }
 
-      // --- Start checklist pop-ups -----------------------------------------------------
-      // One dialog per request type that has active terms. The row button names its type
-      // and carries the action URL; Start stays disabled until every box is ticked.
-      // start_request() enforces the same list server-side, so this only stops a person
-      // submitting something doomed.
-      (function () {
-        document.querySelectorAll("dialog[data-start-checklist]").forEach(function (modal) {
-          var submit = modal.querySelector('button[type="submit"]');
-          var boxes = modal.querySelectorAll('input[name="checklist"]');
-          boxes.forEach(function (box) {
-            box.addEventListener("change", function () {
-              submit.disabled = !Array.prototype.every.call(boxes, function (b) { return b.checked; });
-            });
-          });
-          modal.querySelector("[data-start-checklist-cancel]").addEventListener("click", function () {
-            modal.close();
-          });
-          modal.addEventListener("click", function (event) {
-            if (event.target === modal) modal.close();
-          });
-        });
-        document.querySelectorAll("[data-start-action]").forEach(function (button) {
-          button.addEventListener("click", function () {
-            var modal = document.getElementById("start-checklist-modal-" + button.getAttribute("data-checklist-type"));
-            if (!modal) return;
-            var form = modal.querySelector("form");
-            form.action = button.getAttribute("data-start-action");
-            form.reset();
-            form.querySelector('button[type="submit"]').disabled = true;
-            modal.showModal();
-          });
-        });
-      })();
 
       (function () {
         var returnModal = document.getElementById("return-modal");

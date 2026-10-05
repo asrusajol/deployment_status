@@ -520,3 +520,57 @@ def test_add_returns_to_its_view_and_forms_carry_the_view(web):
 
     assert response.headers["location"] == "/management/checklists?view=test_local"
     assert 'name="view" value="test_local"' in _add_form(page)
+
+
+def test_add_saves_when_the_term_is_due(web):
+    client, session = web
+    _seed_users(session)
+    login_as(client, "mgr")
+
+    client.post("/management/checklists",
+                data={"label": "After deploy: smoke test", "request_types": "standard", "due": "before_complete"})
+    client.post("/management/checklists", data={"label": "Backup taken", "request_types": "standard"})
+
+    assert session.query(ChecklistItem).filter_by(label="After deploy: smoke test").one().due == "before_complete"
+    assert session.query(ChecklistItem).filter_by(label="Backup taken").one().due == "before_start"
+
+
+def test_add_and_edit_reject_an_unknown_due(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="Close cronjobs")
+    login_as(client, "root")
+
+    assert client.post("/management/checklists",
+                       data={"label": "x", "request_types": "standard", "due": "whenever"}).status_code == 400
+    assert client.post(f"/management/checklists/{item.id}/edit",
+                       data={"label": "Close cronjobs", "due": "whenever"}).status_code == 400
+
+
+def test_admin_changes_when_a_term_is_due(web):
+    client, session = web
+    _seed_users(session)
+    item = _item(session, label="After restoration, remove email settings")
+    login_as(client, "root")
+
+    client.post(f"/management/checklists/{item.id}/edit",
+                data={"label": item.label, "due": "before_complete"})
+
+    session.expire_all()
+    assert session.get(ChecklistItem, item.id).due == "before_complete"
+
+
+def test_rows_show_when_each_term_is_due_and_forms_offer_the_choice(web):
+    client, session = web
+    _seed_users(session)
+    before = _item(session, label="Backup taken")
+    after = make_checklist_item(session, label="Smoke test", due="before_complete", position=2)
+    login_as(client, "root")
+
+    page = client.get("/management/checklists").text
+
+    assert "Before start" in _row(page, before.id)
+    assert "Before Mark Deployed" in _row(page, after.id)
+    assert 'name="due" value="before_complete"' in _add_form(page)
+    edit = re.search(r'<form[^>]*action="/management/checklists/\d+/edit".*?</form>', _row(page, after.id), re.S).group(0)
+    assert re.search(r'name="due" value="before_complete"[^>]*\bchecked\b', edit)

@@ -172,15 +172,19 @@
             {% endif %}
             {% if can_view_audit and r.checklist_confirmations %}
               <div class="return-log-data" id="checklist-log-{{ r.id }}" hidden>
-                {# One group per start (a start writes all its rows with one timestamp);
-                   newest first, same as the return history. #}
-                {% for confirmed_at, rows in r.checklist_confirmations | groupby("confirmed_at") | reverse %}
+                {# One group per attempt (a Return starts a new round), newest first, same
+                   as the return history. Ticks are saved one at a time, so each line
+                   carries its own who and when. #}
+                {% for round_, rows in r.checklist_confirmations | groupby("round") | reverse %}
                   <div class="return-log-entry">
-                    <div class="return-log-meta">
-                      {{ localtime(confirmed_at) }} · {{ rows[0].confirmer.name if rows[0].confirmer else "—" }}
-                    </div>
+                    <div class="return-log-meta">Attempt {{ round_ + 1 }}</div>
                     <ul class="checklist-log-items">
-                      {% for c in rows %}<li>{{ c.item_label }}</li>{% endfor %}
+                      {% for c in rows | sort(attribute="confirmed_at") %}
+                        <li>
+                          {{ c.item_label }}
+                          <span class="checklist-log-who">{{ c.confirmer.name if c.confirmer else "—" }} · {{ localtime(c.confirmed_at) }}</span>
+                        </li>
+                      {% endfor %}
                     </ul>
                   </div>
                 {% endfor %}
@@ -216,6 +220,8 @@
                       type="button" class="start"
                       data-start-action="/requests/{{ r.id }}/start"
                       data-checklist-type="{{ r.request_type.value }}"
+                      data-request-id="{{ r.id }}"
+                      data-ticked="{{ ticked_ids(r) }}"
                     >Start Deployment</button>
                   {% else %}
                     <form method="post" action="/requests/{{ r.id }}/start" class="inline-form">
@@ -231,11 +237,23 @@
                 {% endif %}
               {% elif r.status == RequestStatus.in_progress %}
                 {% if can_deploy %}
+                  {# Terms that can only be done once the work has run gate Mark Deployed:
+                     its pop-up (or the V12 version pop-up) collects them, saved tick by
+                     tick, and deploy_request() re-checks them. #}
+                  {% set complete_terms = complete_checklists.get(r.request_type) if checklist_applies(r) else none %}
                   {% if uses_release_tracker(r) %}
                     {% set version_key = (r.client_id ~ ":" ~ r.environment.value) if r.client_id and r.environment else "" %}
                     <div class="inline-form">
-                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}">Mark Deployed</button>
+                      <button type="button" class="deploy" data-deploy-request-id="{{ r.id }}" data-deploy-client="{{ r.client.name if r.client else '' }}" data-deploy-system="{{ r.environment.value if r.environment else '' }}" data-deploy-previous-version="{{ previous_versions.get(version_key) or '' }}"{% if complete_terms %} data-checklist-type="{{ r.request_type.value }}" data-request-id="{{ r.id }}" data-ticked="{{ ticked_ids(r) }}"{% endif %}>Mark Deployed</button>
                     </div>
+                  {% elif complete_terms %}
+                    <button
+                      type="button" class="deploy"
+                      data-complete-action="/requests/{{ r.id }}/deploy"
+                      data-checklist-type="{{ r.request_type.value }}"
+                      data-request-id="{{ r.id }}"
+                      data-ticked="{{ ticked_ids(r) }}"
+                    >Mark Deployed</button>
                   {% else %}
                     <form method="post" action="/requests/{{ r.id }}/deploy" class="inline-form">
                       <button type="submit" class="deploy">Mark Deployed</button>

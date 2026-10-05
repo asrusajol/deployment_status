@@ -21,7 +21,7 @@ This design replaces it with:
 
 | # | Decision |
 |---|---|
-| D1 | Checklists run **only at Start Deployment** (not at Mark Deployed). |
+| D1 | Two stages (revised 2026-10-05): each term is due **Before start** (gates Start Deployment) or **Before Mark Deployed** (gates Mark Deployed; for steps done after the work). Ticks are saved one at a time as they're made, per attempt (`round`), so a closed pop-up loses nothing and a Return starts the next attempt fresh. Added by migration `b9d3f6a2e8c4` on top of the already-deployed `c2e8f5a1d6b7`. |
 | D2 | **One term, many request types** (revised 2026-09-30). A term is assigned to any set of types via `checklist_item_types`; each type keeps its own order. Editing the wording changes it everywhere. Assigning is refused if that type already has an active term with the same wording. |
 | D3 | Management access is a **per-user permission switch**, not a role. A user keeps their one existing role (`developer`/`team_lead`/`devops`/`admin`); a fifth role would strip a DevOps user of deploy rights. |
 | D4 | **Admin**: view, add, edit, reorder, deactivate/reactivate checklist terms. **Management access**: view and add only. Everyone else: no tab, 403 on the URLs. |

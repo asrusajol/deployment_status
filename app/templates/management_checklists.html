@@ -14,6 +14,20 @@
   </fieldset>
 {% endmacro %}
 
+{# When the term is due: Before start gates Start Deployment; Before Mark Deployed is for
+   steps that can only be done once the work has run, and gates Mark Deployed. #}
+{% macro due_choice(current) %}
+  <fieldset class="checklist-types">
+    <legend class="cell-label">When</legend>
+    {% for value, text in due_labels.items() %}
+      <label class="checklist-type-option">
+        <input type="radio" name="due" value="{{ value }}" {% if value == current %}checked{% endif %}>
+        <span>{{ text }}</span>
+      </label>
+    {% endfor %}
+  </fieldset>
+{% endmacro %}
+
 {# One term's row. A term assigned to several types appears under each of them;
    `group_type` is the type this row sits under (None for "not assigned" and retired),
    and `number` is its place in that type's Start pop-up. Admin controls sit beside the
@@ -29,6 +43,7 @@
           <input type="hidden" name="types_submitted" value="1">
           <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
           {{ type_checkboxes(item.types | map(attribute="request_type") | list) }}
+          {{ due_choice(item.due) }}
           <div class="checklist-edit-actions">
             <button type="submit" class="start">Save</button>
             <button type="button" class="button-secondary" data-edit-cancel>Cancel</button>
@@ -36,6 +51,7 @@
         </form>
       {% endif %}
       <span class="checklist-chips">
+        <span class="checklist-due checklist-due-{{ item.due }}">{{ due_labels[item.due] }}</span>
         {% for assignment in item.types %}
           <span class="badge badge-type-{{ assignment.request_type.value }}">{{ type_labels[assignment.request_type] }}</span>
         {% else %}
@@ -75,7 +91,7 @@
   <div class="checklist-head">
     <div>
       <h1>Checklists</h1>
-      <p class="subtitle">Terms DevOps must tick before Start Deployment. One term can apply to several request types; a type with no active terms starts with one click. A DB dump shared with the requestor (not restored) skips the checklist.</p>
+      <p class="subtitle">Terms DevOps tick before Start Deployment, or before Mark Deployed for steps done after the work. Ticks are saved as they're made. One term can apply to several request types; a type with no active terms starts with one click. A DB dump shared with the requestor (not restored) skips the checklist.</p>
     </div>
     <button type="button" class="start" id="checklist-add-toggle">+ Add term</button>
   </div>
@@ -87,6 +103,7 @@
       <input type="text" name="label" maxlength="500" required placeholder="e.g. Snapshot the target database">
     </label>
     {{ type_checkboxes([]) }}
+    {{ due_choice("before_start") }}
     <div class="checklist-add-actions">
       <button type="submit" class="start">Add</button>
       <button type="button" class="button-secondary" id="checklist-add-cancel">Cancel</button>
