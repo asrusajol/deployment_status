@@ -51,6 +51,8 @@
   --switchOffBg: #788FA6;
   --switchKnobBg: #FFFFFF;
   --dialogDivider: #D9D9D9;
+  --toastBg: rgba(29, 45, 62, 0.92);
+  --toastText: #FFFFFF;
   --sapButton_Selected_BorderColor: #0064D9;
   --warningIconColor: #E76500;
   --sapList_Background: #FFFFFF;
@@ -2395,3 +2397,18 @@ a.health-row:hover { background: var(--sapHoverColor); }
 .dash-status .table-scroll { max-height: 70vh; overflow: auto; }
 .dash-status .status-table { overflow: visible; border-collapse: separate; border-spacing: 0; }
 .dash-status .status-table thead th { position: sticky; top: 0; z-index: 3; }
+
+/* The reference's toast: a dark pill bottom-centre, 2.4s (see _toasts.html). */
+.toast { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); max-width: calc(100vw - 32px); background: var(--toastBg); color: var(--toastText); padding: 12px 16px; border-radius: 12px; font-size: 14px; z-index: 400; box-shadow: var(--sapContent_Shadow2); animation: toastIn .14s ease-out; }
+.toast[hidden] { display: none; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+/* Requests column widths: the reference's resize grip on each header's right edge. */
+.requests-table thead th { position: relative; }
+.requests-table .col-resizer { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 1; }
+.requests-table .col-resizer:hover, body.is-resizing .requests-table .col-resizer:active { background: var(--sapSelectedBorder); }
+body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none; }
+/* The reference's empty grid lines under the last row. */
+.requests-table tr.filler-row td { background: var(--sapList_Background); }
+.requests-table tbody tr.filler-row:hover td { background: var(--sapList_Background); }

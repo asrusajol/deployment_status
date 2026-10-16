@@ -75,10 +75,12 @@ from app.services.sync import sync_deployable_tasks
 from app.services.task_source import InHouseTaskSourceProvider
 from app.static_version import STATIC_VERSION
 from app.ws import manager
+from app import toast
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 # Shown instead of the raw enum value everywhere the status is displayed to a person.
 STATUS_LABELS = {
@@ -513,24 +515,24 @@ def create_request(
     if isinstance(result, str):
         return rerender(result)
 
-    db.add(
-        DeploymentRequest(
-            task_id=result.combined_task_id,
-            module_name=result.combined_module_name,
-            deployable_task_ids=",".join(str(task.id) for task in result.deployable_tasks),
-            client_id=result.client.id,
-            environment=environment,
-            server=server.strip() or None,
-            git_branch=result.git_branch,
-            commit_hash=result.commit_hash,
-            version=result.version,
-            changes_description=changes_description.strip() or None,
-            requested_by=current_user.id,
-            status=initial_status_for(RequestType.standard),
-            created_at=datetime.now(timezone.utc),
-        )
+    new_request = DeploymentRequest(
+        task_id=result.combined_task_id,
+        module_name=result.combined_module_name,
+        deployable_task_ids=",".join(str(task.id) for task in result.deployable_tasks),
+        client_id=result.client.id,
+        environment=environment,
+        server=server.strip() or None,
+        git_branch=result.git_branch,
+        commit_hash=result.commit_hash,
+        version=result.version,
+        changes_description=changes_description.strip() or None,
+        requested_by=current_user.id,
+        status=initial_status_for(RequestType.standard),
+        created_at=datetime.now(timezone.utc),
     )
+    db.add(new_request)
     db.commit()
+    toast.toast(request, f"Request #{new_request.id} submitted")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -555,22 +557,22 @@ def create_db_dump_restore_request(
     if isinstance(result, str):
         return rerender(result)
 
-    db.add(
-        DeploymentRequest(
-            request_type=RequestType.db_dump_restore,
-            dump_source=result.dump_source,
-            version=result.version,
-            restore_source=result.restore_source,
-            share_with_requestor=result.share_with_requestor,
-            requested_by=current_user.id,
-            # No approval required for this request type — lands straight in the
-            # deploy team's "Pending Deployment" queue, same as an approved standard
-            # request, so who-executed-it-and-when is still tracked.
-            status=initial_status_for(RequestType.db_dump_restore),
-            created_at=datetime.now(timezone.utc),
-        )
+    new_request = DeploymentRequest(
+        request_type=RequestType.db_dump_restore,
+        dump_source=result.dump_source,
+        version=result.version,
+        restore_source=result.restore_source,
+        share_with_requestor=result.share_with_requestor,
+        requested_by=current_user.id,
+        # No approval required for this request type — lands straight in the
+        # deploy team's "Pending Deployment" queue, same as an approved standard
+        # request, so who-executed-it-and-when is still tracked.
+        status=initial_status_for(RequestType.db_dump_restore),
+        created_at=datetime.now(timezone.utc),
     )
+    db.add(new_request)
     db.commit()
+    toast.toast(request, f"Request #{new_request.id} submitted")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -593,20 +595,20 @@ def create_test_local_request(
     if isinstance(result, str):
         return rerender(result)
 
-    db.add(
-        DeploymentRequest(
-            request_type=RequestType.test_local,
-            server=result.server,
-            git_branch=result.git_branch,
-            version=result.version,
-            changes_description=changes_description.strip() or None,
-            requested_by=current_user.id,
-            # No approval required for this request type — see create_db_dump_restore_request above.
-            status=initial_status_for(RequestType.test_local),
-            created_at=datetime.now(timezone.utc),
-        )
+    new_request = DeploymentRequest(
+        request_type=RequestType.test_local,
+        server=result.server,
+        git_branch=result.git_branch,
+        version=result.version,
+        changes_description=changes_description.strip() or None,
+        requested_by=current_user.id,
+        # No approval required for this request type — see create_db_dump_restore_request above.
+        status=initial_status_for(RequestType.test_local),
+        created_at=datetime.now(timezone.utc),
     )
+    db.add(new_request)
     db.commit()
+    toast.toast(request, f"Request #{new_request.id} submitted")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -707,6 +709,26 @@ def _requests_ordering():
 # request an arbitrarily large page and turn every load into a full-table scan.
 DEFAULT_REQUESTS_PAGE_SIZE = 15
 ALLOWED_REQUESTS_PAGE_SIZES = (15, 25, 50, 100)
+# "Auto" (the default, no page_size chosen): as many rows as fit the viewer's screen,
+# measured by request_list.html's script and kept in this cookie — the server can't
+# know the window height. Bounded like the dropdown, so a hand-edited cookie can't ask
+# for a full-table page either.
+ROWS_FIT_COOKIE = "dt-rows-fit"
+ROWS_FIT_RANGE = (5, 100)
+
+
+def _requests_page_size(request: Request, page_size: str | None) -> tuple[int, bool]:
+    """(rows per page, whether it's Auto)."""
+    if page_size and page_size.isdigit() and int(page_size) in ALLOWED_REQUESTS_PAGE_SIZES:
+        return int(page_size), False
+    if page_size and page_size != "auto":
+        # An out-of-range number from a hand-edited URL: the old default, as before.
+        return DEFAULT_REQUESTS_PAGE_SIZE, False
+    fit = request.cookies.get(ROWS_FIT_COOKIE, "")
+    if fit.isdigit():
+        low, high = ROWS_FIT_RANGE
+        return max(low, min(high, int(fit))), True
+    return DEFAULT_REQUESTS_PAGE_SIZE, True
 
 
 @router.get("/requests")
@@ -716,10 +738,9 @@ def list_requests(
     current_user: User = Depends(require_login),
     settings: Settings = Depends(get_settings),
     page: int = 1,
-    page_size: int = DEFAULT_REQUESTS_PAGE_SIZE,
+    page_size: str | None = None,
 ):
-    if page_size not in ALLOWED_REQUESTS_PAGE_SIZES:
-        page_size = DEFAULT_REQUESTS_PAGE_SIZE
+    page_size, rows_auto = _requests_page_size(request, page_size)
     # The design's Search box and column header menus (sort, "contains" filter), run
     # in SQL before the page is cut — see app/services/request_query.py.
     list_query = request_query.ListQuery.from_params(request.query_params)
@@ -855,6 +876,10 @@ def list_requests(
             "previous_versions": previous_versions,
             "page": page,
             "page_size": page_size,
+            "rows_auto": rows_auto,
+            "rows_fit_cookie": ROWS_FIT_COOKIE,
+            # What links and forms carry: nothing for Auto, so the next page measures too.
+            "page_size_param": {} if rows_auto else {"page_size": page_size},
             "page_size_options": ALLOWED_REQUESTS_PAGE_SIZES,
             "total_pages": total_pages,
             "total_count": total_count,
@@ -966,6 +991,7 @@ def _require_can_approve(current_user: User, deployment_request: DeploymentReque
 
 @router.post("/requests/{request_id}/approve")
 def approve_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
@@ -987,12 +1013,14 @@ def approve_request(
     )
     deployment_request.status = RequestStatus.approved
     db.commit()
+    toast.toast(request, f"Request #{request_id} approved")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
 @router.post("/requests/{request_id}/reject")
 def reject_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
@@ -1014,6 +1042,7 @@ def reject_request(
     )
     deployment_request.status = RequestStatus.rejected
     db.commit()
+    toast.toast(request, f"Request #{request_id} rejected")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -1024,6 +1053,7 @@ RETURNABLE_REQUEST_STATUSES = (RequestStatus.approved, RequestStatus.in_progress
 
 @router.post("/requests/{request_id}/return")
 def return_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
@@ -1062,6 +1092,7 @@ def return_request(
         db.query(DeploymentExecution).filter_by(request_id=request_id).delete()
     deployment_request.status = RequestStatus.returned
     db.commit()
+    toast.toast(request, f"Request #{request_id} returned to " + (deployment_request.requester.name if deployment_request.requester else "the requester"))
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -1081,6 +1112,7 @@ def _is_requester_or_admin(current_user: User, deployment_request: DeploymentReq
 
 @router.post("/requests/{request_id}/resubmit")
 def resubmit_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
@@ -1100,12 +1132,14 @@ def resubmit_request(
     # was for something that no longer exists.
     deployment_request.status = initial_status_for(deployment_request.request_type)
     db.commit()
+    toast.toast(request, f"Request #{request_id} resubmitted")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
 @router.post("/requests/{request_id}/withdraw")
 def withdraw_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
@@ -1136,6 +1170,7 @@ def withdraw_request(
     # something" everywhere the template checks `if r.withdrawn_note`.
     deployment_request.withdrawn_note = note.strip() or None
     db.commit()
+    toast.toast(request, f"Request #{request_id} withdrawn")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -1176,6 +1211,7 @@ def tick_checklist_item(
 
 @router.post("/requests/{request_id}/start")
 def start_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
@@ -1205,12 +1241,14 @@ def start_request(
     )
     deployment_request.status = RequestStatus.in_progress
     db.commit()
+    toast.toast(request, f"Deployment for request #{request_id} started")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
 @router.post("/requests/{request_id}/deploy")
 def deploy_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_deploy_team_member),
@@ -1260,6 +1298,7 @@ def deploy_request(
         )
 
     db.commit()
+    toast.toast(request, f"Request #{request_id} marked as deployed — " + ("history and release tracker updated" if uses_release_tracker else "history updated"))
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
@@ -1425,12 +1464,14 @@ def edit_request(
         deployment_request.changes_description = changes_description.strip() or None
 
     db.commit()
+    toast.toast(request, f"Request #{request_id} updated")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)
 
 
 @router.post("/requests/{request_id}/delete")
 def delete_request(
+    request: Request,
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_login),
@@ -1454,5 +1495,6 @@ def delete_request(
         db.delete(approval)
     db.delete(deployment_request)
     db.commit()
+    toast.toast(request, f"Request #{request_id} deleted")
     manager.notify()
     return RedirectResponse(url="/requests", status_code=303)

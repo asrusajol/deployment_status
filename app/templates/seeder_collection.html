@@ -204,6 +204,8 @@
           function showResult(ok) {
             button.classList.remove("is-copied", "is-failed");
             button.classList.add(ok ? "is-copied" : "is-failed");
+            // The reference's toast as well as the tick on the button.
+            if (window.dtToast) window.dtToast(ok ? "Command copied to clipboard" : "Copy failed");
             button.title = ok ? "Copied!" : "Copy failed";
             resetTimer = setTimeout(function () {
               button.classList.remove("is-copied", "is-failed");

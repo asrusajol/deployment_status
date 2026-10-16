@@ -70,8 +70,10 @@
           <label for="page_size">Rows per page</label>
           {% for name, value in list_params.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
           <select name="page_size" id="page_size" onchange="this.form.submit()">
+            {# Auto: as many as fit the screen (measured below, kept in a cookie). #}
+            <option value="auto" {% if rows_auto %}selected{% endif %}>Auto</option>
             {% for size in page_size_options %}
-              <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+              <option value="{{ size }}" {% if not rows_auto and size == page_size %}selected{% endif %}>{{ size }}</option>
             {% endfor %}
           </select>
         </form>
@@ -81,7 +83,7 @@
         <form method="get" action="/requests" class="search-field" id="request-search-form" role="search"{% if list_query.sort %} data-sort="{{ list_query.sort }}" data-dir="{{ 'desc' if list_query.desc else 'asc' }}"{% endif %}>
           <input type="search" name="q" value="{{ list_query.q }}" id="request-search" placeholder="Search" aria-label="Search requests">
           <button type="submit" class="search-field-icon search-field-submit" title="Search">{{ icon("search") }}<span class="sr-only">Search</span></button>
-          <input type="hidden" name="page_size" value="{{ page_size }}">
+          {% if not rows_auto %}<input type="hidden" name="page_size" value="{{ page_size }}">{% endif %}
           {% if list_query.sort %}<input type="hidden" name="sort" value="{{ list_query.sort }}"><input type="hidden" name="dir" value="{{ 'desc' if list_query.desc else 'asc' }}">{% endif %}
           {% for key, value in list_query.filters.items() %}<input type="hidden" name="f-{{ key }}" value="{{ value }}" data-filter="{{ key }}">{% endfor %}
         </form>
@@ -111,7 +113,7 @@
     </div>
 
     {% if requests %}
-      <div class="table-scroll">
+      <div class="table-scroll" id="request-scroll" data-rows-auto="{{ 1 if rows_auto else 0 }}" data-page-size="{{ page_size }}" data-total="{{ total_count }}" data-rows-cookie="{{ rows_fit_cookie }}">
       <table class="status-table requests-table" data-column-order="dt-request-columns">
         {{ request_head }}
         <tbody>
@@ -123,7 +125,7 @@
       </div>
     {% else %}
       {% if list_query.q or list_query.filters %}
-        <p class="empty-state">No requests match the search or filters. <a href="/requests?page_size={{ page_size }}">Clear them</a>.</p>
+        <p class="empty-state">No requests match the search or filters. <a href="/requests{% if not rows_auto %}?page_size={{ page_size }}{% endif %}">Clear them</a>.</p>
       {% else %}
         <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
       {% endif %}
@@ -134,13 +136,13 @@
       <div class="card-footer">
       <nav class="pagination" aria-label="Requests pagination">
         {% if page > 1 %}
-          <a href="/requests?{{ dict(list_params, page=page - 1, page_size=page_size) | urlencode }}" class="button-secondary">Previous</a>
+          <a href="/requests?{{ dict(list_params, page=page - 1, **page_size_param) | urlencode }}" class="button-secondary">Previous</a>
         {% else %}
           <span class="button-secondary is-disabled">Previous</span>
         {% endif %}
         <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
         {% if page < total_pages %}
-          <a href="/requests?{{ dict(list_params, page=page + 1, page_size=page_size) | urlencode }}" class="button-secondary">Next</a>
+          <a href="/requests?{{ dict(list_params, page=page + 1, **page_size_param) | urlencode }}" class="button-secondary">Next</a>
         {% else %}
           <span class="button-secondary is-disabled">Next</span>
         {% endif %}
@@ -954,11 +956,133 @@
         });
       }
 
+      // --- Column widths: drag a header's right edge, as in the reference (min 50px).
+      // Kept per browser with the order; Reset table layout clears them too.
+      var widthKey = storeKey + "-widths";
+      function readWidths() {
+        try {
+          var saved = JSON.parse(localStorage.getItem(widthKey) || "{}");
+          return saved && typeof saved === "object" ? saved : {};
+        } catch (err) { return {}; }
+      }
+      function applyWidths(widths) {
+        tables.forEach(function (table) {
+          Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+            var w = widths[th.getAttribute("data-col")];
+            th.style.width = w ? w + "px" : "";
+          });
+        });
+        try {
+          if (Object.keys(widths).length) localStorage.setItem(widthKey, JSON.stringify(widths));
+          else localStorage.removeItem(widthKey);
+        } catch (err) {}
+      }
+      var widths = readWidths();
+      applyWidths(widths);
+      tables.forEach(function (table) {
+        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+          var key = th.getAttribute("data-col");
+          if (key === pinned) return;
+          var grip = document.createElement("span");
+          grip.className = "col-resizer";
+          grip.setAttribute("aria-hidden", "true");
+          grip.addEventListener("click", function (event) { event.stopPropagation(); });
+          grip.addEventListener("mousedown", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var startX = event.clientX, startW = th.getBoundingClientRect().width;
+            th.draggable = false;
+            document.body.classList.add("is-resizing");
+            function move(e) {
+              widths[key] = Math.max(50, Math.round(startW + e.clientX - startX));
+              applyWidths(widths);
+            }
+            function up() {
+              document.removeEventListener("mousemove", move);
+              document.removeEventListener("mouseup", up);
+              document.body.classList.remove("is-resizing");
+              th.draggable = true;
+              fitRows();
+            }
+            document.addEventListener("mousemove", move);
+            document.addEventListener("mouseup", up);
+          });
+          th.appendChild(grip);
+        });
+      });
+
+      // --- Rows per page "Auto": how many rows fit this screen, kept in a cookie for
+      // the server (it can't know the window height). A first visit, or a screen that
+      // now fits a different number, reloads once with it; what's left under the last
+      // row gets the reference's empty grid lines.
+      var scroll = document.getElementById("request-scroll");
+      var mainTable = scroll && scroll.querySelector("table");
+      var fillers = [];
+      function measure() {
+        var body = mainTable.tBodies[0];
+        var sample = body.querySelector("tr:not(.filler-row)");
+        var rowH = sample ? sample.getBoundingClientRect().height : 33;
+        var free = scroll.clientHeight - mainTable.tHead.getBoundingClientRect().height;
+        return { rowH: rowH, rows: Math.floor(free / rowH), free: free };
+      }
+      function fitRows() {
+        if (!mainTable) return;
+        fillers.forEach(function (row) { row.remove(); });
+        fillers = [];
+        var m = measure();
+        var real = mainTable.tBodies[0].querySelectorAll("tr:not(.filler-row)").length;
+        var keys = current().concat([pinned]);
+        for (var i = real; i < m.rows; i++) {   // whole rows only, so the box never scrolls for them
+          var row = document.createElement("tr");
+          row.className = "filler-row";
+          row.setAttribute("aria-hidden", "true");
+          keys.forEach(function (key) {
+            var td = document.createElement("td");
+            td.setAttribute("data-col", key);
+            if (hiddenNow().indexOf(key) !== -1) td.classList.add("col-hidden");
+            row.appendChild(td);
+          });
+          mainTable.tBodies[0].appendChild(row);
+          fillers.push(row);
+        }
+      }
+      if (scroll && mainTable) {
+        var auto = scroll.getAttribute("data-rows-auto") === "1";
+        var cookieName = scroll.getAttribute("data-rows-cookie");
+        var fit = Math.max(5, Math.min(100, measure().rows));
+        document.cookie = cookieName + "=" + fit + "; path=/; max-age=31536000; samesite=lax";
+        var shownSize = parseInt(scroll.getAttribute("data-page-size"), 10);
+        var total = parseInt(scroll.getAttribute("data-total"), 10);
+        var guard = "dt-rows-fit-reloaded";
+        var already = null;
+        try { already = sessionStorage.getItem(guard); } catch (err) {}
+        // Reload only when it would show a different set of rows, and only once per
+        // measured value — a layout that measures differently after reload can't loop.
+        if (auto && fit !== shownSize && total > Math.min(fit, shownSize) && already !== String(fit)) {
+          try { sessionStorage.setItem(guard, String(fit)); } catch (err) {}
+          location.reload();
+          return;
+        }
+        fitRows();
+        var resizeTimer = null;
+        window.addEventListener("resize", function () {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(function () {
+            var now = Math.max(5, Math.min(100, measure().rows));
+            document.cookie = cookieName + "=" + now + "; path=/; max-age=31536000; samesite=lax";
+            fitRows();
+          }, 200);
+        });
+      }
+
       if (resetButton) {
         resetButton.addEventListener("click", function () {
           apply(movable);
           save(movable);
           applyHidden([]);
+          widths = {};
+          applyWidths(widths);
+          fitRows();
           setMenu(false);
           // The reference's reset clears sort and filters too.
           if (sortKey || Object.keys(filters).length) {

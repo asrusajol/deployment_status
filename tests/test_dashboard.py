@@ -1314,6 +1314,73 @@ def test_requests_queue_rejects_out_of_range_page_size(web):
     assert "Page 1 of 2 (20 total)" in response.text  # confirms it fell back to 15/page
 
 
+# --- Auto rows per page: the page measures how many rows fit and keeps it in a cookie ---
+
+def _auto_seed(client, session, count=40):
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_many_requests(session, count)
+    login_as(client, "rajib")
+
+
+def test_rows_per_page_defaults_to_auto_and_uses_the_measured_fit(web):
+    client, session = web
+    _auto_seed(client, session)
+    client.cookies.set("dt-rows-fit", "20")
+
+    text = client.get("/requests").text
+
+    assert "Page 1 of 2 (40 total)" in text
+    assert re.search(r'<option value="auto"[^>]*selected', text)
+    assert 'data-rows-auto="1"' in text
+
+
+def test_auto_without_a_measurement_yet_shows_the_old_default(web):
+    client, session = web
+    _auto_seed(client, session)
+
+    text = client.get("/requests").text
+
+    assert "Page 1 of 3 (40 total)" in text   # 15 per page
+    assert 'data-rows-auto="1"' in text
+
+
+def test_a_chosen_page_size_beats_the_measured_fit(web):
+    client, session = web
+    _auto_seed(client, session)
+    client.cookies.set("dt-rows-fit", "20")
+
+    text = client.get("/requests", params={"page_size": 25}).text
+
+    assert "Page 1 of 2 (40 total)" in text
+    assert re.search(r'<option value="25"[^>]*selected', text)
+    assert 'data-rows-auto="0"' in text
+    assert "page_size=25" in text[text.index('class="pagination"'):]
+
+
+@pytest.mark.parametrize("cookie,pages", [("abc", 3), ("2", 8), ("500", 1)])
+def test_measured_fit_is_bounded(web, cookie, pages):
+    """A hand-edited cookie can't ask for a page of 500 (or of 0): 5 to 100 rows."""
+    client, session = web
+    _auto_seed(client, session)
+    client.cookies.set("dt-rows-fit", cookie)
+
+    text = client.get("/requests").text
+
+    assert f"Page 1 of {pages} (40 total)" in text or (pages == 1 and 'class="pagination"' not in text)
+
+
+def test_auto_pages_link_without_a_page_size(web):
+    client, session = web
+    _auto_seed(client, session)
+    client.cookies.set("dt-rows-fit", "20")
+
+    text = client.get("/requests").text
+    nav = text[text.index('class="pagination"'):text.index("</nav>", text.index('class="pagination"'))]
+
+    assert 'href="/requests?page=2"' in nav
+
+
 def _returned_request(session, *, task_id, requested_by, created_at=None):
     """A request sitting in `returned`, with the RequestReturn row list_requests()
     eager-loads (returns->returner) so the row can render its return-log button and

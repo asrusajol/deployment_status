@@ -15,10 +15,12 @@ from app.auth import hash_password, require_admin
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -101,6 +103,7 @@ async def save_users(request: Request, db: Session = Depends(get_db), admin: Use
             user.password_hash = hash_password(password)
             user.must_change_password = True
     db.commit()
+    toast.toast(request, "User settings saved")
     return RedirectResponse(url="/admin/users", status_code=303)
 
 

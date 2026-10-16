@@ -21,10 +21,12 @@ from app.models.deployment_request import RequestType
 from app.models.user import User, UserRole
 from app.routers.dashboard import REQUEST_TYPE_LABELS
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter(prefix="/management")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 CHECKLISTS_URL = "/management/checklists"
 VIEWS = ("all", *(t.value for t in RequestType))
@@ -156,6 +158,7 @@ def list_checklists(
 
 @router.post("/checklists")
 def add_checklist_item(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_management),
     label: str = Form(""),
@@ -175,11 +178,13 @@ def add_checklist_item(
     item.types = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in types]
     db.add(item)
     db.commit()
+    toast.toast(request, "Checklist item added")
     return _back(view)
 
 
 @router.post("/checklists/{item_id}/edit")
 def edit_checklist_item(
+    request: Request,
     item_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
@@ -213,6 +218,7 @@ def edit_checklist_item(
         _place(db, item, position, position_type)
     _touch(item, current_user)
     db.commit()
+    toast.toast(request, "Checklist item updated")
     return _back(view)
 
 
@@ -241,26 +247,29 @@ def _place(db: Session, item: ChecklistItem, position: str, position_type: str |
         row.position = number
 
 
-def _set_active(db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:
+def _set_active(request: Request, db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:
     item = _get_item_or_404(db, item_id)
     item.is_active = active
     _touch(item, user)
     db.commit()
+    toast.toast(request, f'"{item.label}" restored' if active else "Item moved to Retire")
     return _back(view)
 
 
 @router.post("/checklists/{item_id}/deactivate")
 def deactivate_checklist_item(
+    request: Request,
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
     view: str | None = Form(None),
 ):
     # Retire, never delete: confirmation rows reference this term.
-    return _set_active(db, item_id, current_user, False, view)
+    return _set_active(request, db, item_id, current_user, False, view)
 
 
 @router.post("/checklists/{item_id}/activate")
 def activate_checklist_item(
+    request: Request,
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
     view: str | None = Form(None),
 ):
-    return _set_active(db, item_id, current_user, True, view)
+    return _set_active(request, db, item_id, current_user, True, view)

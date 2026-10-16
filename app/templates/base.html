@@ -126,6 +126,7 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  {% include "_toasts.html" %}
 
   <script>
     // The shell menus are <details>, so they already open and close on their own; this
@@ -241,6 +242,8 @@
         function showResult(ok) {
           copyButton.classList.remove("is-copied", "is-failed");
           copyButton.classList.add(ok ? "is-copied" : "is-failed");
+          // The reference's toast as well as the tick on the button.
+          if (window.dtToast) window.dtToast(ok ? "Copied to clipboard" : "Copy failed");
           copyButton.title = ok ? "Copied!" : "Copy failed";
           copyResetTimer = setTimeout(function () {
             copyButton.classList.remove("is-copied", "is-failed");
@@ -301,6 +304,8 @@
         function showResult(ok) {
           button.classList.remove("is-copied", "is-failed");
           button.classList.add(ok ? "is-copied" : "is-failed");
+          // The reference's toast as well as the tick on the button.
+          if (window.dtToast) window.dtToast(ok ? "Copied to clipboard" : "Copy failed");
           resetTimer = setTimeout(function () {
             button.classList.remove("is-copied", "is-failed");
           }, 1500);

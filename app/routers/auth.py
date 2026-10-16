@@ -10,10 +10,12 @@ from app.auth import SESSION_USER_ID_KEY, hash_password, require_login, verify_p
 from app.database import get_db
 from app.models.user import User
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -49,6 +51,7 @@ def login_submit(
 @router.post("/logout")
 def logout(request: Request):
     request.session.clear()
+    toast.toast(request, "Signed out")
     return RedirectResponse(url="/login", status_code=303)
 
 
@@ -88,4 +91,5 @@ def change_password_submit(
     current_user.password_hash = hash_password(new_password)
     current_user.must_change_password = False
     db.commit()
+    toast.toast(request, "Password changed")
     return RedirectResponse(url="/dashboard", status_code=303)

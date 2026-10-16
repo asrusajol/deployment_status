@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from app import toast
 from app.auth import SESSION_USER_ID_KEY, NotAuthenticatedError
 from app.config import get_settings
 from app.database import get_db
@@ -36,10 +37,12 @@ async def theme_middleware(request: Request, call_next):
     # including /login, before anyone is authenticated. Rendered server-side as
     # <html data-theme> so the page never flashes the other theme while a script loads.
     requested = request.query_params.get("theme")
+    cookie = request.cookies.get(THEME_COOKIE)
     if requested in THEMES:
         request.state.theme = requested
+        if requested != cookie:
+            toast.toast_now(request, f'Theme "{THEMES[requested]}" applied')
     else:
-        cookie = request.cookies.get(THEME_COOKIE)
         request.state.theme = cookie if cookie in THEMES else DEFAULT_THEME
     request.state.theme_options = list(THEMES.items())
     response = await call_next(request)
