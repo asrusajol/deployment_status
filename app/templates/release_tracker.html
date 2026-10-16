@@ -47,7 +47,7 @@
             {# No button at all for someone who can edit neither environment, as in the
                reference — the edit routes enforce the same per-environment rule. #}
             {% if can_edit_test(row) or can_edit_live(row) %}
-              <a href="/release-tracker/{{ row.id }}/edit" class="btn btn-lite btn-icon" title="Edit versions">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
+              <a href="/release-tracker/{{ row.id }}/edit" class="btn btn-lite btn-icon" title="Edit versions" data-dialog="small">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
             {% endif %}
           </td>
           <td class="col-test">{{ row.test_current_version or "—" }}</td>

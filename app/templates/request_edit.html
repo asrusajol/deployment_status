@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base_dialog.html" if request.query_params.get("dialog") == "1" else "base.html" %}
 {% from "_icons.html" import icon %}
 {% block title %}Edit Deployment Request — Deployment Tracker{% endblock %}
 {% block content %}

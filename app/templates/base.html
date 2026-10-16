@@ -127,6 +127,7 @@
     </main>
   </div>
   {% include "_toasts.html" %}
+  {% if show_nav %}{% include "_form_dialog.html" %}{% endif %}
 
   <script>
     // The shell menus are <details>, so they already open and close on their own; this

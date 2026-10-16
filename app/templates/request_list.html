@@ -87,7 +87,7 @@
           {% if list_query.sort %}<input type="hidden" name="sort" value="{{ list_query.sort }}"><input type="hidden" name="dir" value="{{ 'desc' if list_query.desc else 'asc' }}">{% endif %}
           {% for key, value in list_query.filters.items() %}<input type="hidden" name="f-{{ key }}" value="{{ value }}" data-filter="{{ key }}">{% endfor %}
         </form>
-        <a href="/requests/new" class="btn btn-emph">New Request</a>
+        <a href="/requests/new" class="btn btn-emph" data-dialog="wide">New Request</a>
         {# Every matching request (all pages), in the columns showing — the script adds `cols`. #}
         <a href="/requests/export.csv{% if list_params %}?{{ list_params | urlencode }}{% endif %}" class="btn btn-lite btn-icon" id="request-export" title="Export to CSV" download>{{ icon("download") }}<span class="sr-only">Export to CSV</span></a>
         {# The reference's table settings: show / hide columns and Reset table layout

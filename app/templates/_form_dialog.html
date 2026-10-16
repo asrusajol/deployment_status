@@ -1,0 +1,117 @@
+{# The reference's dialogs for New / Edit Request, Add / Edit Seeder and Edit Version.
+   A link with data-dialog="wide|medium|small" loads its page here with ?dialog=1 (the
+   page renders without the shell, base_dialog.html). Its forms post back the same way:
+   a refused save returns the form with its error into the dialog, a save follows the
+   server's redirect to the list (where its toast shows). Without scripts — or if the
+   load fails — the link simply opens the full page. #}
+<dialog class="dialog form-dialog" id="form-dialog" aria-label="Form">
+  <button type="button" class="btn btn-lite btn-icon form-dialog-close" title="Close" data-form-dialog-close>{{ icon("decline") }}<span class="sr-only">Close</span></button>
+  <div class="form-dialog-body"></div>
+</dialog>
+<script>
+  (function () {
+    var dialog = document.getElementById("form-dialog");
+    if (!dialog || !dialog.showModal || !window.fetch) return;
+    var body = dialog.querySelector(".form-dialog-body");
+    var current = null;   // the page URL the dialog shows
+    // Tells the server this is the dialog (app/toast.py: a followed redirect leaves
+    // the toast for the page the browser then loads).
+    var FETCH_HEADERS = { "X-Requested-With": "dt-dialog" };
+
+    function withDialog(url) {
+      var u = new URL(url, location.href);
+      u.searchParams.set("dialog", "1");
+      return u.toString();
+    }
+    function samePage(a, b) { return new URL(a, location.href).pathname === new URL(b, location.href).pathname; }
+    // Scripts set with innerHTML don't run; re-create them so the form's own scripts
+    // (task search, client picker, tabs) work as on the full page.
+    function runScripts(root) {
+      root.querySelectorAll("script").forEach(function (old) {
+        var script = document.createElement("script");
+        if (old.type) script.type = old.type;
+        script.textContent = old.textContent;
+        old.replaceWith(script);
+      });
+    }
+    function show(html, url) {
+      current = url;
+      body.innerHTML = html;
+      var page = body.querySelector(".dialog-page");
+      var title = body.querySelector(".toolbar-title");
+      dialog.setAttribute("aria-label", title ? title.textContent.trim() : (page && page.getAttribute("data-dialog-title")) || "Form");
+      runScripts(body);
+      if (!dialog.open) dialog.showModal();
+      var first = body.querySelector("input:not([type=hidden]):not([disabled]), select, textarea");
+      if (first) first.focus();
+    }
+    function showError(text) {
+      var note = document.createElement("p");
+      note.className = "message-strip message-error";
+      note.setAttribute("role", "alert");
+      note.textContent = text || "Something went wrong — nothing was saved.";
+      body.prepend(note);
+    }
+    function load(url) {
+      return fetch(withDialog(url), { credentials: "same-origin", headers: FETCH_HEADERS }).then(function (response) {
+        // Sent somewhere else (logged out, no permission page): go there instead.
+        if (response.redirected && !samePage(response.url, url)) { location.href = response.url; return; }
+        if (!response.ok) { location.href = url; return; }
+        return response.text().then(function (html) { show(html, url); });
+      }).catch(function () { location.href = url; });
+    }
+    function open(link) {
+      dialog.classList.remove("is-wide", "is-medium", "is-small");
+      dialog.classList.add("is-" + (link.getAttribute("data-dialog") || "medium"));
+      load(link.href);
+    }
+
+    document.addEventListener("click", function (event) {
+      var link = event.target.closest && event.target.closest("a[data-dialog]");
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
+      event.preventDefault();
+      open(link);
+    });
+
+    // Inside the dialog: a link back to the page underneath (Cancel / Back) closes it;
+    // a link to the same form page (e.g. Sync Tasks Now's result) reloads in place.
+    body.addEventListener("click", function (event) {
+      var link = event.target.closest("a[href]");
+      if (!link || link.hasAttribute("data-dialog") || link.target) return;
+      if (samePage(link.href, location.href)) { event.preventDefault(); dialog.close(); }
+      else if (current && samePage(link.href, current)) { event.preventDefault(); load(link.href); }
+    });
+
+    body.addEventListener("submit", function (event) {
+      var form = event.target;
+      if ((form.getAttribute("method") || "get").toLowerCase() !== "post" || event.defaultPrevented) return;
+      event.preventDefault();
+      var data = new FormData(form, event.submitter || undefined);
+      var buttons = form.querySelectorAll("button[type=submit], button:not([type])");
+      buttons.forEach(function (b) { b.disabled = true; });
+      fetch(withDialog(form.action), { method: "POST", body: data, credentials: "same-origin", headers: FETCH_HEADERS }).then(function (response) {
+        if (response.redirected) {
+          // Back to the same form (e.g. tasks synced): stay in the dialog.
+          if (current && samePage(response.url, current)) return load(response.url);
+          location.href = response.url;   // saved: the list, with its toast
+          return;
+        }
+        var type = response.headers.get("content-type") || "";
+        if (type.indexOf("json") !== -1) {
+          return response.json().then(function (j) {
+            buttons.forEach(function (b) { b.disabled = false; });
+            showError(typeof j.detail === "string" ? j.detail : null);
+          });
+        }
+        return response.text().then(function (html) { show(html, current); });
+      }).catch(function () {
+        buttons.forEach(function (b) { b.disabled = false; });
+        showError("Couldn't reach the server — nothing was saved.");
+      });
+    });
+
+    dialog.querySelector("[data-form-dialog-close]").addEventListener("click", function () { dialog.close(); });
+    // Closed (button, Escape or Cancel): drop the form so its ids and scripts are gone.
+    dialog.addEventListener("close", function () { body.innerHTML = ""; current = null; });
+  })();
+</script>

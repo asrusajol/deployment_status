@@ -1,0 +1,6 @@
+{# A form page's content without the app shell, for the dialog that the page script
+   in base.html loads it into (see #form-dialog there). Picked by a form template's
+   {% extends %} when the URL has ?dialog=1; the full page is unchanged otherwise. #}
+<div class="dialog-page" data-dialog-title="{% block title %}{% endblock %}">
+{% block content %}{% endblock %}
+</div>

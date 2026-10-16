@@ -19,7 +19,7 @@
           >
           {{ icon("search", class="search-field-icon") }}
         </div>
-        <a href="/seeder-collection/new" class="btn btn-emph">Add Seeder</a>
+        <a href="/seeder-collection/new" class="btn btn-emph" data-dialog="medium">Add Seeder</a>
         {% if rows %}
           <button type="button" class="btn btn-std" id="seeder-expand-all">{{ icon("expandAll") }}<span id="seeder-expand-label">Expand All</span></button>
         {% endif %}
@@ -36,7 +36,7 @@
           <button type="button" class="btn btn-lite btn-icon panel-chev" title="Expand" aria-expanded="false" aria-controls="seeder-body-{{ row.id }}">{{ icon("slimRight", class="panel-chev-closed") }}{{ icon("slimDown", class="panel-chev-open") }}</button>
           <h2 class="panel-title" data-panel-toggle>{{ client_name }}</h2>
           <div class="actions-inner">
-            <a href="/seeder-collection/{{ row.id }}/edit" class="btn btn-solid-icon" title="Edit">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
+            <a href="/seeder-collection/{{ row.id }}/edit" class="btn btn-solid-icon" title="Edit" data-dialog="medium">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
             <form
               method="post"
               action="/seeder-collection/{{ row.id }}/delete"

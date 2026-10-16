@@ -297,7 +297,7 @@
                 </div>
               {% endif %}
               {% if can_edit_request(r) %}
-                <a href="/requests/{{ r.id }}/edit" class="action-link edit" title="Edit">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
+                <a href="/requests/{{ r.id }}/edit" class="action-link edit" title="Edit" data-dialog="wide">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
               {% endif %}
               {% if can_delete_request(r) %}
                 <form

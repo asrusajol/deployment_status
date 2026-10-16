@@ -140,3 +140,20 @@ def test_pages_carry_the_toast_hook_for_browser_only_actions(web):
     login_as(client, "rajib")
 
     assert "window.dtToast = " in client.get("/requests").text
+
+
+def test_a_dialog_fetch_leaves_the_toast_for_the_page_it_lands_on(web):
+    """A dialog posts with fetch, which follows the redirect itself; that hidden page
+    load mustn't use up the toast meant for the page the browser goes to next."""
+    client, session = web
+    make_user(session, id=1, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD)
+    session.add(Client(id=1, name="CRM"))
+    session.commit()
+    login_as(client, "root")
+    dialog = {"X-Requested-With": "dt-dialog"}
+
+    followed = client.post("/seeder-collection/new?dialog=1", headers=dialog,
+                           data={"client_id": "1", "title": "Perms", "command": "php artisan seed"})
+
+    assert _toasts(followed.text) == []
+    assert _toasts(client.get("/seeder-collection").text) == ["Seeder for CRM added"]

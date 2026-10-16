@@ -2412,3 +2412,27 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 /* The reference's empty grid lines under the last row. */
 .requests-table tr.filler-row td { background: var(--sapList_Background); }
 .requests-table tbody tr.filler-row:hover td { background: var(--sapList_Background); }
+
+/* Form dialogs (New / Edit Request, Add / Edit Seeder, Edit Version): the loaded
+   page's card becomes the dialog — its toolbar the header, its body scrolling. */
+dialog.form-dialog { display: none; flex-direction: column; overflow: hidden; }
+dialog.form-dialog[open] { display: flex; }
+dialog.form-dialog.is-wide { width: 1000px; }
+dialog.form-dialog.is-medium { width: 720px; }
+dialog.form-dialog.is-small { width: 480px; }
+.form-dialog-body { flex: 1; min-height: 0; overflow: auto; }
+.form-dialog-body .page-card { box-shadow: none; border-radius: 0; }
+.form-dialog-body .page-card > .toolbar { position: sticky; top: 0; z-index: 5; padding-right: 48px; border-radius: 0; }
+.form-dialog-body .message-strip { position: sticky; top: 44px; z-index: 5; }
+.form-dialog-close { position: absolute; top: 9px; right: 8px; z-index: 6; }
+/* Inside the dialog the form is the dialog body — flat, full width — and its Save and
+   Cancel sit together at the bottom right, as the reference's dialog footer does. */
+.form-dialog-body .form { max-width: none; box-shadow: none; border-radius: 0; padding: 0; background: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 8px; }
+.form-dialog-body .form > * { grid-column: 1 / -1; }
+.form-dialog-body .form > button[type="submit"] { grid-column: 2; margin-top: 16px; }
+.form-dialog-body .form > button[type="submit"] + a.link-button { grid-column: 3; align-self: end; margin-top: 16px; padding: 7px 12px; border-radius: var(--radius-sm); font-weight: 700; text-decoration: none; color: var(--sapButton_Lite_TextColor); }
+.form-dialog-body .form > button[type="submit"] + a.link-button:hover { background: var(--sapHoverColor); }
+/* .subtitle's negative top margin is for a note under a heading; under a table (the
+   Clients page's closing note) it pulled the text up into the last row. */
+.table-scroll + .subtitle { margin-top: 12px; }
