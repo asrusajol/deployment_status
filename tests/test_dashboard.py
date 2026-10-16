@@ -502,6 +502,13 @@ def test_dashboard_export_xlsx_includes_url_column(web):
     assert data_row[2] == "http://crm-live.local"
 
 
+def _status_table(text):
+    """The Current Deployment Status table only — the overview above it (Recent
+    deployments, Setup health) covers everything and ignores the table's filters."""
+    start = text.index('class="status-table deployment-table"')
+    return text[start:text.index("</table>", start)]
+
+
 def test_dashboard_filters_by_client(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
@@ -514,8 +521,9 @@ def test_dashboard_filters_by_client(web):
     assert response.status_code == 200
     # "Acme Corp" itself still appears in the client filter dropdown — check the row data
     # (branch/task id), not the client name, to actually confirm the table is filtered.
-    assert "release/v12" in response.text
-    assert "develop" not in response.text
+    table = _status_table(response.text)
+    assert "release/v12" in table
+    assert "develop" not in table
 
 
 def test_dashboard_client_filter_is_a_type_to_search_input_prefilled_when_selected(web):
@@ -547,8 +555,9 @@ def test_dashboard_filters_by_task_id_substring(web):
     response = client.get("/dashboard", params={"task_id": "03045"})
 
     assert response.status_code == 200
-    assert "PR-03045" in response.text
-    assert "PR-99999" not in response.text
+    table = _status_table(response.text)
+    assert "PR-03045" in table
+    assert "PR-99999" not in table
 
 
 def test_dashboard_history_lists_every_deployment(web):

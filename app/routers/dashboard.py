@@ -68,7 +68,7 @@ from app.services.checklists import (
     set_tick,
 )
 from app.services.dashboard import clients_with_deployments, current_deployment_status, deployment_history
-from app.services import request_query
+from app.services import overview, request_query
 from app.services.export import rows_to_xlsx
 from app.services.release_tracker import current_version_for, record_client_deploy
 from app.services.sync import sync_deployable_tasks
@@ -171,7 +171,17 @@ def dashboard(
 ):
     parsed_client_id, parsed_environment, parsed_task_id = _parse_filters(client_id, environment, task_id)
     rows = current_deployment_status(db, parsed_client_id, parsed_environment, parsed_task_id)
-    context = {"rows": rows, "current_user": current_user}
+    context = {
+        "rows": rows,
+        "current_user": current_user,
+        # The design's overview above the status table — app/services/overview.py.
+        "overview": overview.build(db, current_user),
+        "ago": overview.ago,
+        "pct": overview.pct,
+        "status_tags": STATUS_TAGS,
+        "status_labels": STATUS_LABELS,
+        "request_type_labels": REQUEST_TYPE_LABELS,
+    }
     context.update(_filter_context(db, parsed_client_id, parsed_environment, parsed_task_id))
     return templates.TemplateResponse(request, "dashboard.html", context)
 

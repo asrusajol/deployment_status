@@ -1,22 +1,295 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_localtime.html" import localtime_attr %}
 {% block title %}Dashboard — Deployment Tracker{% endblock %}
+
+{% macro sys_tag(environment) -%}
+  {%- if environment -%}<span class="badge badge-{{ environment.value }} sys-tag">{{ environment.value | capitalize }}</span>{%- endif -%}
+{%- endmacro %}
+{% macro status_tag(status) -%}
+  {%- set tag = status_tags.get(status, ("neutral", "progress")) -%}
+  <span class="st-tag st-{{ tag[0] }}">{{ icon(tag[1], 12) }}{{ status_labels.get(status, status.value) }}</span>
+{%- endmacro %}
+{% macro card_link(label, href) -%}
+  <a class="btn btn-lite dlink" href="{{ href }}">{{ label }}{{ icon("slimRight") }}</a>
+{%- endmacro %}
+{% macro empty_note(text) -%}
+  <div class="dempty">{{ icon("accept") }}{{ text }}</div>
+{%- endmacro %}
+
 {% block content %}
-  {% set filter_action = "/dashboard" %}
-  {% set export_action = "/dashboard/export.xlsx" %}
-  <section class="card card-fill">
-  <div class="toolbar">
-    <h1 class="toolbar-title">Current Deployment Status ({{ rows | length }})</h1>
-    <div class="toolbar-buttons">
-      {% include "_deployment_filter_bar.html" %}
-      {% include "_deployment_export_button.html" %}
+  {% set o = overview %}
+  {% set g = o.by_group %}
+  {# The reference's Dashboard: greeting, KPI tiles and six cards (app/services/overview.py
+     has the counting rules), then our Current Deployment Status table, which the
+     reference doesn't have but the team works from (and exports). The page scrolls. #}
+  <div class="dash">
+    <section class="dhero">
+      <div>
+        <div class="dhero-date" id="dhero-date"></div>
+        <h1 class="dhero-title" id="dhero-greet" data-greet-name="{{ o.first_name }}">Hello, {{ o.first_name }}</h1>
+        <div class="dhero-sub">
+          {% if o.open_count %}
+            <b>{{ o.open_count }}</b> open request{{ "s" if o.open_count != 1 }} need{{ "" if o.open_count != 1 else "s" }} action{% if g.pending %} · {{ g.pending | length }} waiting for approval or deployment{% endif %}
+          {% else %}
+            Everything is deployed — no open requests.
+          {% endif %}
+        </div>
+      </div>
+      <div class="dhero-actions">
+        <a class="btn btn-std" href="/dashboard/history">{{ icon("history") }}History</a>
+        <a class="btn btn-emph" href="/requests">{{ icon("request") }}Go to Requests</a>
+      </div>
+    </section>
+
+    <div class="kpis">
+      {% set kpis = [
+        ("pending", "critical", "pending", "Pending", g.pending | length, none,
+          ("Oldest waiting " ~ ago(o.oldest_pending, o.now) | replace(" ago", "")) if g.pending else "Queue is clear", "/requests", "Requests"),
+        ("progress", "neutral", "progress", "In progress", g.progress | length, none, "Start checklist confirmed", "/requests", "Requests"),
+        ("deployed", "positive", "deployed", "Deployed", g.deployed | length, none, o.deployed_this_week ~ " in the last 7 days", "/dashboard/history", "History"),
+        ("returned", "info", "withdraw", "Returned to requester", g.returned | length, none,
+          "Waiting for resubmission" if g.returned else "Nothing returned", "/requests", "Requests"),
+        ("clients", "brand", "person", "Active clients", o.clients_active, o.clients_total,
+          (o.clients_missing_urls ~ " missing Test/Live URL") if o.clients_missing_urls else "All URLs configured", "/clients", "Clients"),
+      ] %}
+      {% for key, tone, ico, label, value, of, foot, href, page_name in kpis %}
+        <a class="kpi kpi-{{ tone }}" href="{{ href }}" title="Open {{ page_name }}" data-kpi="{{ key }}"{% if of is not none %} data-kpi-of="{{ of }}"{% endif %}>
+          <div class="kpi-top"><span class="kpi-ico">{{ icon(ico) }}</span><span class="kpi-label">{{ label }}</span></div>
+          <div class="kpi-value">{{ value }}{% if of is not none %}<span class="kpi-of"> / {{ of }}</span>{% endif %}</div>
+          <div class="kpi-foot">{{ foot }}</div>
+        </a>
+      {% endfor %}
     </div>
+
+    <div class="dgrid">
+      {# Needs attention: waiting on someone — pending, in progress, returned — by stage,
+         oldest first. A row opens Requests searched to its task. #}
+      {% set att = o.attention %}
+      <section class="dcard span-2" data-card="attention">
+        <div class="dcard-head">
+          <div class="dcard-titles"><h2 class="dcard-title">Needs attention</h2>
+            <div class="dcard-sub">{% if att %}{{ att | length }} open item{{ "s" if att | length != 1 }} · oldest first{% else %}All requests are handled{% endif %}</div></div>
+          {{ card_link("All requests", "/requests") }}
+        </div>
+        <div class="dcard-body">
+          {% if att %}
+            <div class="att-list">
+              {% for r in att[:7] %}
+                <a class="att-row" href="/requests{% if r.task_id %}?q={{ r.task_id | urlencode }}{% endif %}" title="Open in Request" data-task="{{ r.task_id or '' }}">
+                  <span class="att-stripe type-bg-{{ r.request_type.value }}"></span>
+                  <div class="att-main">
+                    <div class="att-line1"><span class="att-no">#{{ r.id }}</span><span class="att-client">{{ r.client.name if r.client else "—" }}</span></div>
+                    <div class="att-line2"><span class="badge-type-{{ r.request_type.value }} att-type">{{ request_type_labels.get(r.request_type, r.request_type.value) }}</span>{% for part in [r.task_id, r.module_name, r.requester.name if r.requester else none] if part %}<span class="dot-sep"></span>{{ part }}{% endfor %}</div>
+                  </div>
+                  <div class="att-side">{{ sys_tag(r.environment) }}{{ status_tag(r.status) }}</div>
+                  <div class="att-time" data-localtime-title="{{ localtime_attr(r.created_at) }}">{{ ago(r.created_at, o.now) }}</div>
+                </a>
+              {% endfor %}
+              {% if att | length > 7 %}<a class="att-more" href="/requests">+ {{ att | length - 7 }} more in Request</a>{% endif %}
+            </div>
+          {% else %}
+            {{ empty_note("No pending, in-progress or returned requests") }}
+          {% endif %}
+        </div>
+      </section>
+
+      {# Request pipeline: every request in one of the five groups, by type, by system. #}
+      <section class="dcard" data-card="pipeline">
+        <div class="dcard-head"><div class="dcard-titles"><h2 class="dcard-title">Request pipeline</h2>
+          <div class="dcard-sub">{{ o.total }} request{{ "s" if o.total != 1 }} in total</div></div></div>
+        <div class="dcard-body">
+          <div class="stackbar" role="img" aria-label="Requests by status">
+            {% for key, label in o.group_labels.items() if g[key] %}<span class="seg-{{ key }}" style="flex: {{ g[key] | length }}" title="{{ label }}: {{ g[key] | length }}"></span>{% endfor %}
+          </div>
+          <div class="legend">
+            {% for key, label in o.group_labels.items() %}
+              <div class="legend-row" data-group="{{ key }}" data-n="{{ g[key] | length }}"><span class="legend-sw seg-{{ key }}"></span><span class="legend-l">{{ label }}</span><span class="legend-n">{{ g[key] | length }}</span><span class="legend-p">{{ pct(g[key] | length, o.total) }}%</span></div>
+            {% endfor %}
+          </div>
+          <div class="dsec-title">By deployment type</div>
+          {% set max_type = (o.types | map(attribute="n") | max) or 1 %}
+          {% for t in o.types %}
+            <div class="hbar-row" data-type="{{ t.type.value }}" data-n="{{ t.n }}" data-open="{{ t.open }}">
+              <div class="hbar-top"><span class="badge-type-{{ t.type.value }} hbar-label">{{ request_type_labels.get(t.type, t.type.value) }}</span><span class="hbar-n">{{ t.n }}{% if t.open %}<span class="hbar-open"> · {{ t.open }} open</span>{% endif %}</span></div>
+              <div class="hbar"><span class="type-bg-{{ t.type.value }}" style="width: {{ pct(t.n, max_type) }}%"></span></div>
+            </div>
+          {% endfor %}
+          <div class="dsec-title">Target system</div>
+          <div class="sys-split">
+            <div class="sys-cell" data-system="test" data-n="{{ o.systems.test }}"><span class="badge badge-test sys-tag">Test</span><b>{{ o.systems.test }}</b><span>{{ pct(o.systems.test, o.total) }}%</span></div>
+            <div class="sys-cell" data-system="live" data-n="{{ o.systems.live }}"><span class="badge badge-live sys-tag">Live</span><b>{{ o.systems.live }}</b><span>{{ (o.live_open ~ " open") if o.live_open else (pct(o.systems.live, o.total) ~ "%") }}</span></div>
+          </div>
+        </div>
+      </section>
+
+      {# Deployment activity: the last 14 days, drawn by the script below in the viewer's
+         own time zone, from the deployments listed in #activity-data. #}
+      <section class="dcard span-2" data-card="activity">
+        <div class="dcard-head">
+          <div class="dcard-titles"><h2 class="dcard-title">Deployment activity</h2><div class="dcard-sub" id="activity-sub">{{ o.activity.days }} days</div></div>
+          {{ card_link("History", "/dashboard/history") }}
+        </div>
+        <div class="dcard-body">
+          <div class="act">
+            <div class="act-chart" id="activity-chart"></div>
+            <div class="act-legend">
+              <span><i class="sw test"></i>Test</span><span><i class="sw live"></i>Live</span>
+              {% if o.activity.topDeployers %}<span class="act-top">Top deployers: {% for name, n in o.activity.topDeployers %}<b>{{ ", " if not loop.first }}{{ name }} ({{ n }})</b>{% endfor %}</span>{% endif %}
+            </div>
+          </div>
+          <script type="application/json" id="activity-data">{{ o.activity | tojson }}</script>
+        </div>
+      </section>
+
+      {% set recent = o.deployed[:4] %}
+      <section class="dcard" data-card="recent">
+        <div class="dcard-head">
+          <div class="dcard-titles"><h2 class="dcard-title">Recent deployments</h2>
+            <div class="dcard-sub">{% if o.deployed %}Latest {{ recent | length }} of {{ o.deployed | length }}{% else %}No deployments yet{% endif %}</div></div>
+          {{ card_link("History", "/dashboard/history") }}
+        </div>
+        <div class="dcard-body">
+          {% if recent %}
+            <div class="rec-list">
+              {% for r in recent %}
+                <div class="rec-row" data-task="{{ r.task_id or '' }}">
+                  <span class="rec-ico">{{ icon("deployed") }}</span>
+                  <div class="rec-main"><div class="rec-client">{{ r.client.name if r.client else "—" }}</div>
+                    <div class="rec-meta">{{ r.task_id or "—" }} · {{ r.version or "—" }}{% if r.current_executor %} · by {{ r.current_executor.name }}{% endif %}</div></div>
+                  <div class="rec-side">{{ sys_tag(r.environment) }}<span class="rec-time" data-localtime-title="{{ localtime_attr(r.finished_at) }}">{{ ago(r.finished_at, o.now) }}</span></div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            {{ empty_note("Deployments will appear here") }}
+          {% endif %}
+        </div>
+      </section>
+
+      {% set tracked = o.releases | length %}
+      {% set aligned_pct = pct(o.aligned, tracked) %}
+      <section class="dcard" data-card="release">
+        <div class="dcard-head">
+          <div class="dcard-titles"><h2 class="dcard-title">Release alignment</h2><div class="dcard-sub">{{ tracked }} tracked client{{ "s" if tracked != 1 }}</div></div>
+          {{ card_link("Release Tracker", "/release-tracker") }}
+        </div>
+        <div class="dcard-body">
+          <div class="ring-wrap">
+            <div class="ring" style="--aligned: {{ aligned_pct }}%"><div class="ring-in"><b>{{ aligned_pct }}%</b><span>aligned</span></div></div>
+            <div class="ring-stats">
+              <div data-aligned="{{ o.aligned }}"><span class="legend-sw seg-deployed"></span><b>{{ o.aligned }}</b> Test = Live</div>
+              <div data-drift="{{ o.drift | length }}"><span class="legend-sw seg-pending"></span><b>{{ o.drift | length }}</b> version drift</div>
+            </div>
+          </div>
+          {% if o.drift %}
+            <div class="drift">
+              {% for d in o.drift[:4] %}
+                <div class="drift-row"><span class="drift-c">{{ d.client }}</span><span class="drift-v"><span class="badge badge-test sys-tag">{{ d.test or "—" }}</span>{{ icon("slimRight") }}<span class="badge badge-live sys-tag">{{ d.live or "—" }}</span></span></div>
+              {% endfor %}
+              {% if o.drift | length > 4 %}<div class="dcard-sub drift-more">+{{ o.drift | length - 4 }} more</div>{% endif %}
+            </div>
+          {% else %}
+            {{ empty_note("Test and Live run the same version everywhere") }}
+          {% endif %}
+        </div>
+      </section>
+
+      {# Setup health: configuration that affects deployments. A row links only to a
+         page this viewer can open. #}
+      <section class="dcard span-2" data-card="health">
+        <div class="dcard-head"><div class="dcard-titles"><h2 class="dcard-title">Setup health</h2><div class="dcard-sub">Configuration that affects deployments</div></div></div>
+        <div class="dcard-body">
+          <div class="health">
+            {% for h in o.health %}
+              {% set tag = "a" if h.href else "div" %}
+              <{{ tag }} class="health-row{{ '' if h.href else ' is-static' }}"{% if h.href %} href="{{ h.href }}"{% endif %} data-health="{{ h.key }}" data-ok="{{ 1 if h.ok else 0 }}">
+                <span class="health-ic {{ 'ok' if h.ok else 'warn' }}">{{ icon("accept" if h.ok else "warning") }}</span>
+                <div class="health-main"><div class="health-l">{{ h.label }}</div><div class="health-d">{{ h.detail }}</div></div>
+                {% if h.href %}{{ icon("slimRight", class="health-go") }}{% endif %}
+              </{{ tag }}>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </div>
+
+    {% set filter_action = "/dashboard" %}
+    {% set export_action = "/dashboard/export.xlsx" %}
+    <section class="card dash-status">
+    <div class="toolbar">
+      <h1 class="toolbar-title">Current Deployment Status ({{ rows | length }})</h1>
+      <div class="toolbar-buttons">
+        {% include "_deployment_filter_bar.html" %}
+        {% include "_deployment_export_button.html" %}
+      </div>
+    </div>
+
+    {% set empty_message = "No deployments have completed yet. Once a request is submitted, approved, and marked deployed, it'll show up here." if not selected_client_id and not selected_environment and not selected_task_id else "No deployments match this filter." %}
+    {# Dashboard only: a row here is one client+system, so every URL that client has for
+       it belongs in the cell. dashboard_history.html deliberately leaves this unset —
+       its rows are individual deployments. #}
+    {% set show_all_client_urls = true %}
+    {% include "_deployment_table.html" %}
+    </section>
   </div>
 
-  {% set empty_message = "No deployments have completed yet. Once a request is submitted, approved, and marked deployed, it'll show up here." if not selected_client_id and not selected_environment and not selected_task_id else "No deployments match this filter." %}
-  {# Dashboard only: a row here is one client+system, so every URL that client has for
-     it belongs in the cell. dashboard_history.html deliberately leaves this unset —
-     its rows are individual deployments. #}
-  {% set show_all_client_urls = true %}
-  {% include "_deployment_table.html" %}
-  </section>
+  <script>
+    (function () {
+      // Greeting and date in the viewer's own clock, as the reference does.
+      var now = new Date();
+      var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      function pad(n) { return String(n).padStart(2, "0"); }
+      var greet = document.getElementById("dhero-greet");
+      var hour = now.getHours();
+      greet.textContent = (hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening") + ", " + greet.getAttribute("data-greet-name");
+      document.getElementById("dhero-date").textContent = DOW[now.getDay()] + ", " + now.getDate() + " " + MON[now.getMonth()] + " " + now.getFullYear();
+
+      // Deployment activity: one column per local day, Live stacked on Test.
+      var data = JSON.parse(document.getElementById("activity-data").textContent);
+      var DAY = 864e5;
+      var today = new Date(now); today.setHours(0, 0, 0, 0);
+      var days = [];
+      for (var i = data.days - 1; i >= 0; i--) {
+        var d = new Date(today); d.setDate(today.getDate() - i);
+        days.push({ t: d.getTime(), d: d, test: 0, live: 0 });
+      }
+      data.deployments.forEach(function (dep) {
+        var at = new Date(dep.at); at.setHours(0, 0, 0, 0);
+        var day = days.find(function (x) { return x.t === at.getTime(); });
+        if (day) day[dep.system === "live" ? "live" : "test"] += 1;
+      });
+      var total = 0, live = 0, max = 1;
+      days.forEach(function (x) { total += x.test + x.live; live += x.live; max = Math.max(max, x.test + x.live); });
+      document.getElementById("activity-sub").textContent = data.days + " days · " + total + " deployment" + (total === 1 ? "" : "s") +
+        (total ? " · " + Math.round(live * 100 / total) + "% Live" : "");
+      var chartH = 150;
+      var chart = document.getElementById("activity-chart");
+      chart.style.height = (chartH + 28) + "px";
+      days.forEach(function (x, index) {
+        var n = x.test + x.live;
+        var col = document.createElement("div");
+        col.className = "act-col" + (x.t === today.getTime() ? " today" : "");
+        col.title = pad(x.d.getDate()) + " " + MON[x.d.getMonth()] + ": " + n + " deployment" + (n === 1 ? "" : "s") + " (" + x.test + " Test, " + x.live + " Live)";
+        var stack = document.createElement("div");
+        stack.className = "act-stack";
+        stack.style.height = chartH + "px";
+        if (n) { var num = document.createElement("span"); num.className = "act-num"; num.textContent = n; stack.appendChild(num); }
+        [["live", x.live], ["test", x.test]].forEach(function (part) {
+          if (!part[1]) return;
+          var bar = document.createElement("span");
+          bar.className = "act-bar " + part[0];
+          bar.style.height = (part[1] / max * (chartH - 18)) + "px";
+          stack.appendChild(bar);
+        });
+        var label = document.createElement("div");
+        label.className = "act-x";
+        label.textContent = index % 2 === 0 || index === days.length - 1 ? pad(x.d.getDate()) + "." + pad(x.d.getMonth() + 1) : "";
+        col.appendChild(stack);
+        col.appendChild(label);
+        chart.appendChild(col);
+      });
+    })();
+  </script>
 {% endblock %}

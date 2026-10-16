@@ -37,6 +37,7 @@
   --sapContent_NonInteractiveIconColor: #758CA4;
   --sapHoverColor: #EAECEE;
   --sapSelectedBorder: #0064D9;
+  --sapSelectedBackground: #EBF8FF;
   --sapContent_Selected_Hover_Background: #E3F0FF;
   --sapContent_Shadow0: 0 2px 4px rgba(34, 54, 73, 0.2), 0 0 2px rgba(34, 54, 73, 0.2);
   --sapContent_Shadow2: 0 10px 30px rgba(85, 107, 130, 0.3), 0 0 0 1px rgba(85, 107, 130, 0.12);
@@ -708,6 +709,7 @@ h1 {
 .requests-table thead th.drop-after { box-shadow: inset -2px 0 0 var(--sapSelectedBorder); }
 
 /* System: the reference's `.sys` tag. */
+.badge.sys-tag,
 .requests-table:not([data-cols]) td:nth-child(5) .badge,
 .requests-table td[data-col="system"] .badge,
 .deployment-table td:nth-child(2) .badge {
@@ -2243,3 +2245,153 @@ body.app-body .page > .card.card-fill { flex: 1 1 auto; min-height: 260px; }
 .card-fill .release-tracker-table thead tr + tr th { top: 20px; }
 .card-fill .release-tracker-table thead .col-client,
 .card-fill .release-tracker-table thead .col-action { z-index: 4; }
+
+
+/* ================= Dashboard overview (the reference's Dashboard view) =================
+   Tiles, rows and health items are links here (the reference's are buttons that
+   switch views), so they lose the link look. */
+.dash { display: flex; flex-direction: column; gap: 12px; padding: 0 2px 2px; }
+.dash a.kpi, .dash a.att-row, .dash a.health-row, .dash a.att-more, .dash a.dlink { text-decoration: none; color: inherit; }
+.dhero { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; background: var(--sapBaseColor); border-radius: 12px; box-shadow: var(--sapContent_Shadow0); border-left: 4px solid var(--sapBrandColor); flex-shrink: 0; }
+.dhero-date { min-height: 15px; font-size: 12px; color: var(--sapContent_LabelColor); text-transform: uppercase; letter-spacing: .04em; }
+.dash h1.dhero-title { font-size: 22px; font-weight: 700; color: var(--sapTitleColor); margin: 2px 0 4px; }
+.dhero-sub { font-size: 14px; color: var(--sapContent_LabelColor); }
+.dhero-sub b { color: var(--sapTitleColor); }
+.dhero-actions { display: flex; gap: 8px; }
+.dhero-actions .btn { height: 32px; padding: 0 12px; gap: 6px; display: inline-flex; align-items: center; text-decoration: none; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; flex-shrink: 0; }
+.kpi { --tone: var(--sapBrandColor); --toneBg: var(--stInfoBg); text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--sapBaseColor); border-radius: 12px; box-shadow: var(--sapContent_Shadow0); border-top: 3px solid var(--tone); transition: box-shadow .15s, transform .15s; }
+.kpi:hover { box-shadow: var(--sapContent_Shadow2); transform: translateY(-1px); }
+.kpi:focus-visible, .att-row:focus-visible, .health-row:focus-visible { outline: 2px solid var(--sapSelectedBorder); outline-offset: 1px; }
+.kpi-critical { --tone: var(--stCriticalText); --toneBg: var(--stCriticalBg); }
+.kpi-neutral { --tone: var(--stNeutralBd); --toneBg: var(--stNeutralBg); }
+.kpi-positive { --tone: var(--stPositiveText); --toneBg: var(--stPositiveBg); }
+.kpi-info { --tone: var(--stInfoText); --toneBg: var(--stInfoBg); }
+.kpi-brand { --tone: var(--sapBrandColor); --toneBg: var(--sapSelectedBackground); }
+.kpi-top { display: flex; align-items: center; gap: 8px; }
+.kpi-ico { width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--toneBg); color: var(--tone); }
+.kpi-label { font-size: 13px; font-weight: 600; color: var(--sapContent_LabelColor); }
+.kpi-value { font-size: 32px; line-height: 36px; font-weight: 700; color: var(--sapTitleColor); }
+.kpi-of { font-size: 16px; font-weight: 600; color: var(--sapContent_LabelColor); }
+.kpi-foot { font-size: 12px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.dgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.dgrid .span-2 { grid-column: span 2; }
+@media (max-width: 1250px) { .dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .dgrid { grid-template-columns: minmax(0, 1fr); } .dgrid .span-2 { grid-column: auto; } }
+.dcard { background: var(--sapBaseColor); border-radius: 12px; box-shadow: var(--sapContent_Shadow0); display: flex; flex-direction: column; min-width: 0; }
+.dcard-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 10px 16px; border-bottom: 1px solid var(--sapList_BorderColor); }
+.dash h2.dcard-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--sapTitleColor); }
+.dcard-sub { font-size: 12px; color: var(--sapContent_LabelColor); margin-top: 2px; }
+.dcard-body { padding: 12px 16px 16px; flex: 1; min-width: 0; }
+.dlink { gap: 2px; display: inline-flex; align-items: center; }
+.dlink .ico { font-size: 12px; }
+.dsec-title { font-size: 12px; font-weight: 700; color: var(--sapContent_LabelColor); text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 8px; }
+.dot-sep::before { content: "·"; margin: 0 6px; color: var(--sapContent_NonInteractiveIconColor); }
+.dempty { display: flex; align-items: center; gap: 8px; padding: 16px 0; color: var(--sapContent_LabelColor); font-size: 14px; }
+.dempty .ico { color: var(--stPositiveText); }
+
+/* Status groups and request types as fills. */
+.seg-pending { background: var(--stCriticalText); }
+.seg-progress { background: var(--stNeutralBd); }
+.seg-deployed { background: var(--stPositiveText); }
+.seg-returned { background: var(--stInfoText); }
+.seg-stopped { background: var(--stNegativeText); }
+.type-bg-standard { background: var(--typeStandard); }
+.type-bg-db_dump_restore { background: var(--typeDatabase); }
+.type-bg-test_local { background: var(--typeTestLocal); }
+
+.att-list { display: flex; flex-direction: column; margin: -4px -8px 0; }
+.att-row { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto 64px; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; text-align: left; width: 100%; }
+.att-row + .att-row { border-top: 1px solid var(--sapList_BorderColor); border-radius: 0; }
+.att-row:hover { background: var(--sapHoverColor); border-radius: 8px; }
+.att-stripe { width: 4px; align-self: stretch; border-radius: 2px; }
+.att-line1 { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.att-no { font-weight: 700; color: var(--sapBrandColor); flex-shrink: 0; }
+.att-client { font-weight: 700; color: var(--sapTitleColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-line2 { font-size: 12px; color: var(--sapContent_LabelColor); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-type, .hbar-label { font-weight: 700; }
+.att-side { display: flex; gap: 6px; align-items: center; }
+.att-time { font-size: 12px; color: var(--sapContent_LabelColor); text-align: right; white-space: nowrap; }
+.att-more { margin: 6px 8px 0; font-size: 13px; font-weight: 600; color: var(--sapButton_Lite_TextColor); text-align: left; padding: 4px 0; }
+.dash a.att-more { color: var(--sapButton_Lite_TextColor); }
+.att-more:hover { text-decoration: underline; }
+
+.stackbar { display: flex; gap: 2px; height: 12px; border-radius: 6px; overflow: hidden; background: var(--sapList_BorderColor); }
+.stackbar span { min-width: 4px; }
+.legend { display: grid; gap: 6px; margin-top: 12px; }
+.legend-row { display: grid; grid-template-columns: 10px 1fr auto 40px; align-items: center; gap: 8px; font-size: 13px; }
+.legend-sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend-l { color: var(--sapTextColor); }
+.legend-n { font-weight: 700; color: var(--sapTitleColor); }
+.legend-p { color: var(--sapContent_LabelColor); text-align: right; font-size: 12px; }
+.hbar-row + .hbar-row { margin-top: 10px; }
+.hbar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.hbar-n { font-weight: 700; color: var(--sapTitleColor); }
+.hbar-open { font-weight: 400; color: var(--sapContent_LabelColor); }
+.hbar { height: 8px; border-radius: 4px; background: var(--sapHoverColor); overflow: hidden; }
+.hbar span { display: block; height: 100%; border-radius: 4px; }
+.sys-split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sys-cell { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--sapList_BorderColor); border-radius: 8px; font-size: 12px; color: var(--sapContent_LabelColor); }
+.sys-cell b { font-size: 18px; color: var(--sapTitleColor); margin-left: auto; }
+.sys-cell > span:last-child { white-space: nowrap; }
+
+.act-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.act-col { display: flex; flex-direction: column; align-items: center; }
+.act-stack { width: 100%; max-width: 34px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; border-bottom: 1px solid var(--sapGroup_TitleBorderColor); }
+.act-bar { display: block; min-height: 3px; }
+.act-bar.live { background: var(--sysLiveText); }
+.act-bar.test { background: var(--stCriticalText); opacity: .75; }
+.act-num + .act-bar { border-radius: 4px 4px 0 0; }
+.act-num { font-size: 11px; font-weight: 700; color: var(--sapTitleColor); text-align: center; margin-bottom: 2px; }
+.act-x { height: 28px; padding-top: 6px; font-size: 11px; color: var(--sapContent_LabelColor); white-space: nowrap; }
+.act-col.today .act-x { color: var(--sapBrandColor); font-weight: 700; }
+.act-col:hover .act-bar { filter: brightness(.9); }
+.act-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--sapContent_LabelColor); margin-top: 4px; }
+.act-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.act-legend .sw.live { background: var(--sysLiveText); }
+.act-legend .sw.test { background: var(--stCriticalText); opacity: .75; }
+.act-top { margin-left: auto; }
+.act-top b { color: var(--sapTitleColor); font-weight: 600; }
+[data-theme="schertech"] .act-bar.live, [data-theme="schertech"] .act-legend .sw.live { background: var(--sysLiveBg); }
+[data-theme="schertech"] .act-bar.test, [data-theme="schertech"] .act-legend .sw.test { background: var(--sysTestBg); opacity: 1; }
+
+.rec-list { display: flex; flex-direction: column; }
+.rec-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; }
+.rec-row + .rec-row { border-top: 1px solid var(--sapList_BorderColor); }
+.rec-ico { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--stPositiveBg); color: var(--stPositiveText); }
+.rec-client { font-weight: 700; color: var(--sapTitleColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-meta { font-size: 12px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.rec-time { font-size: 11px; color: var(--sapContent_LabelColor); white-space: nowrap; }
+
+.ring-wrap { display: flex; align-items: center; gap: 20px; }
+.ring { width: 96px; height: 96px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: conic-gradient(var(--stPositiveText) 0 var(--aligned, 0%), var(--stCriticalText) 0 100%); }
+.ring-in { width: 72px; height: 72px; border-radius: 50%; background: var(--sapBaseColor); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-in b { font-size: 18px; color: var(--sapTitleColor); }
+.ring-in span { font-size: 11px; color: var(--sapContent_LabelColor); }
+.ring-stats { display: grid; gap: 8px; font-size: 13px; color: var(--sapContent_LabelColor); }
+.ring-stats .legend-sw { margin-right: 8px; }
+.ring-stats b { color: var(--sapTitleColor); margin-right: 2px; }
+.drift { margin-top: 12px; border-top: 1px solid var(--sapList_BorderColor); padding-top: 6px; }
+.drift-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 13px; }
+.drift-c { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drift-v { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--sapContent_LabelColor); }
+.drift-more { padding: 6px 0 0; }
+
+.health { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.health-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 16px; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--sapList_BorderColor); border-radius: 8px; text-align: left; width: 100%; }
+a.health-row:hover { background: var(--sapHoverColor); }
+.health-ic { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.health-ic.ok { background: var(--stPositiveBg); color: var(--stPositiveText); }
+.health-ic.warn { background: var(--stCriticalBg); color: var(--stCriticalText); }
+.health-l { font-weight: 700; color: var(--sapTitleColor); }
+.health-d { font-size: 12px; color: var(--sapContent_LabelColor); margin-top: 2px; }
+.health-go { color: var(--sapContent_NonInteractiveIconColor); }
+
+/* The status table below the overview: its own scroll box, header pinned, so its
+   horizontal scrollbar is never a page away. */
+.dash-status .table-scroll { max-height: 70vh; overflow: auto; }
+.dash-status .status-table { overflow: visible; border-collapse: separate; border-spacing: 0; }
+.dash-status .status-table thead th { position: sticky; top: 0; z-index: 3; }
