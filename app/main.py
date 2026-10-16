@@ -15,6 +15,7 @@ from app.routers.dashboard import router as dashboard_router
 from app.routers.management import router as management_router
 from app.routers.release_tracker import router as release_tracker_router
 from app.routers.seeder_collection import router as seeder_collection_router
+from app.theme import DEFAULT_THEME, THEME_COOKIE, THEME_COOKIE_MAX_AGE, THEMES
 from app.ws import manager
 
 settings = get_settings()
@@ -26,6 +27,27 @@ app.add_middleware(
     SessionMiddleware, secret_key=settings.session_secret_key, https_only=settings.session_cookie_https_only
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.middleware("http")
+async def theme_middleware(request: Request, call_next):
+    # Resolved here, not in each router, because there are several Jinja2Templates
+    # instances (one per router) and base.html needs the theme on every page —
+    # including /login, before anyone is authenticated. Rendered server-side as
+    # <html data-theme> so the page never flashes the other theme while a script loads.
+    requested = request.query_params.get("theme")
+    if requested in THEMES:
+        request.state.theme = requested
+    else:
+        cookie = request.cookies.get(THEME_COOKIE)
+        request.state.theme = cookie if cookie in THEMES else DEFAULT_THEME
+    request.state.theme_options = list(THEMES.items())
+    response = await call_next(request)
+    if requested in THEMES:
+        response.set_cookie(THEME_COOKIE, requested, max_age=THEME_COOKIE_MAX_AGE, samesite="lax")
+    return response
+
+
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(management_router)

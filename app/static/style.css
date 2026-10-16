@@ -1,231 +1,577 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
 /* ---------------------------------------------------------------------------
-   Design system: "Ops Console" — this is an internal deployment/release
-   tracker, driven all day by developers, team leads, and DevOps engineers on
-   desktop. Status IS the content here (pending/approved/deployed, test/live),
-   so color is a signal language, not decoration — each hue below means one
-   specific thing and is used nowhere else. Dark surface reduces eye strain
-   for a tool that stays open in a pinned tab all day, and gives the signal
-   colors the contrast they need to read as "lights," not tints.
+   Design system: the company standard — "Deployment Tracker V12.1", built from the
+   Figma files and handed over as Deployment_Tracker.html. Two themes, both
+   maintained, chosen per browser (app/theme.py, cookie `dt-theme`) and rendered
+   server-side as <html data-theme="standard|schertech">:
+
+     standard  — SAP Morning Horizon: white shell, blue #0064D9 accents
+     schertech — blue #005981 shell and nav, orange #FFA600 accents
+
+   Every colour lives in the two token blocks below. Rules further down use only
+   var(--…) — a value written into a rule instead of a token is how this codebase
+   once shipped colours that were only right for one theme.
+
+   Status colour is a signal language, and each hue means one thing:
+     Test     = the --sysTest* tokens   (yellow / orange)
+     Live     = the --sysLive* tokens   (violet in Standard, red-orange in Schertech)
+     waiting  = --amber   in flight = --teal (the theme's brand blue)
+     success  = --green   failure   = --red
+   Colours are the reference's exactly, except two System tags (agreed 2026-10-13,
+   to be reported back to UI/UX):
+     - Standard's Live tag is violet, not the reference's pink/#AA0808 — that red is
+       also "failed", so Live and failure read the same.
+     - Schertech's Test tag has dark text on the orange: white on #FFA600 is 2:1.
+   Any other change goes to the design first, then here.
+
+   Fonts and icons are the reference's own, shipped in app/static/fonts/ (extracted
+   from Deployment_Tracker.html): "72" for text, SAP-icons for icons (_icons.html).
 --------------------------------------------------------------------------- */
 
 :root {
-  --ink: #0d1113;
-  --panel: #151a1d;
-  --panel-raised: #1b2226;
-  --panel-hover: #202a2f;
-  --hairline: #262f34;
-  --hairline-strong: #344046;
-  --paper: #e8ecee;
-  --fog: #8b98a0;
-  --fog-dim: #5b6870;
+  /* --- SAP Horizon tokens (names as in the Figma variables) --- */
+  --sapBackgroundColor: #F5F6F7;
+  --sapBaseColor: #FFFFFF;
+  --sapTitleColor: #1D2D3E;
+  --sapTextColor: #1D2D3E;
+  --sapContent_LabelColor: #556B82;
+  --sapContent_NonInteractiveIconColor: #758CA4;
+  --sapHoverColor: #EAECEE;
+  --sapSelectedBackground: #EBF8FF;
+  --sapSelectedBorder: #0064D9;
+  --sapContent_Selected_Hover_Background: #E3F0FF;
+  --sapContent_Shadow0: 0 2px 4px rgba(34, 54, 73, 0.2), 0 0 2px rgba(34, 54, 73, 0.2);
+  --sapContent_Shadow2: 0 10px 30px rgba(85, 107, 130, 0.3), 0 0 0 1px rgba(85, 107, 130, 0.12);
+  --sapContent_Shadow3: 0 16px 64px rgba(85, 107, 130, 0.3), 0 0 0 1px rgba(85, 107, 130, 0.16);
+  --sapBlockLayer: rgba(0, 0, 0, 0.2);
+  --sapBrandColor: #0064D9;
+  --sapContent_IconColor: #1D2D3E;
+  --sapNegativeText: #AA0808;
+  --btnNegLiteBg: #FFD6E9;
+  --warningIconColor: #E76500;
+  --sapList_Background: #FFFFFF;
+  --sapGroup_TitleBackground: #FFFFFF;
+  --sapGroup_TitleBorderColor: #A8B3BD;
 
-  /* Signal system — each color is load-bearing, not aesthetic. */
-  --amber: #e8a33d;
-  --amber-dim: rgba(232, 163, 61, 0.16);
-  --teal: #3fc7b8;
-  --teal-dim: rgba(63, 199, 184, 0.16);
-  --green: #4cc98a;
-  --green-dim: rgba(76, 201, 138, 0.16);
-  --red: #e2584a;
-  --red-dim: rgba(226, 88, 74, 0.16);
-  --violet: #9c90f0;
-  --violet-dim: rgba(156, 144, 240, 0.16);
-  --slate-chip: #6c7a83;
-  --slate-chip-dim: rgba(108, 122, 131, 0.18);
-  --blue: #5b9fe0;
-  --blue-dim: rgba(91, 159, 224, 0.16);
-  --rose: #e0789f;
-  --rose-dim: rgba(224, 120, 159, 0.16);
+  --sapShellColor: #FFFFFF;
+  --sapShell_TextColor: #1D2D3E;
+  --shellLinkColor: #0064D9;
+  --shellHover: rgba(0, 0, 0, 0.06);
+  --sapShell_Shadow: 0 2px 2px rgba(85, 107, 130, 0.1), inset 0 -1px 0 rgba(85, 107, 130, 0.2);
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --navBg: #FFFFFF;
+  --navText: #1D2D3E;
+  --navIcon: #1D2D3E;
+  --navHover: #EAECEE;
+  --navSelectedBg: #EBF8FF;
+  --navSelectedBorder: #0064D9;
+  --navDot: #0064D9;
+  --navDivider: #E5E5E5;
 
-  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sapButton_Emphasized_Background: #0070F2;
+  --sapButton_Emphasized_TextColor: #FFFFFF;
+  --sapButton_Background: #FFFFFF;
+  --sapButton_BorderColor: #BCC3CA;
+  --sapButton_TextColor: #0064D9;
+  --sapButton_Lite_TextColor: #0064D9;
+
+  --sapField_Background: #FFFFFF;
+  --sapField_BorderColor: #556B81;
+  --sapField_PlaceholderTextColor: #556B82;
+  --sapField_TextColor: #131E29;
+  --sapField_Shadow: inset 0 0 0 1px rgba(85, 107, 130, 0.25);
+  --sapField_ReadOnly_Background: #EAECEE;
+
+  --sapList_HeaderBackground: #FFFFFF;
+  --sapList_HeaderTextColor: #1D2D3E;
+  --sapList_BorderColor: #E5E5E5;
+  --sapScrollBar_FaceColor: #7B91A8;
+  --sapScrollBar_TrackColor: #FFFFFF;
+
+  /* Request type — bold coloured text, as the reference renders the Type column. */
+  --typeTestLocal: #B95100;
+  --typeStandard: #0064D9;
+  --typeDatabase: #AA0808;
+
+  /* Object status (Custom Status) */
+  --stPositiveBg: #EBF5CB; --stPositiveBd: #DBEDA1; --stPositiveText: #256F3A;
+  --stInfoBg: #E8F3FF;     --stInfoBd: #B5D7FF;     --stInfoText: #0064D8;
+  --stCriticalBg: #FFF3B7; --stCriticalBd: #FFEA84; --stCriticalText: #B44F00;
+  --stNeutralBg: #EFF1F2;  --stNeutralBd: #788FA6;  --stNeutralText: #1D2D3E;
+  --stNegativeBg: #FFD6E9; --stNegativeBd: #FFC1DF; --stNegativeText: #AA0808;
+
+  /* System tag (Test / Live) */
+  --sysTestBg: #FFF3B7; --sysTestBd: #FFEA84; --sysTestText: #B44F00;
+  --sysLiveBg: #DED3FF; --sysLiveBd: #C9B8FF; --sysLiveText: #5B3CC4;
+  --sysMinW: 80px;
+
+  /* Release Tracker group headers */
+  --relTest: #EBF5CB; --relLive: #DED3FF; --relMain: #D1EFFF; --relHeadText: #424242;
+
+  /* --- App tokens, mapped onto the theme. These names predate the company theme and
+     are used throughout the rules below; keeping them as aliases is what lets one
+     token block recolour every page without touching each rule. --- */
+  --ink: var(--sapBackgroundColor);          /* page background */
+  --on-accent: #FFFFFF;                      /* text on a filled brand/green/red/amber control */
+  --panel: var(--sapBaseColor);
+  --panel-raised: var(--sapBackgroundColor);
+  --panel-hover: var(--sapHoverColor);
+  --hairline: var(--sapList_BorderColor);
+  --hairline-strong: var(--sapButton_BorderColor);
+  --paper: var(--sapTextColor);
+  --fog: var(--sapContent_LabelColor);
+  --fog-dim: var(--sapContent_NonInteractiveIconColor);
+  --shadow-pin: -6px 0 8px -6px rgba(34, 54, 73, 0.25);
+
+  --amber: var(--stCriticalText);  --amber-dim: var(--stCriticalBg);  --amber-bd: var(--stCriticalBd);
+  --teal: var(--sapBrandColor);    --teal-dim: var(--sapSelectedBackground);
+  --green: var(--stPositiveText);  --green-dim: var(--stPositiveBg);  --green-bd: var(--stPositiveBd);
+  --red: var(--stNegativeText);    --red-dim: var(--stNegativeBg);    --red-bd: var(--stNegativeBd);
+  --violet: var(--sysLiveText);    --violet-dim: var(--sysLiveBg);
+  --slate-chip: var(--sapContent_LabelColor); --slate-chip-dim: var(--stNeutralBg);
+  --blue: var(--stInfoText);       --blue-dim: var(--stInfoBg);
+  --rose: var(--typeDatabase);     --rose-dim: var(--stNegativeBg);
+
+  /* Theme-menu swatches: each shows its own theme's colour whichever theme is active. */
+  --swatchStandard: #0070F2;
+  --swatchSchertech: #005981;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-field: 4px;
+
+  /* "72" is installed on the team's machines; Arial is the reference's own fallback. */
+  --font: "72", "72full", Arial, Helvetica, sans-serif;
+  --font-display: var(--font);
+  --font-body: var(--font);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+:root[data-theme="schertech"] {
+  --sapBrandColor: #005981;
+  --sapSelectedBorder: #005981;
+
+  --sapShellColor: #005981;
+  --sapShell_TextColor: #FFFFFF;
+  --shellLinkColor: #FFFFFF;
+  --shellHover: rgba(255, 255, 255, 0.12);
+
+  --navBg: #005981;
+  --navText: #FFFFFF;
+  --navIcon: #FFA600;
+  --navHover: #004F72;
+  --navSelectedBg: #004F72;
+  --navSelectedBorder: transparent;
+  --navDot: #FFA600;
+  --navDivider: #D0D7DD;
+
+  --sapButton_Emphasized_Background: #005981;
+  --sapButton_TextColor: #005981;
+
+  --sapList_HeaderBackground: #D0D7DD;
+
+  --typeStandard: #005981;
+  --stInfoText: #005981;
+
+  --sysTestBg: #FFA600; --sysTestBd: transparent; --sysTestText: #1D2D3E;
+  --sysLiveBg: #CF4415; --sysLiveBd: transparent; --sysLiveText: #FFFFFF;
+  --sysMinW: 0px;
+
+  --sapButton_Lite_TextColor: #005981;
 }
 
 * { box-sizing: border-box; }
 
-::selection { background: var(--teal-dim); color: var(--paper); }
+::selection { background: var(--sapContent_Selected_Hover_Background); color: var(--sapTextColor); }
 
 body {
   margin: 0;
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--paper);
   background: var(--ink);
-  /* Faint fixed grid — a control-panel texture, not a pattern to notice consciously. */
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size: 32px 32px;
 }
 
 a { color: inherit; }
 
 :focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+  outline: 2px solid var(--sapSelectedBorder);
+  outline-offset: 1px;
 }
 
-::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-track { background: var(--panel); }
-::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 6px; border: 2px solid var(--panel); }
-::-webkit-scrollbar-thumb:hover { background: var(--fog-dim); }
-* { scrollbar-color: var(--hairline-strong) var(--panel); scrollbar-width: thin; }
+* { scrollbar-color: var(--sapScrollBar_FaceColor) var(--sapScrollBar_TrackColor); }
+::-webkit-scrollbar { width: 14px; height: 14px; background: var(--sapScrollBar_TrackColor); }
+::-webkit-scrollbar-thumb { background: var(--sapScrollBar_FaceColor); border-radius: 7px; border: 4px solid var(--sapScrollBar_TrackColor); }
+::-webkit-scrollbar-corner { background: var(--sapScrollBar_TrackColor); }
 
-/* --- Topbar / brand ------------------------------------------------------ */
+/* --- Fonts (the reference's own, see the header comment) -------------------- */
 
-.topbar {
+@font-face { font-family: "72"; src: local("72"), local("72-Regular"), url("/static/fonts/72-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "72"; src: local("72 Italic"), local("72-Italic"), url("/static/fonts/72-Italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "72"; src: local("72 Semibold"), local("72-Semibold"), url("/static/fonts/72-Semibold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "72"; src: local("72 Bold"), local("72-Bold"), url("/static/fonts/72-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "72SemiboldDuplex"; src: url("/static/fonts/72-SemiboldDuplex.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+/* Icon fonts block rather than swap: a fallback font would show their private-use
+   codepoints as boxes for a frame. */
+@font-face { font-family: "SAP-icons"; src: url("/static/fonts/SAP-icons.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: "BusinessSuiteInAppSymbols"; src: url("/static/fonts/BusinessSuiteInAppSymbols.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: block; }
+
+.ico {
+  font-family: "SAP-icons";
+  font-size: 16px;
+  line-height: 16px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-weight: normal;
+  flex-shrink: 0;
+  -webkit-font-smoothing: antialiased;
+}
+.ico-bs { font-family: "BusinessSuiteInAppSymbols"; }
+.ico-12 { font-size: 12px; width: 12px; height: 12px; line-height: 12px; }
+
+/* --- Shell bar ------------------------------------------------------------- */
+
+.shell {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 48px 4px 30px;
+  background: var(--sapShellColor);
+  box-shadow: var(--sapShell_Shadow);
+}
+
+.shell-left { display: flex; align-items: center; gap: 8px; align-self: stretch; }
+.shell-hamburger {
+  height: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--sapShell_TextColor);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.shell-hamburger:hover { background: var(--shellHover); }
+.shell-logo { display: flex; padding: 0 4.176px; }
+.shell-logo-img { width: 149.407px; height: 24.228px; display: block; }
+
+/* Centred on the bar itself, not between its neighbours — the reference places the
+   title at the bar's exact centre whatever the left and right groups hold. */
+.shell-title {
+  position: absolute;
+  left: calc(50% + .5px);
+  top: calc(50% + .5px);
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+.shell-title-text { font-weight: 700; font-size: 20px; color: var(--sapShell_TextColor); white-space: nowrap; }
+.shell-title-wordmark { width: 252px; height: 22px; display: block; }
+
+.shell-right { display: flex; align-items: center; gap: 10px; height: 30px; position: relative; }
+.shell-buttons { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+
+.shell-link {
+  height: 26px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  font-family: "72SemiboldDuplex", var(--font);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--shellLinkColor);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.shell-link:hover { background: var(--shellHover); color: var(--shellLinkColor); }
+.logout-form { display: inline-flex; margin: 0; }
+
+/* Shell menus (Theme, user): <details>, so they open with no script at all. */
+.shell-menu { position: relative; }
+.shell-menu > summary { list-style: none; }
+.shell-menu > summary::-webkit-details-marker { display: none; }
+.shell-menu[open] > summary { background: var(--shellHover); }
+.shell-theme-chev { transition: transform .15s; }
+.shell-menu[open] .shell-theme-chev { transform: rotate(180deg); }
+
+.pop {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  min-width: 250px;
+  padding: 4px 0;
+  background: var(--sapBaseColor);
+  border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow2);
+  z-index: 60;
+}
+.pop-narrow { min-width: 170px; }
+.pop-title { padding: 8px 12px 4px; font-size: 12px; color: var(--sapContent_LabelColor); }
+.pop-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 14px;
+  color: var(--sapTitleColor);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pop-opt:hover { background: var(--sapHoverColor); }
+.pop-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: var(--sapField_Shadow); flex-shrink: 0; }
+.pop-dot-standard { background: var(--swatchStandard); }
+.pop-dot-schertech { background: var(--swatchSchertech); }
+.pop-check { margin-left: auto; color: var(--sapBrandColor); }
+
+/* --- Layout: side navigation + content ------------------------------------- */
+
+.layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.sidenav {
+  position: sticky;
+  top: 64px;
+  width: 256px;
+  height: calc(100vh - 76px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--navBg);
+  border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
+  overflow: hidden;
+  transition: width .2s;
+}
+
+.sidenav nav {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 12px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7.5px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--navText);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.nav-item:hover { background: var(--navHover); }
+.nav-item.active { background: var(--navSelectedBg); border-color: var(--navSelectedBorder); }
+.nav-ico { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: var(--navIcon); flex-shrink: 0; }
+.nav-label { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; line-height: 25px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-dot { width: 10px; height: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.nav-dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--navDot); }
+.sidenav-spacer { flex: 1; }
+.sidenav-divider { height: 1px; background: var(--navDivider); flex-shrink: 0; }
+.sidenav-footer { display: none; }
+
+[data-theme="schertech"] .sidenav nav { gap: 4px; padding: 16px 8px 4px; }
+[data-theme="schertech"] .nav-item { padding: 12px 8px; border-radius: var(--radius-sm); border: none; }
+[data-theme="schertech"] .nav-label { font-size: 16px; line-height: 19px; }
+[data-theme="schertech"] .nav-dot { width: 8px; height: 8px; }
+[data-theme="schertech"] .nav-dot::before { width: 8px; height: 8px; }
+[data-theme="schertech"] .sidenav-divider { display: none; }
+[data-theme="schertech"] .sidenav-footer {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 16px;
+  border-top: 1px solid var(--navDivider);
+  color: var(--navText);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* Hamburger-collapsed: the reference's 60px icon rail. The class sits on <html> (set
+   before first paint in base.html) so the choice survives page loads. */
+.nav-collapsed .sidenav { width: 60px; }
+.nav-collapsed .sidenav nav { padding-left: 8px; padding-right: 8px; }
+.nav-collapsed .nav-item { justify-content: center; }
+.nav-collapsed .nav-label,
+.nav-collapsed .nav-dot,
+.nav-collapsed .sidenav-footer { display: none !important; }
+
+@media (max-width: 1100px) {
+  .shell-theme-label { display: none; }
+}
+/* The title is centred on the bar, independent of its neighbours, so below this width
+   it would sit under the right-hand links rather than between them. */
+@media (max-width: 1000px) {
+  .shell-title { display: none; }
+}
+@media (max-width: 900px) {
+  .shell { padding: 4px 12px; }
+}
+
+/* --- Card, toolbar, buttons (the reference's page building blocks) ---------- */
+
+.card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sapList_Background);
+  border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
+  overflow: hidden;
+  position: relative;
+}
+.card + .card { margin-top: 12px; }
+.card-footer {
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 8px;
+  border-top: 1px solid var(--sapList_BorderColor);
+  background: var(--sapBaseColor);
+}
+
+.toolbar {
+  min-height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  padding: 0.85rem 1.75rem;
-  background: var(--panel);
-  border-bottom: 1px solid var(--hairline);
+  gap: 12px;
+  padding: 0 8px 0 16px;
+  background: var(--sapGroup_TitleBackground);
+  border-bottom: 1px solid var(--sapGroup_TitleBorderColor);
 }
+.toolbar-title { margin: 0; font-family: var(--font); font-weight: 700; font-size: 16px; color: var(--sapTitleColor); white-space: nowrap; }
+.toolbar-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 26px; }
 
-.brand {
+.btn {
+  height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-  color: var(--paper);
-  text-decoration: none;
-}
-
-.brand-mark { display: inline-flex; flex: none; }
-.brand-mark svg { display: block; }
-
-.brand-tag {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--fog-dim);
-  border-left: 1px solid var(--hairline-strong);
-  padding-left: 0.65rem;
-  margin-left: 0.15rem;
-}
-
-.topbar nav {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1.4rem;
-}
-
-.topbar nav a {
-  position: relative;
-  margin-left: 0;
-  color: var(--fog);
-  text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 500;
-  padding: 0.3rem 0;
-  transition: color 0.15s ease;
-}
-
-.topbar nav a:not(.button-link)::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 100%;
-  bottom: -1px;
-  height: 2px;
-  background: var(--teal);
-  transition: right 0.18s ease;
-}
-
-.topbar nav a:not(.button-link):hover { color: var(--paper); }
-.topbar nav a:not(.button-link):hover::after { right: 0; }
-
-.button-link {
-  background: var(--teal);
-  color: var(--ink) !important;
-  padding: 0.4rem 0.85rem;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  font-weight: 600 !important;
-  transition: filter 0.15s ease, transform 0.15s ease;
+  background: none;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
 }
+.btn:disabled { cursor: default; }
+.btn-emph { background: var(--sapButton_Emphasized_Background); border-color: var(--sapButton_Emphasized_Background); color: var(--sapButton_Emphasized_TextColor); font-weight: 700; }
+.btn-emph:hover:not(:disabled) { filter: brightness(.92); color: var(--sapButton_Emphasized_TextColor); }
+.btn-emph:disabled { opacity: .4; }
+.btn-std { background: var(--sapButton_Background); border-color: var(--sapButton_BorderColor); color: var(--sapButton_TextColor); font-weight: 700; }
+.btn-std:hover:not(:disabled) { background: var(--sapHoverColor); }
+.btn-lite { color: var(--sapButton_Lite_TextColor); font-weight: 600; }
+.btn-lite:hover:not(:disabled) { background: var(--sapHoverColor); }
+.btn-lite:disabled { opacity: .4; }
+.btn-icon { width: 32px; padding: 5px 8px; }
+/* Seeder panel buttons: a filled square Edit and a pink Delete, as in the reference. */
+.btn-solid-icon { width: 26px; padding: 0; background: var(--sapButton_Emphasized_Background); border-color: var(--sapButton_Emphasized_Background); color: var(--sapButton_Emphasized_TextColor); }
+.btn-solid-icon:hover { filter: brightness(.92); color: var(--sapButton_Emphasized_TextColor); }
+.btn-neg-lite { background: var(--btnNegLiteBg); color: var(--sapNegativeText); }
+.btn-neg-lite:hover { filter: brightness(.96); }
+/* .inline-form's filled-button rule is broader than these; the design classes win
+   wherever they are used inside a form. */
+.inline-form button.btn { padding: 5px 8px; font-size: 14px; font-weight: 600; border-radius: var(--radius-sm); }
+.inline-form button.btn-lite { background: none; color: var(--sapButton_Lite_TextColor); border: 1px solid transparent; }
+.inline-form button.btn-lite:hover { background: var(--sapHoverColor); filter: none; }
+.inline-form button.btn-neg-lite { width: 26px; padding: 0; background: var(--btnNegLiteBg); color: var(--sapNegativeText); border: 1px solid transparent; }
 
-.button-link:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
 /* --- Page shell ------------------------------------------------------------ */
 
+/* The reference's content area: no outer padding or max-width — each page is a card
+   that fills the space beside the nav. (The old 1800px cap is gone for the same
+   reason it was once widened: the Requests table's pinned columns need the room.) */
 .page {
-  /* Widened from 1560px and the left/right padding trimmed from 1.75rem — on a wide
-     monitor the old values left ~175px of dead space on each side while the Requests
-     table's pinned Requested By/Status/Action columns sat directly on top of the
-     Changes column (confirmed in a real browser: Changes rendered at 0% visible,
-     entirely underneath the pinned block). This alone fully resolves it on wide
-     monitors (>=1800px); see the .requests-table column-width comments below for the
-     rest of the trim that also helps on narrower laptop screens. */
-  max-width: 1800px;
-  margin: 0 auto;
-  padding: 2.25rem 1.25rem 4rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 12px;
 }
 
+/* A page title until that page is rebuilt as a card whose toolbar carries it — the
+   reference has no heading above its cards, only the toolbar title. */
 h1 {
-  margin: 0 0 0.3rem;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.65rem;
-  letter-spacing: -0.01em;
-  color: var(--paper);
+  margin: 4px 0 12px;
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--sapTitleColor);
 }
+.card h1.toolbar-title, .toolbar h1 { margin: 0; }
 
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--teal);
-  margin: 0 0 0.4rem;
-}
-
-.subtitle { color: var(--fog); margin-top: 0; margin-bottom: 1.75rem; font-size: 0.92rem; }
-.subtitle a { color: var(--teal); text-decoration: none; }
+/* Kept only where the line is an instruction people need (Users, Clients,
+   Checklists, a forced password change) — descriptions were removed with the
+   reference's headings. */
+.subtitle { color: var(--sapContent_LabelColor); margin: -6px 0 12px; font-size: 12px; line-height: 16px; }
+.subtitle a { color: var(--sapBrandColor); text-decoration: none; }
 .subtitle a:hover { text-decoration: underline; }
 
 /* --- Tables ---------------------------------------------------------------- */
 
 .table-scroll {
   overflow-x: auto;
-  border: 1px solid var(--hairline);
+  background: var(--panel);
   border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
 }
 
 .table-scroll .status-table {
   border: none;
   border-radius: 0;
+  box-shadow: none;
 }
 
 .status-table {
   width: 100%;
   border-collapse: collapse;
   background: var(--panel);
-  border: 1px solid var(--hairline);
   border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
   overflow: hidden;
 }
 
 .status-table th, .status-table td {
-  padding: 0.75rem 0.85rem;
+  padding: 0.5rem 0.6rem;
   /* see .requests-table below for the tighter side padding this table uses */
   text-align: left;
   border-bottom: 1px solid var(--hairline);
-  font-size: 0.87rem;
+  border-right: 1px solid var(--hairline);
+  font-size: 14px;
   word-wrap: break-word;
   overflow-wrap: break-word;
   /* Explicit, rather than relying on the UA default — a <td> with `display: flex|grid`
@@ -242,7 +588,7 @@ h1 {
 }
 
 .status-table tbody tr:hover {
-  background: var(--panel-raised);
+  background: var(--sapHoverColor);
 }
 
 /* /requests has enough columns (11) that the table scrolls horizontally on normal
@@ -276,122 +622,243 @@ h1 {
   table-layout: fixed;
 }
 
-/* Explicit width for every column, not just the pinned ones — table-layout: fixed only
-   sizes a column from its own specified width (or splits leftover space evenly among
-   columns that don't have one), so leaving these unset would either collapse them or
-   throw off the total width the horizontal scroll depends on. Chosen to roughly match
-   each column's natural content width; long values still wrap instead of overflowing
-   (word-wrap: break-word above) rather than needing to be exact. */
-/* Tighter sides than the other status tables: box-sizing is border-box and this
-   table is table-layout: fixed, so padding eats into each column's fixed width
-   rather than adding to it — 0.85rem a side left the timestamp cells clipping
-   their own content. Trimming it buys ~11px of usable room per column without
-   changing the table's total width at all. */
-.requests-table th, .requests-table td { padding-left: 0.5rem; padding-right: 0.5rem; }
+/* The reference's Request table (Deployment_Tracker.html, `.ath-table`): one 32px
+   line per row, nothing wraps, long values end in an ellipsis — the copy fields and
+   their View dialogs carry the full text. Column widths are the reference's, except:
+     - Status 200 (not 120): ours has labels like "Pending Team Lead Approval".
+     - Requested At / Deployed At 185 (not 140): our timestamps carry the zone.
+   Every column has a width because table-layout: fixed sizes columns from them. */
+.requests-table th, .requests-table td {
+  height: 32px;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--sapTextColor);
+  overflow-wrap: normal;
+  word-wrap: normal;
+}
+.requests-table thead th {
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sapList_HeaderTextColor);
+  background: var(--sapList_HeaderBackground);
+}
 
-.requests-table th:nth-child(1), .requests-table td:nth-child(1) { width: 130px; }  /* Type */
-.requests-table th:nth-child(2), .requests-table td:nth-child(2) { width: 90px; }   /* Task ID */
-.requests-table th:nth-child(3), .requests-table td:nth-child(3) { width: 130px; }  /* Module Name */
-.requests-table th:nth-child(4), .requests-table td:nth-child(4) { width: 170px; }  /* Client */
-/* System holds a badge, and for a test.local request that badge is the full hostname
-   (e.g. "orga.test.local") in a monospace face — ~15 characters at 0.72rem plus badge
-   and cell padding, so it needs ~155px. An earlier pass trimmed this to 100px to make
-   room for the URL column, on the assumption the badge still fit; that only held for the
-   short "Test"/"Live" badges. At 100px the hostname badge overflowed its cell and ran
-   into the neighbouring column. The width taken back here comes off Changes below, so
-   the table is no wider than before. Check a *.test.local row, not a Test/Live one,
-   before trimming this again. */
-.requests-table th:nth-child(5), .requests-table td:nth-child(5) { width: 155px; }  /* System */
-/* Belt and braces for the column above: table-layout: fixed does NOT clip an oversized
-   cell, it lets the content spill over the next column. Clipping keeps any future
-   longer-than-expected hostname contained in its own cell instead of overlapping URL. */
-.requests-table td:nth-child(5) { overflow: hidden; }
-/* 150 -> 130px: this cell holds a truncated link plus its copy button, nothing that
-   needs the extra width, and most rows show only a dash. Unlike System above, whose
-   width is pinned by the full-hostname badge, there is nothing here that a narrower
-   column can clip. Comes straight off the table's total. */
-.requests-table th:nth-child(6), .requests-table td:nth-child(6) { width: 130px; }  /* URL */
-.requests-table th:nth-child(7), .requests-table td:nth-child(7) { width: 60px; }   /* Version */
-/* Trimmed from 260px — confirmed in a real browser this column was the single biggest
-   contributor pushing Changes out past the pinned block's overlay point. The cell
-   already truncates with ellipsis and a "View" button for the untruncated text
-   (branch-commit-preview, request_list.html), so a narrower column doesn't lose any
-   information, just wraps/truncates a little sooner. */
-.requests-table th:nth-child(8), .requests-table td:nth-child(8) { width: 210px; }  /* Branch Name / Commit */
-/* 240px -> 185px funds the System column's restored width above, keeping the table's
-   total unchanged. Same reasoning as Branch/Commit: this cell truncates with ellipsis and
-   a "View" button for the full text, so it loses no information by being narrower. */
-/* 185 -> 165px funds Requested By's extra 20px for the request timestamp (see the
-   pinned-column block below), keeping the table's total unchanged. Same reasoning as
-   the two trims above: this cell truncates with ellipsis and a "View" button for the
-   full text, so a narrower column loses no information. */
-.requests-table th:nth-child(9), .requests-table td:nth-child(9) { width: 165px; }  /* Changes */
+.requests-table:not([data-cols]) :is(th, td):nth-child(1), .requests-table [data-col="type"] { width: 190px; }   /* Type */
+.requests-table:not([data-cols]) :is(th, td):nth-child(2), .requests-table [data-col="task-id"] { width: 100px; }   /* Task ID */
+.requests-table:not([data-cols]) :is(th, td):nth-child(3), .requests-table [data-col="module-name"] { width: 110px; }   /* Module Name */
+.requests-table:not([data-cols]) :is(th, td):nth-child(4), .requests-table [data-col="client"] { width: 190px; }   /* Client */
+.requests-table:not([data-cols]) :is(th, td):nth-child(5), .requests-table [data-col="system"] { width: 100px; text-align: center; }  /* System */
+.requests-table:not([data-cols]) :is(th, td):nth-child(6), .requests-table [data-col="url"] { width: 170px; }   /* URL */
+.requests-table:not([data-cols]) :is(th, td):nth-child(7), .requests-table [data-col="version"] { width: 72px; }    /* Version */
+.requests-table:not([data-cols]) :is(th, td):nth-child(8), .requests-table [data-col="branch-commit"] { width: 170px; }   /* Branch / Commit */
+.requests-table:not([data-cols]) :is(th, td):nth-child(9), .requests-table [data-col="changes"] { width: 170px; }   /* Changes */
+.requests-table:not([data-cols]) :is(th, td):nth-child(10), .requests-table [data-col="requested-by"] { width: 180px; } /* Requested By */
+.requests-table:not([data-cols]) :is(th, td):nth-child(11), .requests-table [data-col="requested-at"] { width: 185px; text-align: right; } /* Requested At */
+.requests-table:not([data-cols]) :is(th, td):nth-child(12), .requests-table [data-col="status"] { width: 200px; text-align: center; } /* Status */
+.requests-table:not([data-cols]) :is(th, td):nth-child(13), .requests-table [data-col="deployed-at"] { width: 185px; text-align: right; } /* Deployed At */
+.requests-table:not([data-cols]) :is(th, td):nth-child(14), .requests-table [data-col="action"] { width: 196px; text-align: center; } /* Action */
 
-/* Pin the three rightmost columns (Requested By, Status, Action) together, not just
-   Action alone — knowing who asked and what state a row is in matters just as much
-   as reaching the buttons while scrolling right through the wider columns (Branch /
-   Commit, Changes). Their `right` offsets below stack on the fixed widths set for
-   these same three columns — see the table-layout: fixed comment above for why that's
-   required for the offsets to land correctly.
-
-   Widths trimmed from 160/190/150px (confirmed in a real browser: at the old widths
-   plus the old .page sizing, Changes rendered 100% hidden underneath this pinned
-   block — see the .page comment above). Chosen conservatively so the rail + longest
-   status label ("Pending Team Lead Approval") and the longest button label ("Mark
-   Deployed") still fit without excessive wrapping. */
-.requests-table th:nth-last-child(-n + 3),
-.requests-table td:nth-last-child(-n + 3) {
+/* Action stays pinned to the right edge while the 2,200px of columns scroll — the
+   buttons are what this page is for. (The reference scrolls it away with the rest.) */
+.requests-table th:last-child,
+.requests-table td:last-child {
   position: sticky;
+  right: 0;
   z-index: 1;
-  background: var(--panel);
+  background: var(--sapList_Background);
+  box-shadow: var(--shadow-pin);
+  overflow: visible;
 }
+.requests-table thead th:last-child { z-index: 2; background: var(--sapList_HeaderBackground); }
+.requests-table tbody tr:hover td:last-child { background: var(--sapHoverColor); }
 
-/* Rebalanced when the timestamps landed: Requested By gained the request time under
-   the name, so it goes 130 -> 150px. Action stays at 140px — it was briefly trimmed
-   to 120 and that is narrower than "Start Deployment", so every button wrapped into
-   a two-line block. The button width is the floor here, not the timestamp's.
-   The extra 20px comes off Changes below, leaving the table's total — and these
-   `right` offsets' relationship to it — unchanged. */
-.requests-table th:nth-last-child(1), .requests-table td:nth-last-child(1) { width: 140px; right: 0; }
-.requests-table th:nth-last-child(2), .requests-table td:nth-last-child(2) { width: 170px; right: 140px; }
-.requests-table th:nth-last-child(3), .requests-table td:nth-last-child(3) { width: 150px; right: 310px; }
+/* Type: bold coloured text plus the reference's 6px stripe down the row's left edge —
+   on the first cell, so it stays on the edge when Type is dragged elsewhere. */
+.requests-table td.type-cell,
+.requests-table tr[data-type] > td:first-child { padding-left: 14px; }
+.requests-table:not([data-cols]) td.type-cell-standard,
+.requests-table tr[data-type="standard"] > td:first-child { box-shadow: inset 6px 0 0 var(--typeStandard); }
+.requests-table:not([data-cols]) td.type-cell-db_dump_restore,
+.requests-table tr[data-type="db_dump_restore"] > td:first-child { box-shadow: inset 6px 0 0 var(--typeDatabase); }
+.requests-table:not([data-cols]) td.type-cell-test_local,
+.requests-table tr[data-type="test_local"] > td:first-child { box-shadow: inset 6px 0 0 var(--typeTestLocal); }
 
-/* Only the leftmost pinned column needs the scroll-separator shadow — one between
-   each pinned pair would just be noise, since they all share the same background. */
-.requests-table th:nth-last-child(3),
-.requests-table td:nth-last-child(3) {
-  box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.45);
+/* Draggable headers (the page script): the dragged one dims, a 2px brand line marks
+   where it will land. */
+.requests-table[data-cols] thead th[draggable="true"] { cursor: grab; }
+.requests-table thead th.is-dragging { opacity: 0.5; }
+.requests-table thead th.drop-before { box-shadow: inset 2px 0 0 var(--sapSelectedBorder); }
+.requests-table thead th.drop-after { box-shadow: inset -2px 0 0 var(--sapSelectedBorder); }
+
+/* System: the reference's `.sys` tag. */
+.requests-table:not([data-cols]) td:nth-child(5) .badge,
+.requests-table td[data-col="system"] .badge,
+.deployment-table td:nth-child(2) .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--sysMinW);
+  max-width: 100%;
+  height: 22px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
+/* A test.local row's System tag is the whole hostname; the tag ellipsizes and the
+   tooltip-free hostname is still in the Branch/Commit View dialog's row. */
+.requests-table:not([data-cols]) td:nth-child(5) .badge-testlocal, .requests-table td[data-col="system"] .badge-testlocal { display: inline-block; line-height: 14px; }
+/* Type: the reference's `.type-text` — bold 14px coloured text, no tag box. */
+.requests-table td .badge[class*="badge-type-"] { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 
-.requests-table thead th:nth-last-child(-n + 3) {
-  z-index: 2;
-  background: var(--panel-raised);
+/* URL, Branch / Commit, Changes: the reference's copy field — a field-styled box,
+   the value (link, or a button opening the full text) and a copy button inside. */
+.requests-table:not([data-cols]) td:nth-child(6), .requests-table td[data-col="url"],
+.requests-table:not([data-cols]) td:nth-child(8), .requests-table td[data-col="branch-commit"],
+.requests-table:not([data-cols]) td:nth-child(9), .requests-table td[data-col="changes"] { padding: 0 4px; }
+.requests-table .url-cell,
+.requests-table .branch-commit-cell,
+.requests-table .changes-cell,
+.deployment-table .url-cell,
+.deployment-table .changes-cell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  background: var(--sapField_Background);
+  border-radius: var(--radius-field);
+  box-shadow: var(--sapField_Shadow), inset 0 -1px 0 var(--sapField_BorderColor);
+  overflow: hidden;
 }
+.requests-table .url-cell .url-preview,
+.requests-table .branch-commit-cell .view-detail,
+.requests-table .changes-cell .view-changes,
+.deployment-table .url-cell .url-preview,
+.deployment-table .changes-cell .view-changes {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--sapField_TextColor);
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.requests-table .url-cell a.url-preview,
+.deployment-table .url-cell a.url-preview { text-decoration: underline; }
+.deployment-table .url-cell .url-label { flex: none; padding-left: 6px; font-size: 12px; color: var(--sapContent_LabelColor); }
+.requests-table .branch-commit-preview,
+.requests-table .changes-preview,
+.deployment-table .changes-preview { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.requests-table .branch-commit-preview code,
+.requests-table .branch-commit-preview em { font-family: inherit; font-size: inherit; font-style: normal; background: none; padding: 0; color: inherit; }
+.requests-table .url-cell .js-copy-button,
+.requests-table .branch-commit-cell .js-copy-button,
+.requests-table .changes-cell .js-copy-button,
+.deployment-table .url-cell .js-copy-button,
+.deployment-table .changes-cell .js-copy-button {
+  flex: none;
+  height: 100%;
+  width: auto;
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--radius-field);
+  background: none;
+  color: var(--sapContent_IconColor);
+}
+.requests-table .url-cell .js-copy-button:hover,
+.requests-table .branch-commit-cell .js-copy-button:hover,
+.requests-table .changes-cell .js-copy-button:hover,
+.deployment-table .url-cell .js-copy-button:hover,
+.deployment-table .changes-cell .js-copy-button:hover { background: var(--sapHoverColor); }
 
-.requests-table tbody tr:hover td:nth-last-child(-n + 3) {
-  background: var(--panel-raised);
+/* Status: the reference's status tag (icon + label). The (i) return log and the
+   Handling / Deployed by line are ours and sit beside / under it. */
+.requests-table:not([data-cols]) td:nth-child(12), .requests-table td[data-col="status"] { white-space: normal; }
+.requests-table .status-cell { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+.st-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.st-positive { background: var(--stPositiveBg); border-color: var(--stPositiveBd); color: var(--stPositiveText); }
+.st-info { background: var(--stInfoBg); border-color: var(--stInfoBd); color: var(--stInfoText); font-family: "72SemiboldDuplex", var(--font); font-weight: 600; }
+.st-critical { background: var(--stCriticalBg); border-color: var(--stCriticalBd); color: var(--stCriticalText); }
+.st-neutral { background: var(--stNeutralBg); border-color: var(--stNeutralBd); color: var(--stNeutralText); font-weight: 600; }
+.st-negative { background: var(--stNegativeBg); border-color: var(--stNegativeBd); color: var(--stNegativeText); }
+.requests-table .status-handler { font-size: 11px; line-height: 13px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Requests page: the cards sit flush with the content area; the table scroll box
+   inside a card loses its own card look. */
+.card .table-scroll { border-radius: 0; box-shadow: none; background: var(--sapList_Background); }
+.request-card .empty-state { margin: 0; padding: 48px; text-align: center; color: var(--sapContent_LabelColor); }
+.request-card .card-footer .pagination { margin: 0; }
+.toolbar .page-size-form { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; color: var(--sapContent_LabelColor); }
+.toolbar-note { font-size: 12px; color: var(--sapContent_LabelColor); }
+.toolbar-note[hidden], .toolbar .btn[hidden] { display: none; }
 
 .deployment-table {
   table-layout: fixed;
 }
 
-/* System/Task ID/Version trimmed slightly (from 6/7/7%) to make room for URL below
-   without pushing every other column's share down too — same "shrink the least
-   content-heavy columns" approach as .requests-table above. */
-.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 10%; } /* Client */
-.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 5%; }  /* System */
-.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 10%; } /* URL */
-.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 6%; }  /* Task ID */
-.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 8%; }  /* Branch */
-.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 6%; }  /* Commit */
-.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 5%; }  /* Version */
-.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 13%; } /* Changes */
-.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 7%; }  /* Requested By */
-.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 7%; } /* Approved By */
-.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 7%; } /* Deployed By */
-.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 8%; } /* Requested At */
-.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 8%; } /* Deployed At */
+/* Dashboard / History: the reference's History table — its column widths, one 32px
+   line per row, ellipsis instead of wrapping. Requested At / Deployed At are 185px
+   (not 140) because our timestamps carry the zone. The Dashboard's multi-URL cell
+   (.url-stack) is the one place a row grows: every URL there is the row's subject. */
+.deployment-table th, .deployment-table td {
+  height: 32px;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  overflow-wrap: normal;
+  word-wrap: normal;
+}
+.deployment-table thead th { white-space: nowrap; font-size: 14px; }
+.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 180px; }   /* Client */
+.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 96px; text-align: center; } /* System */
+.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 160px; padding: 0 4px; } /* URL */
+.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 90px; }    /* Task ID */
+.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 170px; }   /* Branch */
+.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 110px; }   /* Commit */
+.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 74px; }    /* Version */
+.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 170px; padding: 0 4px; } /* Changes */
+.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 170px; }   /* Requested By */
+.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 170px; } /* Approved By */
+.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 170px; } /* Deployed By */
+.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 185px; text-align: right; } /* Requested At */
+.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 185px; text-align: right; } /* Deployed At */
+.deployment-table th:nth-child(3), .deployment-table th:nth-child(8) { padding: 0 8px; }
+.deployment-table td:nth-child(3):has(.url-stack) { white-space: normal; height: auto; padding: 3px 4px; }
+.deployment-table .url-stack { display: flex; flex-direction: column; gap: 3px; }
 
 .changes-cell, .branch-commit-cell, .url-cell {
   display: flex;
@@ -443,20 +910,24 @@ h1 {
   width: min(560px, 90vw);
   background: var(--panel);
   color: var(--paper);
-  border: 1px solid var(--hairline-strong);
+  border: none;
   border-radius: var(--radius);
-  padding: 1.5rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 0 1rem 1rem;
+  box-shadow: var(--sapContent_Shadow3);
 }
 
 .changes-modal::backdrop {
-  background: rgba(3, 5, 6, 0.6);
+  background: var(--sapBlockLayer);
 }
 
 .changes-modal h2 {
-  margin: 0 0 0.75rem;
+  margin: 0 -1rem 1rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--hairline);
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sapTitleColor);
 }
 
 .changes-modal-body {
@@ -471,7 +942,11 @@ h1 {
 
 .changes-modal-actions {
   display: flex;
-  gap: 0.6rem;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin: 0 -1rem;
+  padding: 0.6rem 1rem 0;
+  border-top: 1px solid var(--hairline);
 }
 
 /* One row per pre-flight confirmation in the DB dump Start pop-up. The whole row is the
@@ -482,7 +957,7 @@ h1 {
   gap: 0.6rem;
   padding: 0.55rem 0.7rem;
   margin: 0 0 0.5rem;
-  background: var(--panel-raised);
+  background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   color: var(--paper);
@@ -490,7 +965,7 @@ h1 {
   line-height: 1.4;
   cursor: pointer;
 }
-.checklist-item:hover { border-color: var(--hairline-strong); }
+.checklist-item:hover { border-color: var(--sapSelectedBorder); background: var(--sapContent_Selected_Hover_Background); }
 .checklist-item input { margin-top: 0.2rem; accent-color: var(--teal); }
 
 /* Nothing else in the app disables a button, so there was no disabled look; without one
@@ -514,14 +989,13 @@ h1 {
   height: 2.1rem;
   padding: 0;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--hairline-strong);
-  background: transparent;
-  color: var(--paper);
+  border: 1px solid var(--sapButton_BorderColor);
+  background: var(--sapButton_Background);
+  color: var(--sapButton_TextColor);
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
 }
 
-.icon-button:hover { border-color: var(--teal); color: var(--teal); }
+.icon-button:hover { background: var(--sapHoverColor); }
 
 .icon-button svg { display: block; }
 
@@ -532,29 +1006,32 @@ h1 {
   color: var(--green);
 }
 .icon-button.is-copied .icon-copy { display: none; }
-.icon-button.is-copied .icon-check { display: block; }
+.icon-button.is-copied .icon-check { display: inline-flex; }
 
 .icon-button.is-failed {
   border-color: var(--red);
   color: var(--red);
 }
 
+/* Headers wrap rather than nowrap: the fixed-layout tables (.requests-table,
+   .deployment-table) size columns to their content, and a 14px bold "Requested By"
+   on one line ran into the next header at laptop widths. */
 .status-table th {
-  background: var(--panel-raised);
-  color: var(--fog-dim);
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
+  background: var(--sapList_HeaderBackground);
+  color: var(--sapList_HeaderTextColor);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: normal;  /* wrap between words only — "Versio/n" in the 60px Version column */
+  border-bottom-color: var(--sapButton_BorderColor);
 }
 
 .status-table tbody tr:last-child td { border-bottom: none; }
 
 code {
   font-family: var(--font-mono);
-  background: var(--panel-raised);
+  background: var(--stNeutralBg);
   color: var(--paper);
   padding: 0.12rem 0.4rem;
   border-radius: 4px;
@@ -565,35 +1042,47 @@ code {
 
 .badge {
   display: inline-block;
-  padding: 0.18rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
 }
 
 /* Environment: test/live are the client-facing systems a standard request
    targets — amber/violet, deliberately distinct from the teal/green workflow
    states below so "which system" and "what stage" never read as the same
    signal. */
-.badge-test { background: var(--amber-dim); color: var(--amber); }
-.badge-live { background: var(--violet-dim); color: var(--violet); }
+.badge-test { background: var(--sysTestBg); border-color: var(--sysTestBd); color: var(--sysTestText); }
+.badge-live { background: var(--sysLiveBg); border-color: var(--sysLiveBd); color: var(--sysLiveText); }
 /* test.local boxes aren't a client system at all — a neutral slate chip
    marks them as internal infrastructure, not environment data. */
-.badge-testlocal { background: var(--slate-chip-dim); color: var(--slate-chip); font-family: var(--font-mono); }
+.badge-testlocal { background: var(--stNeutralBg); border-color: var(--stNeutralBd); color: var(--stNeutralText); font-family: var(--font-mono); font-weight: 600; }
 
-/* Release Tracker's Test/Live/Main column blocks — same hues as the
-   test/live badges above (amber/violet), plus green for Main Version,
-   matching the app's existing "shipped/complete" signal color. Applied to
-   both the two-row <thead> and every <td> in that column so the tinted
-   block reads as one visual group per row. */
-.release-tracker-table th.col-test,
-.release-tracker-table td.col-test { background: var(--amber-dim); }
-.release-tracker-table th.col-live,
-.release-tracker-table td.col-live { background: var(--violet-dim); }
-.release-tracker-table th.col-main,
-.release-tracker-table td.col-main { background: var(--green-dim); }
+/* Release Tracker's Test/Live/Main column groups — tinted header and cells alike,
+   as the reference draws them (--relTest/--relLive/--relMain). */
+.release-tracker-table .col-test { background: var(--relTest); color: var(--relHeadText); }
+.release-tracker-table .col-live { background: var(--relLive); color: var(--relHeadText); }
+.release-tracker-table .col-main { background: var(--relMain); color: var(--relHeadText); }
+.release-tracker-table td.col-test,
+.release-tracker-table td.col-live,
+.release-tracker-table td.col-main { color: var(--sapTextColor); text-align: right; }
+.release-tracker-table thead tr + tr th { font-size: 12px; }
+
+/* Client and Action pinned on the left while the version groups scroll, as in the
+   reference. Sticky cells need the table's own overflow back to visible (see
+   .requests-table) and an opaque background, or scrolled cells show through. */
+.release-tracker-table { overflow: visible; border-collapse: separate; border-spacing: 0; }
+.release-tracker-table .col-client,
+.release-tracker-table .col-action { position: sticky; z-index: 1; background: var(--sapList_Background); }
+.release-tracker-table thead .col-client,
+.release-tracker-table thead .col-action { background: var(--sapList_HeaderBackground); z-index: 2; }
+.release-tracker-table .col-client { left: 0; width: 238px; min-width: 238px; }
+.release-tracker-table .col-action { left: 238px; width: 74px; min-width: 74px; text-align: center; padding: 0 4px; box-shadow: 2px 0 0 var(--sapList_BorderColor); }
+.release-tracker-table tbody tr:hover .col-client,
+.release-tracker-table tbody tr:hover .col-action { background: var(--sapHoverColor); }
 
 /* Center the group header cells (Test, Live, Main Version) in the first thead row
    over their two-column spans. Selector targets only the colspan="2" headers in the
@@ -606,9 +1095,11 @@ code {
    the teal/green/amber/red workflow-status colors so "what kind of request"
    never reads as "what stage it's at". test.local reuses slate-chip since it's
    the same "internal infrastructure" signal as the System-column badge above. */
-.badge-type-standard { background: var(--blue-dim); color: var(--blue); }
-.badge-type-db_dump_restore { background: var(--rose-dim); color: var(--rose); }
-.badge-type-test_local { background: var(--slate-chip-dim); color: var(--slate-chip); }
+/* Rendered as bold coloured text, no chip — the reference's Type column. */
+.badge[class*="badge-type-"] { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.25; white-space: normal; }
+.badge-type-standard { color: var(--typeStandard); }
+.badge-type-db_dump_restore { color: var(--typeDatabase); }
+.badge-type-test_local { color: var(--typeTestLocal); }
 
 .status {
   font-size: 0.8rem;
@@ -691,7 +1182,8 @@ code {
 .empty-state {
   color: var(--fog);
   background: var(--panel);
-  border: 1px dashed var(--hairline-strong);
+  box-shadow: var(--sapContent_Shadow0);
+  border: none;
   padding: 1.75rem;
   border-radius: var(--radius);
 }
@@ -699,7 +1191,7 @@ code {
 .error {
   color: var(--red);
   background: var(--red-dim);
-  border: 1px solid rgba(226, 88, 74, 0.35);
+  border: 1px solid var(--red-bd);
   padding: 0.6rem 0.9rem;
   border-radius: var(--radius-sm);
 }
@@ -713,7 +1205,7 @@ code {
 .notice {
   color: var(--green);
   background: var(--green-dim);
-  border: 1px solid rgba(76, 201, 138, 0.35);
+  border: 1px solid var(--green-bd);
   padding: 0.6rem 0.9rem;
   border-radius: var(--radius-sm);
 }
@@ -790,16 +1282,16 @@ code {
   gap: 0.35rem;
   max-width: 480px;
   background: var(--panel);
-  border: 1px solid var(--hairline);
   border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
   padding: 1.5rem;
 }
 
 .form label {
   margin-top: 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--paper);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--sapContent_LabelColor);
 }
 
 .form label:first-child { margin-top: 0; }
@@ -812,31 +1304,32 @@ code {
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-family: var(--font-body);
-  background: var(--panel-raised);
-  color: var(--paper);
+  background: var(--sapField_Background);
+  color: var(--sapField_TextColor);
   transition: border-color 0.12s ease;
 }
 
 .form input::placeholder, .form textarea::placeholder { color: var(--fog-dim); }
 
 .form input:focus, .form select:focus, .form textarea:focus {
-  border-color: var(--teal);
+  outline: 2px solid var(--sapSelectedBorder);
+  outline-offset: 1px;
 }
 
 .form button {
   margin-top: 1.25rem;
-  padding: 0.65rem 1.1rem;
+  padding: 0.45rem 1rem;
   border: none;
   border-radius: var(--radius-sm);
-  background: var(--teal);
-  color: var(--ink);
+  background: var(--sapButton_Emphasized_Background);
+  color: var(--sapButton_Emphasized_TextColor);
   font-family: var(--font-body);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.15s ease;
 }
 
-.form button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.form button:hover { filter: brightness(0.92); }
 
 /* Wide variant for forms with many fields (e.g. New Request) — groups related fields
    into rows on desktop. Rows wrap onto their own line once a field drops below its
@@ -880,7 +1373,7 @@ code {
   font-size: 0.82rem;
   border-radius: 5px;
   border: 1px solid var(--hairline-strong);
-  background: var(--panel-raised);
+  background: var(--sapField_Background);
   color: var(--paper);
 }
 
@@ -901,25 +1394,25 @@ code {
      silently reintroducing that. */
   white-space: nowrap;
   font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--teal);
+  font-weight: 700;
+  color: var(--sapButton_Emphasized_TextColor);
+  background: var(--sapButton_Emphasized_Background);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: filter 0.15s ease;
 }
 
 .inline-form button:hover,
-.actions-inner > button:hover { filter: brightness(1.1); }
+.actions-inner > button:hover { filter: brightness(0.92); }
 .inline-form button.approve, .inline-form button.deploy,
 .actions-inner > button.approve, .actions-inner > button.deploy { background: var(--green); }
 /* Teal, not green — matches the "in flight" signal color (rail/status), since starting a
    deployment isn't a completion the way approving/marking-deployed are. */
 .inline-form button.start,
-.actions-inner > button.start { background: var(--teal); }
+.actions-inner > button.start { background: var(--sapButton_Emphasized_Background); }
 .inline-form button.reject,
-.actions-inner > button.reject { background: transparent; color: var(--red); border: 1px solid rgba(226, 88, 74, 0.45); }
+.actions-inner > button.reject { background: var(--sapButton_Background); color: var(--red); border: 1px solid var(--red-bd); }
 .inline-form button.reject:hover,
-.actions-inner > button.reject:hover { background: var(--red-dim); }
+.actions-inner > button.reject:hover { background: var(--red-dim); filter: none; }
 
 /* A plain <a> (GET, not a form submission), styled to match the .inline-form buttons
    above so "Edit" reads as the same kind of action, not a lesser text link. */
@@ -930,14 +1423,15 @@ code {
   border-radius: 5px;
   padding: 0.32rem 0.65rem;
   font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--teal);
+  font-weight: 700;
+  color: var(--sapButton_TextColor);
+  background: var(--sapButton_Background);
+  border: 1px solid var(--sapButton_BorderColor);
+  border-radius: var(--radius-sm);
   text-decoration: none;
   cursor: pointer;
-  transition: filter 0.15s ease;
 }
-.actions-inner .action-link:hover { filter: brightness(1.1); }
+.actions-inner .action-link:hover { background: var(--sapHoverColor); }
 
 .filter-bar {
   display: flex;
@@ -945,7 +1439,7 @@ code {
   align-items: flex-end;
   gap: 0.75rem 1rem;
   background: var(--panel);
-  border: 1px solid var(--hairline);
+  box-shadow: var(--sapContent_Shadow0);
   border-radius: var(--radius);
   padding: 1rem 1.25rem;
   margin-bottom: 1.25rem;
@@ -953,12 +1447,8 @@ code {
 
 .filter-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .filter-field label {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fog-dim);
+  font-size: 14px;
+  color: var(--sapContent_LabelColor);
 }
 .filter-field input, .filter-field select {
   padding: 0.42rem 0.55rem;
@@ -967,7 +1457,7 @@ code {
   font-size: 0.88rem;
   font-family: var(--font-body);
   min-width: 160px;
-  background: var(--panel-raised);
+  background: var(--sapField_Background);
   color: var(--paper);
 }
 
@@ -986,49 +1476,51 @@ code {
   margin: 0;
   padding: 0.3rem 0;
   list-style: none;
-  background: var(--panel-raised);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  background: var(--sapBaseColor);
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow2);
 }
 .combobox-option {
   padding: 0.42rem 0.6rem;
   font-size: 0.88rem;
   cursor: pointer;
 }
-.combobox-option:hover { background: var(--panel); color: var(--teal); }
+.combobox-option:hover { background: var(--sapHoverColor); }
 
 /* Generic secondary/primary buttons — originally scoped to .filter-bar only, promoted
    to standalone classes once the "Enable Desktop Notifications" button (request_list.html)
    needed the same look outside a filter bar. */
+/* The reference's Standard button (white, grey border, brand text) and Emphasized
+   button (brand fill, white text). */
 .button-secondary {
-  padding: 0.42rem 0.85rem;
+  padding: 0.4rem 0.75rem;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--hairline-strong);
-  background: transparent;
-  color: var(--paper);
+  border: 1px solid var(--sapButton_BorderColor);
+  background: var(--sapButton_Background);
+  color: var(--sapButton_TextColor);
   cursor: pointer;
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
   text-decoration: none;
-  transition: border-color 0.12s ease, color 0.12s ease;
 }
 
-.button-secondary:hover { border-color: var(--teal); color: var(--teal); }
+.button-secondary:hover { background: var(--sapHoverColor); }
 
 .button-primary {
-  padding: 0.45rem 0.95rem;
+  padding: 0.45rem 0.85rem;
   border-radius: var(--radius-sm);
-  border: none;
-  background: var(--teal);
-  color: var(--ink);
+  border: 1px solid var(--sapButton_Emphasized_Background);
+  background: var(--sapButton_Emphasized_Background);
+  color: var(--sapButton_Emphasized_TextColor);
   cursor: pointer;
-  font-size: 0.88rem;
-  font-weight: 600;
-  transition: filter 0.15s ease;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
 }
 
-.button-primary:hover { filter: brightness(1.08); }
+.button-primary:hover { filter: brightness(0.92); }
 
 /* --- Tabs (New Request form) -------------------------------------------------- */
 
@@ -1036,7 +1528,7 @@ code {
   display: flex;
   gap: 0.25rem;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--sapButton_BorderColor);
 }
 
 .tab-button {
@@ -1048,24 +1540,24 @@ code {
   border-bottom: 2px solid transparent;
   padding: 0.65rem 0.9rem;
   font-family: var(--font-body);
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--fog);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sapTitleColor);
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .tab-button svg { flex: none; opacity: 0.75; transition: opacity 0.15s ease; }
-.tab-button:hover { color: var(--paper); }
+.tab-button:hover { color: var(--sapBrandColor); }
 .tab-button:hover svg { opacity: 1; }
-.tab-button.active { color: var(--paper); border-bottom-color: var(--teal); }
+.tab-button.active { color: var(--sapBrandColor); border-bottom: 3px solid var(--sapBrandColor); }
 .tab-button.active svg { opacity: 1; }
 
 .muted { color: var(--fog); }
 .hint { font-size: 0.8rem; color: var(--fog-dim); margin: 0.15rem 0 0; }
 .static-field { margin: 0; padding: 0.5rem 0.6rem; font-size: 0.9rem; color: var(--paper); font-family: var(--font-mono); }
 
-#enable-notifications-button, #notifications-enabled-notice { margin-bottom: 1.25rem; }
+/* (Now in the Requests toolbar — no outer margin.) */
 
 .pagination {
   display: flex;
@@ -1130,49 +1622,41 @@ code {
   padding: 0.3rem 0.4rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline-strong);
-  background: var(--panel-raised);
+  background: var(--sapField_Background);
   color: var(--paper);
   font-size: 0.85rem;
 }
-
-/* Nav (logged-in state) */
-.nav-user { color: var(--paper); font-weight: 600; font-size: 0.85rem; font-family: var(--font-mono); }
-
-.logout-form { display: inline; }
 
 .link-button {
   background: none;
   border: none;
   padding: 0;
-  color: var(--fog);
+  color: var(--sapButton_TextColor);
   text-decoration: none;
   font-size: 0.92rem;
   font-family: inherit;
   cursor: pointer;
 }
 
-.link-button:hover { color: var(--paper); }
+.link-button:hover { text-decoration: underline; }
+.shell .link-button:hover { text-decoration: none; }
 
 /* --- Login page --------------------------------------------------------------- */
 
 .auth-page {
-  min-height: 100vh;
+  min-height: calc(100vh - 52px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: var(--ink);
-  background-image:
-    radial-gradient(560px 360px at 18% 12%, rgba(63, 199, 184, 0.09), transparent 60%),
-    radial-gradient(520px 340px at 82% 88%, rgba(232, 163, 61, 0.07), transparent 60%);
 }
 
 .auth-lockup {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  justify-content: center;
-  margin-bottom: 1.75rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--sapTitleColor);
 }
 
 .auth-form { width: 100%; max-width: 380px; }
@@ -1180,88 +1664,122 @@ code {
   font-size: 1.15rem;
   margin: 0 0 1.25rem;
   text-align: center;
-  color: var(--fog);
+  color: var(--sapContent_LabelColor);
   font-family: var(--font-body);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 /* --- Seeder Collection --------------------------------------------------------- */
 
-.seeder-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
+/* The reference's Seeder Collection: panels inside one card (`.panels` / `.panel`),
+   each a rounded tile on the card's base colour with a 30px head. */
+.search-field { position: relative; width: 220px; }
+.search-field input { width: 100%; height: 26px; padding: 0 34px 0 8px; font-size: 14px; }
+.search-field .search-field-icon { position: absolute; right: 8px; top: 5px; color: var(--sapContent_IconColor); pointer-events: none; }
 
-.seeder-filter-input {
-  flex: 1 1 360px;
-  max-width: 480px;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-sm);
-  background: var(--panel-raised);
-  color: var(--paper);
-  font-size: 0.9rem;
-  font-family: var(--font-body);
-}
-
-.seeder-filter-input::placeholder { color: var(--fog-dim); }
-.seeder-filter-input:focus { border-color: var(--teal); }
-
-.seeder-cards {
+.panels {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 10px;
+  padding: 12px;
+  background: var(--sapBaseColor);
 }
-
-.seeder-card {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
+.panel {
+  background: var(--sapBaseColor);
   border-radius: var(--radius);
-  padding: 1.1rem 1.25rem;
+  box-shadow: var(--sapContent_Shadow0);
 }
-
-.seeder-card-header {
+.panel[hidden] { display: none; }
+.panel-head {
+  height: 30px;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 8px;
 }
-
-.seeder-card-header h2 {
+.panel.open .panel-head { border-bottom: 1px solid var(--sapList_BorderColor); }
+.panel-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  font-size: 1.05rem;
-  font-family: var(--font-display);
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--sapTitleColor);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
+.panel-chev { color: var(--sapBrandColor); width: 26px; padding: 0; }
+.panel-chev .panel-chev-open { display: none; }
+.panel.open .panel-chev .panel-chev-open { display: inline-flex; }
+.panel.open .panel-chev .panel-chev-closed { display: none; }
+.panel-body { display: none; padding: 12px; grid-template-columns: 1fr 1fr; gap: 10px 8px; }
+.panel.open .panel-body { display: grid; }
+.panel-full { grid-column: 1 / -1; }
+.panel-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--sapContent_LabelColor); }
+.req { color: var(--sapNegativeText); font-weight: 700; }
+/* Read-only field (the reference's `.field.ro`) — not our `.field`, which wraps a
+   label and input in the forms and means something else. */
+.ro-field {
+  min-height: 26px;
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--sapField_ReadOnly_Background);
+  border-bottom: 1px dashed var(--sapField_BorderColor);
+  border-radius: var(--radius-field) var(--radius-field) 0 0;
+  font-size: 14px;
+  color: var(--sapField_TextColor);
+}
+.empty-note { margin: 0; padding: 48px; text-align: center; color: var(--sapContent_LabelColor); }
+.empty-note[hidden] { display: none; }
 
-.seeder-card-subtitle {
-  margin: 0.15rem 0 0.85rem;
-  color: var(--fog);
-  font-size: 0.85rem;
-}
+.seeder-card-header .actions-inner { flex-direction: row; align-items: center; gap: 8px; }
+.seeder-card-header .inline-form { display: inline-flex; }
 
 .seeder-command-row {
   display: flex;
   align-items: flex-start;
-  gap: 0.6rem;
+  gap: 8px;
 }
 
 .seeder-command {
   flex: 1 1 auto;
-  margin: 0;
-  padding: 0.65rem 0.8rem;
-  background: var(--panel-raised);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 1.5;
+  min-height: 68px;
+  padding: 6px 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.3;
   white-space: pre-wrap;
   word-break: break-word;
 }
+.seeder-command-row .seeder-copy { width: 26px; padding: 0; }
+
+/* The reference's message box (Warning on delete). */
+.mbox {
+  width: 320px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow3);
+  background: var(--sapBaseColor);
+  color: var(--sapTextColor);
+}
+.mbox::backdrop { background: var(--sapBlockLayer); }
+.mbox-head {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--sapList_BorderColor);
+  font-weight: 700;
+  font-size: 16px;
+}
+.mbox-warning { color: var(--warningIconColor); }
+.mbox-text { margin: 0; padding: 16px; font-size: 14px; }
+.mbox-foot { display: flex; justify-content: flex-end; gap: 8px; min-height: 38px; padding: 6px 16px; }
 
 .seeder-command-input {
   font-family: var(--font-mono);
@@ -1291,12 +1809,12 @@ code {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   justify-self: start;
 }
 
-.seeder-url-env.test { background: var(--amber-dim); color: var(--amber); }
-.seeder-url-env.live { background: var(--violet-dim); color: var(--violet); }
+.seeder-url-env.test { background: var(--sysTestBg); border: 1px solid var(--sysTestBd); color: var(--sysTestText); }
+.seeder-url-env.live { background: var(--sysLiveBg); border: 1px solid var(--sysLiveBd); color: var(--sysLiveText); }
 
 .seeder-url-list {
   margin: 0;
@@ -1398,24 +1916,22 @@ code {
 .return-log-button:hover,
 .return-log-button:focus-visible {
   background: var(--amber);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 
 /* A withdrawal note with no return behind it isn't a warning, so it doesn't get
-   the amber "waiting on a person" treatment above — --fog/--fog-dim (rather than
-   --slate-chip/--slate-chip-dim) because against this panel's background the fog
-   tokens read as a quieter, lower-contrast grey, which is the point: it should
-   blend with the surrounding status text, not sit next to it as a chip. */
+   the amber "waiting on a person" treatment above — the neutral status grey, so it
+   blends with the surrounding status text rather than sitting next to it as a chip. */
 .return-log-button.is-muted {
-  border: 1px solid var(--fog-dim);
-  background: var(--fog-dim);
+  border: 1px solid var(--stNeutralBd);
+  background: var(--stNeutralBg);
   color: var(--fog);
 }
 
 .return-log-button.is-muted:hover,
 .return-log-button.is-muted:focus-visible {
   background: var(--fog);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 
 .return-log-count {
@@ -1443,13 +1959,13 @@ code {
    person" signal amber carries everywhere else here. */
 .inline-form button.return,
 .actions-inner > button.return {
-  background: transparent;
+  background: var(--sapButton_Background);
   color: var(--amber);
-  border: 1px solid var(--amber-dim);
+  border: 1px solid var(--amber-bd);
 }
 
 .inline-form button.return:hover,
-.actions-inner > button.return:hover { background: var(--amber-dim); }
+.actions-inner > button.return:hover { background: var(--amber-dim); filter: none; }
 
 /* Management hub (management.html): one card per tool, only the ones the viewer may open. */
 .management-cards {
@@ -1458,20 +1974,23 @@ code {
   gap: 0.9rem;
   margin-top: 1rem;
 }
+/* SAP Generic Tile: white, 16px radius, Shadow0, lifting to Shadow2 on hover. */
 .management-card {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 1rem 1.1rem;
+  gap: 0.5rem;
+  min-height: 140px;
+  padding: 1rem;
   background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
+  border-radius: 16px;
+  box-shadow: var(--sapContent_Shadow0);
   color: var(--paper);
   text-decoration: none;
+  transition: box-shadow 0.15s ease;
 }
-.management-card:hover { border-color: var(--teal); }
-.management-card-title { font-family: var(--font-display); font-weight: 600; }
-.management-card-text { font-size: 0.85rem; color: var(--fog); }
+.management-card:hover { box-shadow: var(--sapContent_Shadow2); }
+.management-card-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--sapTitleColor); }
+.management-card-text { font-size: 14px; color: var(--sapContent_LabelColor); }
 
 /* Checklists page (management_checklists.html): one list of terms grouped by type,
    each row the wording + its type badge, with admin controls beside it. */
@@ -1492,7 +2011,7 @@ code {
   margin: 1rem 0 0;
   padding: 1rem 1.1rem;
   background: var(--panel);
-  border: 1px solid var(--teal);
+  border: 1px solid var(--sapSelectedBorder);
   border-radius: var(--radius);
 }
 .checklist-add[hidden] { display: none; }
@@ -1509,7 +2028,7 @@ code {
   font-family: var(--font-body);
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline-strong);
-  background: var(--panel-raised);
+  background: var(--sapField_Background);
   color: var(--paper);
 }
 .checklist-add input::placeholder { color: var(--fog-dim); }
@@ -1529,7 +2048,7 @@ code {
 .checklist-add button.start, .checklist-edit button.start,
 .checklist-head button.start {
   background: var(--teal);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 .checklist-head button.start {
   padding: 0.5rem 1rem;
@@ -1556,8 +2075,8 @@ code {
 
 .checklist-panel, .checklist-retired {
   background: var(--panel);
-  border: 1px solid var(--hairline);
   border-radius: var(--radius);
+  box-shadow: var(--sapContent_Shadow0);
 }
 .checklist-list { list-style: none; margin: 0; padding: 0; }
 .checklist-list[hidden] { display: none; }
@@ -1593,17 +2112,17 @@ code {
 .checklist-actions form { display: flex; gap: 0.3rem; margin: 0; }
 .icon-action, .text-action {
   height: 1.9rem;
-  border: 1px solid var(--hairline-strong);
+  border: 1px solid var(--sapButton_BorderColor);
   border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fog);
+  background: var(--sapButton_Background);
+  color: var(--sapButton_TextColor);
   font-size: 0.85rem;
   cursor: pointer;
 }
 .icon-action { width: 1.9rem; padding: 0; }
 .text-action { padding: 0 0.65rem; font-weight: 600; }
-.icon-action:hover, .text-action:hover { border-color: var(--teal); color: var(--teal); }
-.text-action.is-danger { color: var(--red); border-color: var(--red-dim); }
+.icon-action:hover, .text-action:hover { background: var(--sapHoverColor); }
+.text-action.is-danger { color: var(--red); border-color: var(--red-bd); }
 .text-action.is-danger:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
 
 .checklist-empty-note { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--fog); }
@@ -1689,3 +2208,175 @@ code {
 }
 .checklist-due-before_start { color: var(--teal); border-color: var(--teal-dim); }
 .checklist-due-before_complete { color: var(--green); border-color: var(--green-dim); }
+
+/* --- Form fields: the reference's compact input (sap.m.Input) -----------------------
+   One rule for every text field and select in the app, last in the file so it wins over
+   each component's own sizing rules above: light grey frame, darker bottom edge, small
+   radius, brand focus ring. Each component keeps its own padding and width. */
+.form input, .form select, .form textarea,
+.inline-form select, .inline-form input[type="text"], .inline-form input[type="password"],
+.filter-field input, .filter-field select,
+.page-size-form select,
+.seeder-filter-input,
+.checklist-add input[type="text"], .checklist-add select,
+.checklist-edit input[type="text"], .checklist-edit select {
+  background: var(--sapField_Background);
+  color: var(--sapField_TextColor);
+  border: 1px solid var(--sapButton_BorderColor);
+  border-bottom-color: var(--sapField_BorderColor);
+  border-radius: var(--radius-field);
+}
+
+.form input:focus, .form select:focus, .form textarea:focus,
+.inline-form select:focus, .inline-form input:focus,
+.filter-field input:focus, .filter-field select:focus,
+.page-size-form select:focus,
+.seeder-filter-input:focus,
+.checklist-add input:focus, .checklist-add select:focus,
+.checklist-edit input:focus, .checklist-edit select:focus {
+  outline: 2px solid var(--sapSelectedBorder);
+  outline-offset: 1px;
+  border-color: var(--sapButton_BorderColor);
+  border-bottom-color: var(--sapField_BorderColor);
+}
+
+.form input::placeholder, .form textarea::placeholder,
+.seeder-filter-input::placeholder, .checklist-add input::placeholder,
+.filter-field input::placeholder {
+  color: var(--sapField_PlaceholderTextColor);
+  font-style: italic;
+}
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor); }
+
+/* Inline text inputs (Users' set-password, Clients' add-URL) had only browser defaults. */
+.inline-form input[type="text"], .inline-form input[type="password"] {
+  padding: 0.25rem 0.4rem;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+}
+
+/* --- Requests: Action cell as the reference's icon buttons ------------------
+   Every action is a `.btn.btn-lite.btn-icon` in the reference: a 32x26 transparent
+   button, the glyph in the Lite text colour, a grey hover. The buttons keep their old
+   classes (start / deploy / return / reject / approve, .action-link,
+   .checklist-log-button) because request_list.html's scripts and the tests key on
+   them, so the reference's look is applied here instead of by renaming them. Scoped
+   to .requests-table: .inline-form buttons elsewhere (Clients, Users) are untouched. */
+.requests-table td .actions-inner {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.requests-table td .actions-inner .inline-form,
+.requests-table td .actions-inner .action-audit { display: inline-flex; }
+.requests-table td .actions-inner button,
+.requests-table td .actions-inner .action-link {
+  width: 32px;
+  height: 26px;
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--sapButton_Lite_TextColor);
+  font-weight: 600;
+  filter: none;
+  cursor: pointer;
+}
+.requests-table td .actions-inner button:hover,
+.requests-table td .actions-inner button:focus-visible,
+.requests-table td .actions-inner .action-link:hover {
+  background: var(--sapHoverColor);
+  border-color: transparent;
+  color: var(--sapButton_Lite_TextColor);
+  filter: none;
+}
+/* Status lines that replace the buttons ("Awaiting …") and the deploy time keep a
+   whole row of the cell to themselves rather than sitting between icons. */
+.requests-table td .actions-inner > .muted,
+.requests-table td .actions-inner > .action-times { flex-basis: 100%; text-align: center; }
+
+/* Text kept for screen readers (and the tests) while the button shows only its icon. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.toolbar-buttons > * { margin: 0; }
+.request-card .pagination-status { font-family: var(--font); font-size: 14px; color: var(--sapContent_LabelColor); }
+
+/* Filters inside a card: a compact row under the toolbar instead of a card of their
+   own. The reference has a Search field there; our Client / System / Task ID filters
+   do real server-side filtering, so they stay. */
+.card .filter-bar {
+  margin: 0;
+  padding: 8px 16px 10px;
+  gap: 8px 12px;
+  background: var(--sapList_Background);
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--sapList_BorderColor);
+}
+.card .filter-field { gap: 4px; }
+.card .filter-field label { font-size: 12px; }
+.card .empty-state { margin: 0; padding: 48px; text-align: center; color: var(--sapContent_LabelColor); box-shadow: none; border-radius: 0; background: none; }
+
+/* A card clips nothing: the client combobox's option list has to drop out of the
+   filter row over the table. The rounded corners are kept by the first and last
+   children instead. */
+.card { overflow: visible; }
+.card > :first-child { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+.card > :last-child { border-bottom-left-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+
+/* Filters in a card toolbar (the reference's History toolbar). Inputs are the
+   reference's compact fields: Search 220px, the two pickers 160px. */
+.toolbar .toolbar-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+.toolbar .toolbar-filter .filter-field { flex-direction: row; gap: 0; position: relative; }
+.toolbar .toolbar-filter .filter-field input,
+.toolbar .toolbar-filter .filter-field select { min-width: 0; width: 160px; height: 26px; }
+.toolbar .toolbar-filter .filter-field input[name="task_id"] { width: 220px; }
+.toolbar { padding-top: 4px; padding-bottom: 4px; }
+/* System tag cells: the tag's 80px minimum plus 8px a side would overflow the
+   reference's 96/100px column, so these cells take 4px. */
+.requests-table td:nth-child(5), .deployment-table td:nth-child(2) { padding: 0 4px; }
+.toolbar .toolbar-filter .filter-field select { padding: 0 28px 0 8px; line-height: 24px; }
+
+/* Release Tracker rows: one 32px line like the reference's grid; long client names
+   end in an ellipsis (full name in the tooltip). */
+.release-tracker-table th, .release-tracker-table td { padding: 0 8px; font-size: 14px; }
+.release-tracker-table td { height: 32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; word-wrap: normal; }
+.release-tracker-table thead tr:first-child th { height: 20px; font-size: 12px; }
+.release-tracker-table thead tr + tr th { height: 24px; }
+.release-tracker-table thead th.col-client,
+.release-tracker-table thead th.col-action { font-size: 14px; }
+
+/* Undesigned pages (forms, Clients, Settings, Users, Checklists) in the reference's
+   frame: one card, the title in its toolbar, the page's own content below. */
+.page-card .card-body { padding: 16px; }
+.toolbar-lead { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.toolbar-lead .btn-icon { margin-left: -8px; }
+.page-card .card-body > .subtitle:first-child { margin-top: 0; }
+.ico-flip { transform: rotate(180deg); }

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_copy_button.html" as copy_btn %}
+{% from "_icons.html" import icon %}
 {% block title %}Clients — Deployment Tracker{% endblock %}
 
 {# One system's (test/live) URL list for one client: existing URLs (label — url, copy,
@@ -13,7 +14,7 @@
         {{ copy_btn.copy_button(u.url, (u.label or environment | capitalize) ~ " URL") }}
         {% if can_edit %}
           <form method="post" action="/clients/{{ client.id }}/urls/{{ u.id }}/delete" class="inline-form">
-            <button type="submit" class="link-button" title="Remove this URL">✕</button>
+            <button type="submit" class="btn btn-lite btn-icon" title="Remove this URL">{{ icon("decline") }}<span class="sr-only">Remove</span></button>
           </form>
         {% endif %}
       </li>
@@ -38,7 +39,12 @@
 {% endmacro %}
 
 {% block content %}
-  <h1>Clients</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><h1 class="toolbar-title">Clients</h1></div>
+  </div>
+  <div class="card-body">
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -199,4 +205,6 @@
       });
     })();
   </script>
+  </div>
+  </section>
 {% endblock %}

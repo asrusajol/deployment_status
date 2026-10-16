@@ -1142,6 +1142,37 @@ def test_requests_queue_shows_module_name_and_version_columns(web):
     assert "<td>V12</td>" in response.text
 
 
+def test_requests_queue_has_the_reference_time_columns_in_order(web):
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    text = client.get("/requests").text
+    head = text[text.index("<thead>") : text.index("</thead>")]
+
+    order = ["Requested By", "Requested At", "Status", "Deployed At", "Action"]
+    positions = [head.index(f">{label}</th>") for label in order]
+    assert positions == sorted(positions)
+    assert ">Branch / Commit</th>" in head
+
+
+def test_requests_queue_columns_can_be_dragged_into_a_saved_order(web):
+    """Headers drag to reorder (e.g. Status beside Requested By, so it's on screen
+    without scrolling). The order is per browser — localStorage, applied by the page
+    script — so the server keeps rendering the default order every test relies on."""
+    client, session = web
+    _seed_pending_request(session)
+    login_as(client, "lead")
+
+    text = client.get("/requests").text
+
+    assert 'class="status-table requests-table" data-column-order="dt-request-columns"' in text
+    assert 'id="reset-columns"' in text
+    head = text[text.index("<thead>") : text.index("</thead>")]
+    assert head.index(">Requested By</th>") < head.index(">Status</th>")
+    assert head.index(">Requested At</th>") < head.index(">Status</th>")
+
+
 def test_requests_queue_shows_url_column_with_copy_button(web):
     client, session = web
     request = _seed_pending_request(session)
@@ -1179,7 +1210,7 @@ def test_requests_queue_branch_commit_has_view_button_for_full_text(web):
 
     assert 'class="branch-commit-cell"' in response.text
     assert 'class="link-button view-detail"' in response.text
-    assert 'data-detail-title="Branch Name / Commit"' in response.text
+    assert 'data-detail-title="Branch / Commit"' in response.text
     # "||" rather than "/" — branch names routinely contain their own slashes (e.g.
     # "bugfix/PR-03168-..."), which made "branch / commit" ambiguous about where the
     # branch ends and the commit begins (see request_list.html's own comment).
@@ -2884,11 +2915,26 @@ def _seed_finished_request(session, *, task_id, status, completed_at, requester_
     return request
 
 
-def _requester_cell(response_text, task_id):
-    """The Requested By cell of the row carrying task_id."""
+def _row(response_text, task_id):
     body = response_text[response_text.index("<tbody>") : response_text.index("</tbody>")]
-    row = next(r for r in body.split("<tr>") if task_id in r)
-    return row[row.index('<td class="requester-cell">') : row.index('<div class="status-cell">')]
+    return next(r for r in body.split("<tr>") if task_id in r)
+
+
+def _cell(response_text, task_id, css_class):
+    """The <td class=css_class> of the row carrying task_id."""
+    row = _row(response_text, task_id)
+    start = row.index(f'<td class="{css_class}">')
+    return row[start : row.index("</td>", start)]
+
+
+def _requested_at_cell(response_text, task_id):
+    """The Requested At column — its own column, as in the design reference."""
+    return _cell(response_text, task_id, "requested-at-cell")
+
+
+def _deployed_at_cell(response_text, task_id):
+    """The Deployed At column — its own column, as in the design reference."""
+    return _cell(response_text, task_id, "deployed-at-cell")
 
 
 def _action_cell(response_text, task_id):
@@ -2898,7 +2944,7 @@ def _action_cell(response_text, task_id):
     return row[row.index('<div class="actions-inner">') :]
 
 
-def test_action_cell_shows_when_a_deployed_request_was_finished(web):
+def test_deployed_at_column_shows_when_a_deployed_request_was_finished(web):
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
@@ -2908,13 +2954,16 @@ def test_action_cell_shows_when_a_deployed_request_was_finished(web):
     )
     login_as(client, "rajib")
 
-    cell = _action_cell(client.get("/requests").text, "PR-DEPLOYED")
+    page = client.get("/requests").text
+    cell = _deployed_at_cell(page, "PR-DEPLOYED")
 
     assert "2026-09-17" in cell
     assert "02:32 PM UTC" in cell
+    # The Action cell is for controls only now that the time has a column.
+    assert "02:32 PM UTC" not in _action_cell(page, "PR-DEPLOYED")
 
 
-def test_action_cell_shows_the_finish_time_for_failed_and_rolled_back_too(web):
+def test_deployed_at_column_shows_the_finish_time_for_failed_and_rolled_back_too(web):
     """Also devops outcomes, and they carry a completed_at just the same."""
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
@@ -2931,13 +2980,13 @@ def test_action_cell_shows_the_finish_time_for_failed_and_rolled_back_too(web):
 
     page = client.get("/requests").text
 
-    assert "08:05 AM UTC" in _action_cell(page, "PR-FAILED")
-    assert "07:40 PM UTC" in _action_cell(page, "PR-ROLLED")
+    assert "08:05 AM UTC" in _deployed_at_cell(page, "PR-FAILED")
+    assert "07:40 PM UTC" in _deployed_at_cell(page, "PR-ROLLED")
 
 
-def test_action_cell_omits_the_deployed_line_when_no_finish_time_was_recorded(web):
+def test_deployed_at_column_is_blank_when_no_finish_time_was_recorded(web):
     """Older rows were finished before the execution row carried a time. They still
-    show when they were requested; the Deployed line is simply absent, and the
+    show when they were requested; the Deployed At cell is simply empty, and the
     string "None" never appears."""
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
@@ -2949,10 +2998,11 @@ def test_action_cell_omits_the_deployed_line_when_no_finish_time_was_recorded(we
 
     page = client.get("/requests").text
 
-    assert "None" not in _action_cell(page, "PR-NOTIME")
-    assert "None" not in _requester_cell(page, "PR-NOTIME")
+    assert "None" not in _deployed_at_cell(page, "PR-NOTIME")
+    assert "None" not in _requested_at_cell(page, "PR-NOTIME")
+    assert "localtime" not in _deployed_at_cell(page, "PR-NOTIME")
     # The request time is still known even though the finish time never was.
-    assert "Requested" in _requester_cell(page, "PR-NOTIME")
+    assert "localtime" in _requested_at_cell(page, "PR-NOTIME")
 
 
 def test_action_cell_still_offers_mark_deployed_while_in_progress(web):
@@ -2977,10 +3027,9 @@ def test_action_cell_still_offers_mark_deployed_while_in_progress(web):
     assert "Mark Deployed" in cell
 
 
-def test_action_cell_shows_no_times_while_a_request_is_unfinished(web):
-    """Unfinished rows keep their action buttons and nothing else. The request
-    time sits under the requester's name instead — a timestamp beside a live
-    button crowds the control and widened the column past the viewport."""
+def test_unfinished_request_shows_its_requested_time_and_no_deployed_time(web):
+    """Requested At is filled on every row; Deployed At stays empty until devops is
+    done; the Action cell never carries a time."""
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
@@ -2996,12 +3045,12 @@ def test_action_cell_shows_no_times_while_a_request_is_unfinished(web):
     page = client.get("/requests").text
 
     assert "05:20 PM UTC" not in _action_cell(page, "PR-WAITING")
-    # ...it is under the requester's name instead, on every row, finished or not
-    assert "05:20 PM UTC" in _requester_cell(page, "PR-WAITING")
+    assert "05:20 PM UTC" in _requested_at_cell(page, "PR-WAITING")
+    assert "localtime" not in _deployed_at_cell(page, "PR-WAITING")
 
 
-def test_action_cell_shows_requested_and_deployed_once_finished(web):
-    """Both times appear together only when devops is done with the row."""
+def test_finished_request_shows_requested_and_deployed_in_their_own_columns(web):
+    """Both times appear only when devops is done with the row, each in its column."""
     client, session = web
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     session.commit()
@@ -3014,9 +3063,9 @@ def test_action_cell_shows_requested_and_deployed_once_finished(web):
     page = client.get("/requests").text
 
     # Each column carries its own fact: when it was asked for, and when it was done.
-    assert "02:32 PM UTC" in _action_cell(page, "PR-BOTH")
-    assert "Requested" not in _action_cell(page, "PR-BOTH")
-    assert "Requested" in _requester_cell(page, "PR-BOTH")
+    assert "02:32 PM UTC" in _deployed_at_cell(page, "PR-BOTH")
+    assert "02:32 PM UTC" not in _requested_at_cell(page, "PR-BOTH")
+    assert "localtime" in _requested_at_cell(page, "PR-BOTH")
 
 
 def test_page_timestamps_carry_the_instant_for_local_conversion(web):
@@ -3032,7 +3081,7 @@ def test_page_timestamps_carry_the_instant_for_local_conversion(web):
     )
     login_as(client, "rajib")
 
-    cell = _action_cell(client.get("/requests").text, "PR-CONV")
+    cell = _deployed_at_cell(client.get("/requests").text, "PR-CONV")
 
     assert 'class="localtime"' in cell
     assert 'datetime="2026-09-17T14:32:00Z"' in cell
@@ -3072,7 +3121,7 @@ def test_timestamps_split_date_and_time_so_narrow_columns_can_stack_them(web):
     )
     login_as(client, "rajib")
 
-    cell = _action_cell(client.get("/requests").text, "PR-SPLIT")
+    cell = _deployed_at_cell(client.get("/requests").text, "PR-SPLIT")
 
     assert '<span class="localtime-date">2026-09-17</span>' in cell
     assert '<span class="localtime-time">02:32 PM UTC</span>' in cell
@@ -3100,3 +3149,23 @@ def test_intake_rows_sort_below_work_that_is_actually_actionable(web):
 
     # Actionable first, intake after it, finished last — still above history.
     assert order == ["PR-NEW", "PR-STALE", "PR-OLDDONE"]
+
+
+def test_status_is_the_reference_tag_with_its_icon(web):
+    """The design reference's status tags: a coloured tag led by an SAP icon —
+    Deployed is the positive tag with the "deployed" glyph (U+E1AB)."""
+    client, session = web
+    make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
+    session.commit()
+    _seed_finished_request(
+        session, task_id="PR-TAG", status=RequestStatus.completed,
+        completed_at=datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc),
+    )
+    login_as(client, "rajib")
+
+    row = _row(client.get("/requests").text, "PR-TAG")
+    status = row[row.index('<div class="status-cell">') :]
+
+    assert "st-positive" in status
+    assert "&#xE1AB;" in status
+    assert "rail-dot" not in row

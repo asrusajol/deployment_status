@@ -1,5 +1,6 @@
 {# app/templates/seeder_collection_form.html — shared add/edit form for Seeder Collection #}
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% from "_client_combobox.html" import client_combobox %}
 {% block title %}{{ "Edit Seeder" if record else "Add Seeder" }} — Deployment Tracker{% endblock %}
 {% macro server_urls(urls) %}
@@ -19,11 +20,16 @@
     </dl>
   {% else %}
     <p class="seeder-urls-empty">No server URLs on record —
-      <a href="/clients">add them on the Clients page &rarr;</a></p>
+      <a href="/clients">add them on the Clients page {{ icon("slimRight", 12) }}</a></p>
   {% endif %}
 {% endmacro %}
 {% block content %}
-  <h1>{{ "Edit Seeder — " ~ (record.client.name if record.client else "—") if record else "Add Seeder" }}</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><h1 class="toolbar-title">{{ "Edit Seeder — " ~ (record.client.name if record.client else "—") if record else "Add Seeder" }}</h1></div>
+  </div>
+  <div class="card-body">
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -161,4 +167,6 @@
     })();
   </script>
   {% endif %}
+  </div>
+  </section>
 {% endblock %}

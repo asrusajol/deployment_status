@@ -82,17 +82,41 @@ docker exec deployment_status-db-1 psql -U deploy_tracker -d postgres \
 
 ## Styling
 
-`app/static/style.css` opens with a design system ("Ops Console"): a dark
-surface and a **signal palette where each hue means one specific thing** —
-amber = Test / waiting, violet = Live, green = Main Version / success,
-red = failure, teal = primary action.
+The company design standard is **Deployment Tracker V12.1** (an HTML mock generated
+from Figma; the user can supply the Figma file). It has **two themes, both
+maintained**: `standard` (SAP Morning Horizon — white shell, blue `#0064D9`) and
+`schertech` (blue `#005981` shell and nav, orange `#FFA600` accents).
 
-Use the `:root` tokens (`var(--paper)`, `var(--fog)`, `var(--panel)`,
-`var(--amber-dim)`, `var(--font-mono)`, …). **Never hardcode hex.** Light-mode
-values shipped to live once in this codebase and rendered dark grey text on the
-dark panel; a second set invented tan/green chips for Test/Live, where green
-already meant something else. Both were invisible to the test suite — CSS is
-not covered, so check a page in the browser before claiming a visual change works.
+- The theme is per browser: cookie `dt-theme`, resolved in `app/main.py`'s
+  `theme_middleware` (values in `app/theme.py`), rendered server-side as
+  `<html data-theme="…">`. `?theme=schertech` on any GET sets it. `login.html` does
+  not extend `base.html` and sets `data-theme` itself.
+- `app/static/style.css` opens with the two token blocks (`:root` and
+  `:root[data-theme="schertech"]`). **Never hardcode hex in a rule** — add a token
+  to both blocks. The older names (`--panel`, `--paper`, `--fog`, `--teal`, …) are
+  aliases onto the SAP tokens; text on a filled control uses `--on-accent`, not
+  `--ink` (which is now the page background).
+- Each hue means one thing: Test = `--sysTest*`, Live = `--sysLive*` (violet in
+  Standard, red-orange in Schertech), waiting = `--amber`, in flight = `--teal`
+  (brand), success = `--green`, failure = `--red`.
+- Fonts and icons are the reference's own, extracted from it into `app/static/fonts/`:
+  "72" (a locally installed copy wins), SAP-icons, and BusinessSuiteInAppSymbols (the
+  Dashboard nav glyph only). `_icons.html`'s `icon(name)` maps the reference's icon
+  names to codepoints — take new ones from the reference's icon map, not by eye.
+- Match the reference exactly. The only agreed colour departures are two System tag
+  colours (Standard Live violet, dark text on Schertech Test) — see the header of
+  `style.css`; anything else goes back to UI/UX first.
+- Every page is a `section.card` with a `.toolbar` (`h1.toolbar-title` + `.toolbar-buttons`).
+  Use the reference's classes for new UI: `.btn` + `.btn-emph` / `.btn-std` / `.btn-lite` /
+  `.btn-icon`, `.st-tag.st-{positive,info,critical,neutral,negative}` for statuses,
+  `.panel` for collapsible tiles, `.ro-field` for read-only values, `.mbox` dialogs.
+- Icon-only buttons keep their old classes and `data-` hooks (scripts and tests key on
+  them), a `title` with the action's name, and the name again in `<span class="sr-only">`.
+- The templates' `.field` and `.status` classes predate the design and mean
+  something different from the mock's — don't paste the mock's CSS for them.
+
+CSS is not covered by the test suite. Check every page in **both themes** in the
+browser before claiming a visual change works.
 
 ## Conventions worth following
 

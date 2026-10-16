@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}New Deployment Request — Deployment Tracker{% endblock %}
 {% block content %}
-  <h1>New Deployment Request</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><h1 class="toolbar-title">New Deployment Request</h1></div>
+  </div>
+  <div class="card-body">
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -12,28 +18,12 @@
 
   <div class="tabs">
     <button type="button" class="tab-button" data-tab="standard">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <circle cx="4" cy="3" r="2" stroke="currentColor" stroke-width="1.4"/>
-        <circle cx="4" cy="13" r="2" stroke="currentColor" stroke-width="1.4"/>
-        <circle cx="12" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/>
-        <path d="M4 5v6M4 8h6.2M10.2 8L8.5 6.3M10.2 8L8.5 9.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
       Standard Deployment
     </button>
     <button type="button" class="tab-button" data-tab="db_dump_restore">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <ellipse cx="8" cy="3.2" rx="5.2" ry="1.8" stroke="currentColor" stroke-width="1.4"/>
-        <path d="M2.8 3.2v9.6c0 1 2.33 1.8 5.2 1.8s5.2-.8 5.2-1.8V3.2" stroke="currentColor" stroke-width="1.4"/>
-        <path d="M2.8 8c0 1 2.33 1.8 5.2 1.8S13.2 9 13.2 8" stroke="currentColor" stroke-width="1.4"/>
-      </svg>
       Database Dump &amp; Restore
     </button>
     <button type="button" class="tab-button" data-tab="test_local">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M2.5 2.5h11v8.2h-11z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-        <path d="M5 6l1.8 1.8L5 9.6M8 9.6h2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M5.5 13.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      </svg>
       Test.local Deployment
     </button>
   </div>
@@ -461,4 +451,6 @@
       });
     })();
   </script>
+  </div>
+  </section>
 {% endblock %}

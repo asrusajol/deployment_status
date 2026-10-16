@@ -1,8 +1,14 @@
 {# app/templates/release_tracker_edit.html #}
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Edit Version — Deployment Tracker{% endblock %}
 {% block content %}
-  <h1>Edit Version — {{ record.client.name if record.client else "—" }}</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><h1 class="toolbar-title">Edit Version · {{ record.client.name if record.client else "—" }}</h1></div>
+  </div>
+  <div class="card-body">
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -37,4 +43,6 @@
     <button type="submit">Save Changes</button>
     <a href="/release-tracker" class="link-button">Cancel</a>
   </form>
+  </div>
+  </section>
 {% endblock %}

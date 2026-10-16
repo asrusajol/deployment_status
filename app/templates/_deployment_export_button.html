@@ -1,0 +1,9 @@
+{# The reference's toolbar export: a download icon button (btn-lite btn-icon). Same
+   URL the filter bar's old "Export to Excel" link built — the export carries the
+   active filters. Included (not imported) so it sees the page's filter context. #}
+{% from "_icons.html" import icon %}
+<a
+  href="{{ export_action }}?client_id={{ selected_client_id or '' }}{% if show_system_filter | default(true) %}&environment={{ selected_environment.value if selected_environment else '' }}{% endif %}{% if show_task_id_filter | default(true) %}&task_id={{ selected_task_id | urlencode }}{% endif %}"
+  class="btn btn-lite btn-icon"
+  title="Export to Excel"
+>{{ icon("download") }}<span class="sr-only">Export to Excel</span></a>

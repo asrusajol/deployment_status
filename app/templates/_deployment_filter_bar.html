@@ -1,13 +1,25 @@
+{# Filters for Dashboard, History and Release Tracker, laid out as the reference's
+   History toolbar: Search task id, All Client, All System, Go, Reset — inline in the
+   card toolbar, placeholders instead of visible labels (the labels stay for screen
+   readers). Server-side filtering; the export button beside it carries the same
+   filters (_deployment_export_button.html). #}
 {% from "_client_combobox.html" import client_combobox %}
 {% set selected_client = filter_clients | selectattr("id", "equalto", selected_client_id) | first %}
-<form method="get" action="{{ filter_action }}" class="filter-bar">
+<form method="get" action="{{ filter_action }}" class="filter-bar toolbar-filter">
+  {% if show_task_id_filter | default(true) %}
+  <div class="filter-field">
+    <label for="task_id" class="sr-only">Task ID</label>
+    <input type="text" name="task_id" id="task_id" value="{{ selected_task_id }}" placeholder="Search task id">
+  </div>
+  {% endif %}
   <div class="filter-field combobox-field">
-    <label for="client_name_filter">Client</label>
+    <label for="client_name_filter" class="sr-only">Client</label>
     {{ client_combobox(
          "client_name_filter",
          filter_clients,
          selected_id=selected_client_id,
          selected_name=selected_client.name if selected_client else None,
+         placeholder="All Client",
          all_label="All clients",
          text_id="client_name_filter",
          hidden_id="client_id",
@@ -16,25 +28,15 @@
   </div>
   {% if show_system_filter | default(true) %}
   <div class="filter-field">
-    <label for="environment">System</label>
+    <label for="environment" class="sr-only">System</label>
     <select name="environment" id="environment">
-      <option value="">All systems</option>
+      <option value="">All System</option>
       {% for env in filter_environments %}
         <option value="{{ env.value }}" {% if selected_environment == env %}selected{% endif %}>{{ env.value | capitalize }}</option>
       {% endfor %}
     </select>
   </div>
   {% endif %}
-  {% if show_task_id_filter | default(true) %}
-  <div class="filter-field">
-    <label for="task_id">Task ID</label>
-    <input type="text" name="task_id" id="task_id" value="{{ selected_task_id }}" placeholder="Search Task ID">
-  </div>
-  {% endif %}
-  <button type="submit" class="button-primary">Filter</button>
-  <a href="{{ filter_action }}" class="button-secondary">Reset</a>
-  <a
-    href="{{ export_action }}?client_id={{ selected_client_id or '' }}{% if show_system_filter | default(true) %}&environment={{ selected_environment.value if selected_environment else '' }}{% endif %}{% if show_task_id_filter | default(true) %}&task_id={{ selected_task_id | urlencode }}{% endif %}"
-    class="button-secondary"
-  >Export to Excel</a>
+  <button type="submit" class="btn btn-emph">Go</button>
+  <a href="{{ filter_action }}" class="btn btn-std">Reset</a>
 </form>

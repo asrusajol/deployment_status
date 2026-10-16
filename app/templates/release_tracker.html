@@ -1,59 +1,61 @@
 {# app/templates/release_tracker.html #}
 {% extends "base.html" %}
 {% from "_localtime.html" import localtime %}
+{% from "_icons.html" import icon %}
 {% block title %}Release Tracker — Deployment Tracker{% endblock %}
 {% block content %}
-  <p class="eyebrow">Versions</p>
-  <h1>Release Tracker</h1>
-  <p class="subtitle">Current deployed version per client, for Test and Live, and
-    what's currently on <code>main</code> — same value for every client, refreshed
-    every 5 minutes.</p>
-
   {% set show_task_id_filter = false %}
   {% set show_system_filter = false %}
   {% set filter_action = "/release-tracker" %}
   {% set export_action = "/release-tracker/export.xlsx" %}
-  {% include "_deployment_filter_bar.html" %}
+  <section class="card">
+  <div class="toolbar">
+    <h1 class="toolbar-title">Release Tracker</h1>
+    <div class="toolbar-buttons">
+      {% include "_deployment_filter_bar.html" %}
+      {% include "_deployment_export_button.html" %}
+    </div>
+  </div>
 
   {% if rows %}
     <div class="table-scroll">
     <table class="status-table release-tracker-table">
       <thead>
+        {# Reference layout: Client, then Action pinned beside it (one pencil per row),
+           then the Test / Live / Main Version groups. #}
         <tr>
-          <th rowspan="2">Client</th>
+          <th rowspan="2" class="col-client">Client</th>
+          <th rowspan="2" class="col-action">Action</th>
           <th colspan="2" class="col-test">Test</th>
           <th colspan="2" class="col-live">Live</th>
           <th colspan="2" class="col-main">Main Version</th>
-          <th rowspan="2">Action</th>
         </tr>
         <tr>
-          <th class="col-test">Current Version</th>
-          <th class="col-test">Updated At</th>
-          <th class="col-live">Current Version</th>
-          <th class="col-live">Updated At</th>
+          <th class="col-test">Version</th>
+          <th class="col-test">Update At</th>
+          <th class="col-live">Version</th>
+          <th class="col-live">Update At</th>
           <th class="col-main">Version</th>
-          <th class="col-main">Updated At</th>
+          <th class="col-main">Update At</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
         <tr>
-          <td>{{ row.client.name if row.client else "—" }}</td>
+          <td class="col-client" title="{{ row.client.name if row.client else '' }}">{{ row.client.name if row.client else "—" }}</td>
+          <td class="col-action">
+            {# No button at all for someone who can edit neither environment, as in the
+               reference — the edit routes enforce the same per-environment rule. #}
+            {% if can_edit_test(row) or can_edit_live(row) %}
+              <a href="/release-tracker/{{ row.id }}/edit" class="btn btn-lite btn-icon" title="Edit versions">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
+            {% endif %}
+          </td>
           <td class="col-test">{{ row.test_current_version or "—" }}</td>
           <td class="col-test">{{ localtime(row.test_updated_at) }}</td>
           <td class="col-live">{{ row.live_current_version or "—" }}</td>
           <td class="col-live">{{ localtime(row.live_updated_at) }}</td>
           <td class="col-main">{{ main_status.version if main_status else "—" }}</td>
           <td class="col-main">{{ localtime(main_status.version_changed_at if main_status else None) }}</td>
-          <td>
-            <div class="actions-inner">
-              {% if can_edit_test(row) or can_edit_live(row) %}
-                <a href="/release-tracker/{{ row.id }}/edit" class="action-link edit">Edit</a>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            </div>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -62,4 +64,5 @@
   {% else %}
     <p class="empty-state">No deployments have been confirmed with a version yet.</p>
   {% endif %}
+  </section>
 {% endblock %}

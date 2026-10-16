@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Checklists — Management — Deployment Tracker{% endblock %}
 
 {# "Applies to" checkboxes, shared by the Add form and every Edit form. #}
@@ -62,13 +63,13 @@
     {% if is_admin %}
       <div class="checklist-actions">
         {% if item.is_active %}
-          <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>✎</button>
+          <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>{{ icon("edit") }}<span class="sr-only">Edit</span></button>
           {% if group_type %}
             <form method="post" action="/management/checklists/{{ item.id }}/move">
           <input type="hidden" name="view" value="{{ view }}">
               <input type="hidden" name="request_type" value="{{ group_type.value }}">
-              <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">↑</button>
-              <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">↓</button>
+              <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">{{ icon("down", class="ico-flip") }}<span class="sr-only">Move up</span></button>
+              <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">{{ icon("down") }}<span class="sr-only">Move down</span></button>
             </form>
           {% endif %}
           <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
@@ -87,13 +88,18 @@
 {% endmacro %}
 
 {% block content %}
-  <p><a href="/management" class="back-link">← Management</a></p>
+  {# Undesigned page in the reference's frame (its "Management Checklist" sits under
+     Settings): one card, title and Add term in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><a href="/management" class="btn btn-lite btn-icon" title="Back to Management">{{ icon("navBack") }}<span class="sr-only">Management</span></a><h1 class="toolbar-title">Checklists</h1></div>
+    <div class="toolbar-buttons"><button type="button" class="btn btn-emph" id="checklist-add-toggle">Add term</button></div>
+  </div>
+  <div class="card-body">
   <div class="checklist-head">
     <div>
-      <h1>Checklists</h1>
       <p class="subtitle">Terms DevOps tick before Start Deployment, or before Mark Deployed for steps done after the work. Ticks are saved as they're made. One term can apply to several request types; a type with no active terms starts with one click. A DB dump shared with the requestor (not restored) skips the checklist.</p>
     </div>
-    <button type="button" class="start" id="checklist-add-toggle">+ Add term</button>
   </div>
 
   <form method="post" action="/management/checklists" class="checklist-add" id="checklist-add-form" hidden>
@@ -208,4 +214,6 @@
       });
     })();
   </script>
+  </div>
+  </section>
 {% endblock %}

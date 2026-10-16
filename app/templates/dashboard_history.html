@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Deployment History — Deployment Tracker{% endblock %}
 {% block content %}
-  <p class="eyebrow">Audit Trail</p>
-  <h1>Deployment History</h1>
-  <p class="subtitle">Every completed deployment, newest first — the full audit trail behind
-    the <a href="/dashboard">Current Status</a> view.</p>
-
   {% set filter_action = "/dashboard/history" %}
   {% set export_action = "/dashboard/history/export.xlsx" %}
-  {% include "_deployment_filter_bar.html" %}
+  <section class="card">
+  <div class="toolbar">
+    <h1 class="toolbar-title">History ({{ rows | length }})</h1>
+    <div class="toolbar-buttons">
+      {% include "_deployment_filter_bar.html" %}
+      {% include "_deployment_export_button.html" %}
+    </div>
+  </div>
 
   {% set empty_message = "No deployments have completed yet." if not selected_client_id and not selected_environment and not selected_task_id else "No deployments match this filter." %}
   {% include "_deployment_table.html" %}
+  </section>
 {% endblock %}

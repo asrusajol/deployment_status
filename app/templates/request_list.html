@@ -3,118 +3,117 @@
 {% from "_localtime.html" import localtime, localtime_text, localtime_attr %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
-  <div class="queue-header">
-    <div>
-      <p class="eyebrow">Queue</p>
-      <h1>Deployment Requests</h1>
-    </div>
-    <form method="get" action="/requests" class="page-size-form">
-      <label for="page_size">Rows per page</label>
-      <select name="page_size" id="page_size" onchange="this.form.submit()">
-        {% for size in page_size_options %}
-          <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
-        {% endfor %}
-      </select>
-    </form>
-  </div>
-
-  <!-- Hidden until JS confirms the browser supports the Notification API and hasn't
-       already been asked (see the script below) — permission must be requested from a
-       user gesture (this button click), not on page load, or most browsers ignore it. -->
-  <button type="button" id="enable-notifications-button" class="button-secondary" hidden>
-    Enable Desktop Notifications
-  </button>
-  <p id="notifications-enabled-notice" class="hint" hidden>
-    Desktop notifications are on — you'll get a popup here (even minimized) when a
-    request needs your approval or is ready to deploy.
-  </p>
-
-  <!-- Everything the notification script needs, independent of pagination below — an
-       old request several pages back moving to Pending Deployment is still worth a
-       popup even though it's not one of the rows currently rendered in the table. See
-       list_requests()'s active_requests_json in app/routers/dashboard.py. -->
+  {# Everything the notification script needs, independent of pagination below — an
+     old request several pages back moving to Pending Deployment is still worth a
+     popup even though it's not one of the rows currently rendered in the table. See
+     list_requests()'s active_requests_json in app/routers/dashboard.py. #}
   <script type="application/json" id="active-requests-data">{{ active_requests_json | safe }}</script>
+
+  {% set request_head %}
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Task ID</th>
+          <th>Module Name</th>
+          <th>Client</th>
+          <th>System</th>
+          <th>URL</th>
+          <th>Version</th>
+          <th>Branch / Commit</th>
+          <th>Changes</th>
+          <th>Requested By</th>
+          <th>Requested At</th>
+          <th>Status</th>
+          <th>Deployed At</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+  {% endset %}
 
   {% if my_returned_requests %}
     {# A request handed back to this user specifically — hoisted above the queue so
        it can't get lost pages deep behind everything else (see list_requests() in
        app/routers/dashboard.py, which excludes these same rows from the paginated
-       query below so nothing appears twice). Same table markup as the main queue,
-       including its <thead>, so the columns line up between the two — this is
-       deliberately not a new layout. #}
-    <h2 class="returned-to-you-heading">Returned to you <span class="muted">({{ my_returned_requests | length }})</span></h2>
-    <div class="table-scroll returned-to-you-table">
-    <table class="status-table requests-table">
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Task ID</th>
-          <th>Module Name</th>
-          <th>Client</th>
-          <th>System</th>
-          <th>URL</th>
-          <th>Version</th>
-          <th>Branch Name / Commit</th>
-          <th>Changes</th>
-          <th>Requested By</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in my_returned_requests %}
-          {% include "_request_row.html" %}
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
+       query below so nothing appears twice). Its own card, same columns as the
+       queue. #}
+    <section class="card returned-to-you">
+      <div class="toolbar">
+        <h2 class="toolbar-title returned-to-you-heading">Returned to you ({{ my_returned_requests | length }})</h2>
+      </div>
+      <div class="table-scroll returned-to-you-table">
+      <table class="status-table requests-table" data-column-order="dt-request-columns">
+        {{ request_head }}
+        <tbody>
+          {% for r in my_returned_requests %}
+            {% include "_request_row.html" %}
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
   {% endif %}
 
-  {% if requests %}
-    <div class="table-scroll">
-    <table class="status-table requests-table">
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Task ID</th>
-          <th>Module Name</th>
-          <th>Client</th>
-          <th>System</th>
-          <th>URL</th>
-          <th>Version</th>
-          <th>Branch Name / Commit</th>
-          <th>Changes</th>
-          <th>Requested By</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in requests %}
-          {% include "_request_row.html" %}
-        {% endfor %}
-      </tbody>
-    </table>
+  {# The reference's Request card: toolbar title with the count, actions on the right.
+     Search, CSV export and the column-settings gear are follow-ups, not here yet. #}
+  <section class="card request-card">
+    <div class="toolbar">
+      <h1 class="toolbar-title">Request ({{ total_count }})</h1>
+      <div class="toolbar-buttons">
+        {# Hidden until JS confirms the browser supports the Notification API and hasn't
+           already been asked (see the script below) — permission must be requested from
+           a user gesture (this button click), not on page load, or most browsers ignore
+           it. #}
+        <span id="notifications-enabled-notice" class="toolbar-note" hidden
+          title="You'll get a popup here (even minimized) when a request needs your approval or is ready to deploy.">Desktop notifications on</span>
+        <button type="button" id="enable-notifications-button" class="btn btn-lite" hidden>Enable Desktop Notifications</button>
+        <form method="get" action="/requests" class="page-size-form">
+          <label for="page_size">Rows per page</label>
+          <select name="page_size" id="page_size" onchange="this.form.submit()">
+            {% for size in page_size_options %}
+              <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {# Shown only once the columns have been dragged out of the default order. #}
+        <button type="button" id="reset-columns" class="btn btn-lite" title="Put the columns back in the default order" hidden>Reset Columns</button>
+        <a href="/requests/new" class="btn btn-emph">New Request</a>
+      </div>
     </div>
-  {% else %}
-    <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
-  {% endif %}
 
-  {% if total_pages > 1 %}
-    <nav class="pagination" aria-label="Requests pagination">
-      {% if page > 1 %}
-        <a href="/requests?page={{ page - 1 }}&page_size={{ page_size }}" class="button-secondary">Previous</a>
-      {% else %}
-        <span class="button-secondary is-disabled">Previous</span>
-      {% endif %}
-      <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
-      {% if page < total_pages %}
-        <a href="/requests?page={{ page + 1 }}&page_size={{ page_size }}" class="button-secondary">Next</a>
-      {% else %}
-        <span class="button-secondary is-disabled">Next</span>
-      {% endif %}
-    </nav>
-  {% endif %}
+    {% if requests %}
+      <div class="table-scroll">
+      <table class="status-table requests-table" data-column-order="dt-request-columns">
+        {{ request_head }}
+        <tbody>
+          {% for r in requests %}
+            {% include "_request_row.html" %}
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+      {# Exactly class="pagination": tests assert its absence by that string. #}
+      <div class="card-footer">
+      <nav class="pagination" aria-label="Requests pagination">
+        {% if page > 1 %}
+          <a href="/requests?page={{ page - 1 }}&page_size={{ page_size }}" class="button-secondary">Previous</a>
+        {% else %}
+          <span class="button-secondary is-disabled">Previous</span>
+        {% endif %}
+        <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
+        {% if page < total_pages %}
+          <a href="/requests?page={{ page + 1 }}&page_size={{ page_size }}" class="button-secondary">Next</a>
+        {% else %}
+          <span class="button-secondary is-disabled">Next</span>
+        {% endif %}
+      </nav>
+      </div>
+    {% endif %}
+  </section>
 
   <dialog id="deploy-version-modal" class="changes-modal">
     <h2>Confirm Deployment</h2>
@@ -619,6 +618,118 @@
           checklistLogModal.close();
         });
       })();
+    })();
+  </script>
+
+  {# Draggable column headers. The order is this browser's own (localStorage), so the
+     server always renders the default and nothing else depends on the order. Cells
+     are tagged by column (data-col) for the CSS, which no longer sizes by position;
+     Action stays last because it's the pinned column. Both tables share one order. #}
+  <script>
+    (function () {
+      var tables = document.querySelectorAll("table[data-column-order]");
+      if (!tables.length) return;
+      var storeKey = tables[0].getAttribute("data-column-order");
+      var resetButton = document.getElementById("reset-columns");
+      function slug(text) { return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
+      var defaultOrder = [];
+      tables.forEach(function (table, index) {
+        var keys = Array.prototype.map.call(table.tHead.rows[0].cells, function (th) { return slug(th.textContent); });
+        if (index === 0) defaultOrder = keys;
+        Array.prototype.forEach.call(table.rows, function (row) {
+          if (row.cells.length !== keys.length) return;
+          Array.prototype.forEach.call(row.cells, function (cell, i) { cell.setAttribute("data-col", keys[i]); });
+          // The type stripe marks the row's left edge wherever the Type column sits.
+          var typeCell = row.querySelector('td[data-col="type"]');
+          var match = typeCell && typeCell.className.match(/type-cell-(\S+)/);
+          if (match) row.setAttribute("data-type", match[1]);
+        });
+        table.setAttribute("data-cols", "");
+      });
+      var movable = defaultOrder.slice(0, -1);   // all but Action
+      var pinned = defaultOrder[defaultOrder.length - 1];
+
+      function readSaved() {
+        try {
+          var saved = JSON.parse(localStorage.getItem(storeKey) || "null");
+          // A column added or renamed since it was saved: fall back to the default.
+          if (Array.isArray(saved) && saved.length === movable.length &&
+              movable.every(function (k) { return saved.indexOf(k) !== -1; })) return saved;
+        } catch (err) {}
+        return null;
+      }
+      function apply(order) {
+        var full = order.concat([pinned]);
+        tables.forEach(function (table) {
+          Array.prototype.forEach.call(table.rows, function (row) {
+            if (row.cells.length !== full.length) return;
+            full.forEach(function (key) {
+              var cell = row.querySelector(':scope > [data-col="' + key + '"]');
+              if (cell) row.appendChild(cell);
+            });
+          });
+        });
+        if (resetButton) resetButton.hidden = order.join() === movable.join();
+      }
+      function save(order) {
+        try {
+          if (order.join() === movable.join()) localStorage.removeItem(storeKey);
+          else localStorage.setItem(storeKey, JSON.stringify(order));
+        } catch (err) {}
+      }
+      function current() {
+        return Array.prototype.map.call(tables[0].tHead.rows[0].cells, function (th) { return th.getAttribute("data-col"); })
+          .filter(function (k) { return k !== pinned; });
+      }
+
+      apply(readSaved() || movable);
+
+      var dragKey = null;
+      tables.forEach(function (table) {
+        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+          var key = th.getAttribute("data-col");
+          if (key === pinned) return;
+          th.draggable = true;
+          th.title = "Drag to move this column";
+          th.addEventListener("dragstart", function (event) {
+            dragKey = key;
+            th.classList.add("is-dragging");
+            event.dataTransfer.effectAllowed = "move";
+            try { event.dataTransfer.setData("text/plain", key); } catch (err) {}
+          });
+          th.addEventListener("dragend", function () {
+            dragKey = null;
+            document.querySelectorAll(".is-dragging, .drop-before, .drop-after").forEach(function (el) {
+              el.classList.remove("is-dragging", "drop-before", "drop-after");
+            });
+          });
+          th.addEventListener("dragover", function (event) {
+            if (!dragKey || dragKey === key) return;
+            event.preventDefault();
+            var after = event.offsetX > th.offsetWidth / 2;
+            th.classList.toggle("drop-after", after);
+            th.classList.toggle("drop-before", !after);
+          });
+          th.addEventListener("dragleave", function () { th.classList.remove("drop-before", "drop-after"); });
+          th.addEventListener("drop", function (event) {
+            event.preventDefault();
+            if (!dragKey || dragKey === key) return;
+            var after = th.classList.contains("drop-after");
+            var order = current().filter(function (k) { return k !== dragKey; });
+            order.splice(order.indexOf(key) + (after ? 1 : 0), 0, dragKey);
+            apply(order);
+            save(order);
+          });
+        });
+      });
+
+      if (resetButton) {
+        resetButton.addEventListener("click", function () {
+          apply(movable);
+          save(movable);
+        });
+      }
     })();
   </script>
 {% endblock %}

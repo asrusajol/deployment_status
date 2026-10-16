@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Edit Deployment Request — Deployment Tracker{% endblock %}
 {% block content %}
-  <h1>Edit Deployment Request #{{ deployment_request.id }}</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><h1 class="toolbar-title">Edit Deployment Request #{{ deployment_request.id }}</h1></div>
+  </div>
+  <div class="card-body">
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -360,4 +366,6 @@
       })();
     </script>
   {% endif %}
+  </div>
+  </section>
 {% endblock %}

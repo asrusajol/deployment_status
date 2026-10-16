@@ -23,7 +23,7 @@
     <tbody>
       {% for row in rows %}
       <tr>
-        <td>{{ row.client_name }}</td>
+        <td title="{{ row.client_name }}">{{ row.client_name }}</td>
         <td><span class="badge badge-{{ row.environment }}">{{ row.environment | capitalize }}</span></td>
         <td>
           {# Only the Dashboard (show_all_client_urls) lists every URL a client has for
@@ -56,14 +56,14 @@
           {% else %}—{% endif %}
         </td>
         <td>{{ row.task_id or "—" }}</td>
-        <td><code>{{ row.git_branch or "—" }}</code></td>
-        <td><code>{{ row.commit_hash or "—" }}</code></td>
+        <td title="{{ row.git_branch or '' }}">{{ row.git_branch or "—" }}</td>
+        <td>{{ row.commit_hash or "—" }}</td>
         <td>{{ row.version or "—" }}</td>
         <td>
           {% if row.changes_description %}
             <div class="changes-cell">
-              <span class="changes-preview">{{ row.changes_description }}</span>
-              <button type="button" class="link-button view-changes" data-changes="{{ row.changes_description }}">View</button>
+              <button type="button" class="link-button view-changes" data-changes="{{ row.changes_description }}" title="Show the full text"><span class="changes-preview">{{ row.changes_description }}</span></button>
+              {{ copy_btn.copy_button(row.changes_description, "changes") }}
             </div>
           {% else %}
             —

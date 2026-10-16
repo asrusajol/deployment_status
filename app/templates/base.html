@@ -1,56 +1,153 @@
 <!doctype html>
-<html lang="en">
+{%- from "_icons.html" import icon -%}
+{%- set theme = request.state.theme | default("standard") -%}
+{%- set schertech = theme == "schertech" -%}
+{%- set theme_options = request.state.theme_options | default([("standard", "Standard (Morning Horizon)")]) -%}
+{%- set theme_label = (theme_options | selectattr(0, "equalto", theme) | map(attribute=1) | first) | default("Standard (Morning Horizon)") -%}
+{%- set path = request.url.path -%}
+{%- set show_nav = current_user and not current_user.must_change_password -%}
+<html lang="en" data-theme="{{ theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Deployment Tracker{% endblock %}</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1113'/%3E%3Crect x='4' y='19' width='7' height='9' rx='1.5' fill='%23E8A33D'/%3E%3Crect x='13' y='11' width='7' height='17' rx='1.5' fill='%233FC7B8'/%3E%3Crect x='22' y='3' width='7' height='25' rx='1.5' fill='%234CC98A'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  {% include "_favicon.html" %}
+  <link rel="preload" href="/static/fonts/SAP-icons.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
+  <script>
+    // Applied before first paint so a collapsed nav never flashes open. Per browser,
+    // like the reference (which keeps it in React state); storage can be blocked, in
+    // which case the nav simply starts open.
+    try { if (localStorage.getItem("dt-nav") === "collapsed") document.documentElement.classList.add("nav-collapsed"); } catch (e) {}
+  </script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/dashboard">
-      <span class="brand-mark" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="1" y="12" width="5" height="7" rx="1" fill="#E8A33D"/>
-          <rect x="7.5" y="6.5" width="5" height="12.5" rx="1" fill="#3FC7B8"/>
-          <rect x="14" y="1" width="5" height="18" rx="1" fill="#4CC98A"/>
-        </svg>
-      </span>
-      <span class="brand-word">Deployment Tracker</span>
-      <span class="brand-tag">Ops Console</span>
-    </a>
-    {% if current_user %}
-    <nav>
-      {% if not current_user.must_change_password %}
-        <a href="/dashboard">Dashboard</a>
-        <a href="/dashboard/history">History</a>
-        <a href="/requests">Requests</a>
-        <a href="/release-tracker">Release Tracker</a>
-        {% if current_user.role.value in ("admin", "devops") %}
-          <a href="/seeder-collection">Seeder Collection</a>
-        {% endif %}
-        <a href="/clients">Clients</a>
-        {# Mirrors app.auth.can_access_management — the route's require_management is
-           the actual gate; this only hides a link that would 403. #}
-        {% if current_user.role.value == "admin" or current_user.can_access_management %}
-          <a href="/management">Management</a>
-        {% endif %}
-        <a href="/requests/new" class="button-link">+ New Request</a>
+  {# Shell bar — Deployment Tracker V12.1 design reference: hamburger, logo, centred
+     title, then Theme / user / Logout. Standard shows the blue logo and a text title;
+     Schertech shows the white logo and the wordmark on its blue bar. #}
+  <header class="shell">
+    <div class="shell-left">
+      {% if show_nav %}
+        <button type="button" class="shell-hamburger" id="nav-toggle" title="Menu" aria-label="Menu" aria-controls="sidenav">{{ icon("menu") }}</button>
       {% endif %}
-      <span class="nav-user">{{ current_user.name }}</span>
-      <a href="/change-password">Change Password</a>
-      <form method="post" action="/logout" class="logout-form">
-        <button type="submit" class="link-button">Log out</button>
-      </form>
-    </nav>
-    {% endif %}
+      <a class="shell-logo" href="/dashboard">
+        <img class="shell-logo-img" src="/static/img/logo-{{ 'white' if schertech else 'blue' }}.svg" alt="Schertech">
+      </a>
+    </div>
+    <a class="shell-title" href="/dashboard">
+      {% if schertech %}
+        <img class="shell-title-wordmark" src="/static/img/wordmark.svg" alt="Deployment Tracker">
+      {% else %}
+        <span class="shell-title-text">Deployment Tracker</span>
+      {% endif %}
+    </a>
+    <div class="shell-right">
+      <div class="shell-buttons">
+        {# <details> rather than a scripted popover: the menus work with no JS, and the
+           small script below only closes them on an outside click or Escape. #}
+        <details class="shell-menu" id="theme-menu">
+          <summary class="shell-link shell-theme" title="Theme: {{ theme_label }}">
+            {{ icon("palette") }}<span class="shell-theme-label">Theme</span>{{ icon("down", class="shell-theme-chev") }}
+          </summary>
+          <div class="pop" role="menu">
+            <div class="pop-title">Theme</div>
+            {% for key, label in theme_options %}
+              {% set target = request.url.include_query_params(theme=key) %}
+              <a class="pop-opt" role="menuitemradio" aria-checked="{{ 'true' if key == theme else 'false' }}" href="{{ target.path }}?{{ target.query }}">
+                <span class="pop-dot pop-dot-{{ key }}"></span>{{ label }}
+                {% if key == theme %}{{ icon("accept", class="pop-check") }}{% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        </details>
+        {% if current_user %}
+          {# The reference's name button only opens the theme menu; ours carries Change
+             Password, which the reference has no place for. #}
+          <details class="shell-menu" id="user-menu">
+            <summary class="shell-link nav-user" title="{{ current_user.name }}">{{ current_user.name }}</summary>
+            <div class="pop pop-narrow" role="menu">
+              <a class="pop-opt" role="menuitem" href="/change-password">Change Password</a>
+            </div>
+          </details>
+          <form method="post" action="/logout" class="logout-form">
+            <button type="submit" class="shell-link">Logout</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
   </header>
-  <main class="page">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="layout">
+    {% if show_nav %}
+    <aside class="sidenav" id="sidenav">
+      <nav>
+        {% macro nav_item(href, label, icon_name, active) -%}
+          <a href="{{ href }}" class="nav-item{{ ' active' if active }}" title="{{ label }}"{% if active %} aria-current="page"{% endif %}>
+            <span class="nav-ico">{{ icon(icon_name) }}</span>
+            <span class="nav-label">{{ label }}</span>
+            {% if active %}<span class="nav-dot"></span>{% endif %}
+          </a>
+        {%- endmacro %}
+        {{ nav_item("/dashboard", "Dashboard", "dashboard", path in ("/", "/dashboard")) }}
+        {{ nav_item("/dashboard/history", "History", "history", path.startswith("/dashboard/history")) }}
+        {{ nav_item("/requests", "Request", "request", path.startswith("/requests")) }}
+        {{ nav_item("/release-tracker", "Release Tracker", "calendar", path.startswith("/release-tracker")) }}
+        {% if current_user.role.value in ("admin", "devops") %}
+          {{ nav_item("/seeder-collection", "Seeder Collection", "shield", path.startswith("/seeder-collection")) }}
+        {% endif %}
+        {{ nav_item("/clients", "Client", "person", path.startswith("/clients")) }}
+        {# The reference's Settings group (Users, Management Checklist) is our Management
+           hub. Mirrors app.auth.can_access_management — the route's require_management
+           is the actual gate; this only hides a link that would 403. Users stays behind
+           the hub (no /admin/users link here) — see test_management.py. #}
+        {% if current_user.role.value == "admin" or current_user.can_access_management %}
+          <div class="sidenav-spacer"></div>
+          <div class="sidenav-divider"></div>
+          {{ nav_item("/management", "Settings", "settings" if schertech else "gearNav", path.startswith("/management") or path.startswith("/admin")) }}
+        {% endif %}
+      </nav>
+      <div class="sidenav-footer"><span>Deployment Tracker</span><span>&copy; schertech</span></div>
+    </aside>
+    {% endif %}
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    // The shell menus are <details>, so they already open and close on their own; this
+    // only closes them on a click elsewhere or Escape, like the reference's popover,
+    // and keeps just one open at a time.
+    (function () {
+      var menus = Array.prototype.slice.call(document.querySelectorAll(".shell-menu"));
+      if (!menus.length) return;
+      menus.forEach(function (menu) {
+        menu.addEventListener("toggle", function () {
+          if (!menu.open) return;
+          menus.forEach(function (other) { if (other !== menu) other.open = false; });
+        });
+      });
+      document.addEventListener("click", function (event) {
+        menus.forEach(function (menu) { if (menu.open && !menu.contains(event.target)) menu.open = false; });
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") menus.forEach(function (menu) { menu.open = false; });
+      });
+    })();
+
+    // Hamburger: folds the side nav to its icon rail and back, remembered per browser.
+    (function () {
+      var toggle = document.getElementById("nav-toggle");
+      if (!toggle) return;
+      var root = document.documentElement;
+      function sync() { toggle.setAttribute("aria-expanded", root.classList.contains("nav-collapsed") ? "false" : "true"); }
+      sync();
+      toggle.addEventListener("click", function () {
+        var collapsed = root.classList.toggle("nav-collapsed");
+        try { localStorage.setItem("dt-nav", collapsed ? "collapsed" : "open"); } catch (e) {}
+        sync();
+      });
+    })();
+  </script>
 
   <!-- Shared "show the full value" modal — originally Changes-only (.view-changes /
        data-changes, title always "Changes"), generalized so any long/truncated cell can
@@ -69,13 +166,7 @@
            currentColor SVG icons — see request_form.html's tab icons) instead of a text
            button, so this reads the same regardless of what's being copied. -->
       <button type="button" class="icon-button" id="changes-modal-copy" title="Copy" aria-label="Copy">
-        <svg class="icon-copy" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect x="6" y="6" width="8" height="8.5" rx="1.3" stroke="currentColor" stroke-width="1.4"/>
-          <path d="M3.5 10.5V3.3A1.3 1.3 0 0 1 4.8 2h6.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-        </svg>
-        <svg class="icon-check" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M3 8.5l3.2 3.2L13 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        {{ icon("copy", class="icon-copy") }}{{ icon("accept", class="icon-check") }}
       </button>
       <button type="button" class="button-secondary" id="changes-modal-close">Close</button>
     </div>

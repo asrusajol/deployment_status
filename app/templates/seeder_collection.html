@@ -1,83 +1,116 @@
 {# app/templates/seeder_collection.html #}
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Seeder Collection — Deployment Tracker{% endblock %}
 {% block content %}
-  <p class="eyebrow">Devops</p>
-  <h1>Seeder Collection</h1>
-  <p class="subtitle">Special seeder / artisan commands saved per client — the reference
-    catalog devops reaches for at deploy or restore time.</p>
+  {# The reference's Seeder Collection: one card, a toolbar (Search, Add Seeder,
+     Expand / Collapse All) and a collapsible panel per seeder with read-only Client,
+     Seeder Name and Command fields. Ours adds the client's Test / Live servers (read
+     live from /clients) and keeps add / edit on their own pages. #}
+  <section class="card seeder-card-list">
+    <div class="toolbar">
+      <h1 class="toolbar-title">Seeder Collection (<span id="seeder-count">{{ rows | length }}</span>)</h1>
+      <div class="toolbar-buttons">
+        <div class="search-field">
+          <input
+            type="text" id="seeder-filter" class="seeder-filter-input"
+            placeholder="Search"
+            aria-label="Search by client, server URL, seeder name or command"
+          >
+          {{ icon("search", class="search-field-icon") }}
+        </div>
+        <a href="/seeder-collection/new" class="btn btn-emph">Add Seeder</a>
+        {% if rows %}
+          <button type="button" class="btn btn-std" id="seeder-expand-all">{{ icon("expandAll") }}<span id="seeder-expand-label">Expand All</span></button>
+        {% endif %}
+      </div>
+    </div>
 
-  <div class="seeder-toolbar">
-    <input
-      type="text" id="seeder-filter" class="seeder-filter-input"
-      placeholder="Filter by client, server URL, or seeder name"
-      aria-label="Filter by client, server URL, or seeder name"
-    >
-    <a href="/seeder-collection/new" class="button-primary">+ Add seeder</a>
-  </div>
-
-  {% if rows %}
-    <div class="seeder-cards" id="seeder-cards">
+    <div class="panels" id="seeder-cards">
+    {% if rows %}
       {% for row in rows %}
       {% set urls = row.client.system_urls if row.client else [] %}
-      <div class="seeder-card" data-search="{{ (row.client.name if row.client else '') ~ ' ' ~ urls | map(attribute='url') | join(' ') ~ ' ' ~ row.title }}">
-        <div class="seeder-card-header">
-          <h2>{{ row.client.name if row.client else "—" }}</h2>
+      {% set client_name = row.client.name if row.client else "—" %}
+      <div class="seeder-card panel" data-search="{{ (row.client.name if row.client else '') ~ ' ' ~ urls | map(attribute='url') | join(' ') ~ ' ' ~ row.title ~ ' ' ~ row.command }}">
+        <div class="panel-head seeder-card-header">
+          <button type="button" class="btn btn-lite btn-icon panel-chev" title="Expand" aria-expanded="false" aria-controls="seeder-body-{{ row.id }}">{{ icon("slimRight", class="panel-chev-closed") }}{{ icon("slimDown", class="panel-chev-open") }}</button>
+          <h2 class="panel-title" data-panel-toggle>{{ client_name }}</h2>
           <div class="actions-inner">
-            <a href="/seeder-collection/{{ row.id }}/edit" class="action-link edit">Edit</a>
+            <a href="/seeder-collection/{{ row.id }}/edit" class="btn btn-solid-icon" title="Edit">{{ icon("edit") }}<span class="sr-only">Edit</span></a>
             <form
               method="post"
               action="/seeder-collection/{{ row.id }}/delete"
               class="inline-form"
-              onsubmit="return confirm('Delete this saved seeder command? This cannot be undone.');"
+              data-confirm-delete
             >
-              <button type="submit" class="reject">Delete</button>
+              <button type="submit" class="btn btn-icon btn-neg-lite" title="Delete">{{ icon("del") }}<span class="sr-only">Delete</span></button>
             </form>
           </div>
         </div>
-        <p class="seeder-card-subtitle">{{ row.title }}</p>
-        {# Servers this command runs against: read live from the client's own
-           record (/clients), never copied onto the seeder row. #}
-        {% if urls %}
-          <dl class="seeder-urls">
-            {% for environment in ["test", "live"] %}
-              {% set env_urls = urls | selectattr("environment.value", "equalto", environment) | list %}
-              {% if env_urls %}
-                <dt class="seeder-url-env {{ environment }}">{{ environment | capitalize }}</dt>
-                <dd class="seeder-url-list">
-                  {% for u in env_urls %}
-                    <span class="seeder-url">{{ u.url }}{% if u.label %} <span class="seeder-url-label">{{ u.label }}</span>{% endif %}</span>
-                  {% endfor %}
-                </dd>
-              {% endif %}
-            {% endfor %}
-          </dl>
-        {% else %}
-          <p class="seeder-urls-empty">No server URLs on record —
-            <a href="/clients">add them on the Clients page &rarr;</a></p>
-        {% endif %}
-        <div class="seeder-command-row">
-          <pre class="seeder-command">{{ row.command }}</pre>
-          <button
-            type="button" class="icon-button seeder-copy" title="Copy" aria-label="Copy command"
-            data-copy="{{ row.command }}"
-          >
-            <svg class="icon-copy" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect x="6" y="6" width="8" height="8.5" rx="1.3" stroke="currentColor" stroke-width="1.4"/>
-              <path d="M3.5 10.5V3.3A1.3 1.3 0 0 1 4.8 2h6.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-            </svg>
-            <svg class="icon-check" width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M3 8.5l3.2 3.2L13 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+        <div class="panel-body" id="seeder-body-{{ row.id }}">
+          <div>
+            <span class="panel-label">Client:</span>
+            <div class="ro-field">{{ client_name }}</div>
+          </div>
+          <div>
+            <span class="panel-label">Seeder Name:</span>
+            <div class="ro-field seeder-card-subtitle">{{ row.title }}</div>
+          </div>
+          <div class="panel-full">
+            <span class="panel-label">Servers:</span>
+            {# Servers this command runs against: read live from the client's own
+               record (/clients), never copied onto the seeder row. #}
+            {% if urls %}
+              <dl class="seeder-urls">
+                {% for environment in ["test", "live"] %}
+                  {% set env_urls = urls | selectattr("environment.value", "equalto", environment) | list %}
+                  {% if env_urls %}
+                    <dt class="seeder-url-env {{ environment }}">{{ environment | capitalize }}</dt>
+                    <dd class="seeder-url-list">
+                      {% for u in env_urls %}
+                        <span class="seeder-url">{{ u.url }}{% if u.label %} <span class="seeder-url-label">{{ u.label }}</span>{% endif %}</span>
+                      {% endfor %}
+                    </dd>
+                  {% endif %}
+                {% endfor %}
+              </dl>
+            {% else %}
+              <p class="seeder-urls-empty">No server URLs on record —
+                <a href="/clients">add them on the Clients page {{ icon("slimRight", 12) }}</a></p>
+            {% endif %}
+          </div>
+          <div class="panel-full">
+            <span class="panel-label">Command:<span class="req">*</span></span>
+            <div class="seeder-command-row">
+              <pre class="seeder-command ro-field">{{ row.command }}</pre>
+              <button
+                type="button" class="btn btn-std btn-icon icon-button seeder-copy" title="Copy command" aria-label="Copy command"
+                data-copy="{{ row.command }}"
+              >
+                {{ icon("copy", class="icon-copy") }}{{ icon("accept", class="icon-check") }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       {% endfor %}
+      <p class="empty-note seeder-no-matches" id="seeder-no-matches" hidden>No seeders found.</p>
+    {% else %}
+      <p class="empty-note">No seeder commands saved yet.</p>
+    {% endif %}
     </div>
-    <p class="empty-state seeder-no-matches" id="seeder-no-matches" hidden>No seeders match your filter.</p>
-  {% else %}
-    <p class="empty-state">No seeder commands saved yet.</p>
-  {% endif %}
+  </section>
+
+  {# The reference's delete confirmation (a Warning message box), in place of the
+     browser's confirm(). The form still posts on its own if scripts are off. #}
+  <dialog class="mbox" id="seeder-delete-dialog" aria-labelledby="seeder-delete-title">
+    <div class="mbox-head" id="seeder-delete-title">{{ icon("warning", class="mbox-warning") }}Warning</div>
+    <p class="mbox-text">Do you want to delete this Record?</p>
+    <div class="mbox-foot">
+      <button type="button" class="btn btn-emph" id="seeder-delete-ok" autofocus>OK</button>
+      <button type="button" class="btn btn-lite" id="seeder-delete-cancel">Cancel</button>
+    </div>
+  </dialog>
 
   <script>
     (function () {
@@ -86,6 +119,7 @@
       var noMatches = document.getElementById("seeder-no-matches");
       if (!filterInput) return;
 
+      var count = document.getElementById("seeder-count");
       filterInput.addEventListener("input", function () {
         var needle = filterInput.value.trim().toLowerCase();
         var visibleCount = 0;
@@ -96,7 +130,70 @@
           if (matches) visibleCount += 1;
         });
         if (noMatches) noMatches.hidden = visibleCount !== 0;
+        // The toolbar count is of what's showing, as in the reference.
+        if (count) count.textContent = visibleCount;
+        syncExpandLabel();
       });
+
+      // Panels: collapsed by default, as in the reference; the chevron or the title
+      // opens one, Expand All / Collapse All acts on the ones the search shows.
+      function setOpen(card, open) {
+        card.classList.toggle("open", open);
+        var chev = card.querySelector(".panel-chev");
+        chev.setAttribute("aria-expanded", open ? "true" : "false");
+        chev.title = open ? "Collapse" : "Expand";
+      }
+      var expandAll = document.getElementById("seeder-expand-all");
+      var expandLabel = document.getElementById("seeder-expand-label");
+      function visibleCards() {
+        return Array.prototype.filter.call(cards, function (card) { return !card.hidden; });
+      }
+      function syncExpandLabel() {
+        if (!expandLabel) return;
+        var shown = visibleCards();
+        var allOpen = shown.length > 0 && shown.every(function (card) { return card.classList.contains("open"); });
+        expandLabel.textContent = allOpen ? "Collapse All" : "Expand All";
+      }
+      cards.forEach(function (card) {
+        card.querySelectorAll(".panel-chev, [data-panel-toggle]").forEach(function (toggle) {
+          toggle.addEventListener("click", function () {
+            setOpen(card, !card.classList.contains("open"));
+            syncExpandLabel();
+          });
+        });
+      });
+      if (expandAll) {
+        expandAll.addEventListener("click", function () {
+          var shown = visibleCards();
+          var allOpen = shown.length > 0 && shown.every(function (card) { return card.classList.contains("open"); });
+          shown.forEach(function (card) { setOpen(card, !allOpen); });
+          syncExpandLabel();
+        });
+      }
+
+      // Delete asks in the reference's Warning box before the form posts.
+      var deleteDialog = document.getElementById("seeder-delete-dialog");
+      var pendingDelete = null;
+      document.querySelectorAll("form[data-confirm-delete]").forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+          if (!deleteDialog || !deleteDialog.showModal) return;
+          event.preventDefault();
+          pendingDelete = form;
+          deleteDialog.showModal();
+        });
+      });
+      if (deleteDialog) {
+        document.getElementById("seeder-delete-ok").addEventListener("click", function () {
+          var form = pendingDelete;
+          pendingDelete = null;
+          deleteDialog.close();
+          if (form) form.submit();
+        });
+        document.getElementById("seeder-delete-cancel").addEventListener("click", function () {
+          pendingDelete = null;
+          deleteDialog.close();
+        });
+      }
 
       document.querySelectorAll(".seeder-copy").forEach(function (button) {
         var resetTimer = null;

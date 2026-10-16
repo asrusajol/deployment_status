@@ -1,0 +1,29 @@
+{# Icons are the design reference's own glyphs: the SAP-icons font (and, for the
+   Dashboard nav item only, BusinessSuiteInAppSymbols), both shipped in
+   app/static/fonts/ — extracted from Deployment_Tracker.html so every PC shows the
+   same icons whether or not SAP fonts are installed. The names and codepoints are the
+   reference's own icon map; add new ones from there rather than picking glyphs by eye.
+   Colour comes from currentColor, so each theme colours them through its tokens. #}
+{%- set GLYPHS = {
+  "menu": "E1DE", "down": "E1EF", "right": "E066", "slimRight": "E1ED", "slimDown": "E1E2",
+  "search": "E00D", "settings": "E0A6", "gearNav": "E00C", "palette": "E145",
+  "copy": "E245", "download": "E03A", "edit": "E038", "del": "E03D",
+  "accept": "E05B", "decline": "E03E", "minus": "E069", "add": "E058",
+  "show": "E1E9", "hide": "E1EA", "start": "E047", "ret": "E032", "task": "E03F",
+  "expandAll": "E283", "warning": "E201", "errorCircle": "E1EC",
+  "deployed": "E1AB", "withdraw": "E249", "pending": "E06A", "progress": "E019",
+  "history": "E02D", "request": "E139", "calendar": "E046", "shield": "E280", "person": "E036",
+} -%}
+{%- set BS_GLYPHS = {"dashboard": "E11F"} -%}
+{#- The few icons the reference draws as inline SVG rather than a font glyph. -#}
+{%- set SVG_PATHS = {
+  "navBack": "M10.795 3.235a.75.75 0 0 0-1.06-.03l-4.5 4.247a.75.75 0 0 0 0 1.091l4.5 4.252a.75.75 0 1 0 1.03-1.09L6.843 7.997l3.922-3.702a.75.75 0 0 0 .03-1.06Z",
+} -%}
+{% macro icon(name, size=16, class="") -%}
+{%- if name in SVG_PATHS -%}
+<svg class="ico{{ ' ico-12' if size == 12 }}{{ ' ' ~ class if class }}" width="{{ size }}" height="{{ size }}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{{ SVG_PATHS[name] }}"/></svg>
+{%- else -%}
+{%- set bs = name in BS_GLYPHS -%}
+<span class="ico{{ ' ico-bs' if bs }}{{ ' ico-12' if size == 12 }}{{ ' ' ~ class if class }}" aria-hidden="true">&#x{{ BS_GLYPHS[name] if bs else GLYPHS[name] }};</span>
+{%- endif -%}
+{%- endmacro %}

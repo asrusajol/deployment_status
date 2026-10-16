@@ -1,8 +1,13 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Admin — Users — Deployment Tracker{% endblock %}
 {% block content %}
-  <p><a href="/management" class="back-link">← Management</a></p>
-  <h1>Users</h1>
+  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
+  <section class="card page-card">
+  <div class="toolbar">
+    <div class="toolbar-lead"><a href="/management" class="btn btn-lite btn-icon" title="Back to Management">{{ icon("navBack") }}<span class="sr-only">Management</span></a><h1 class="toolbar-title">Users</h1></div>
+  </div>
+  <div class="card-body">
   <p class="subtitle">Grant/reset login access and manage roles. Every user here comes from the CRM sync — this page never creates a new person, only enables/changes access for one that already exists.</p>
 
   {% if error %}
@@ -103,4 +108,6 @@
     </tbody>
   </table>
   </div>
+  </div>
+  </section>
 {% endblock %}
