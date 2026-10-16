@@ -55,7 +55,7 @@
 
   {# The reference's Request card: toolbar title with the count, actions on the right.
      Search, CSV export and the column-settings gear are follow-ups, not here yet. #}
-  <section class="card request-card">
+  <section class="card card-fill request-card">
     <div class="toolbar">
       <h1 class="toolbar-title">Request ({{ total_count }})</h1>
       <div class="toolbar-buttons">
@@ -68,25 +68,42 @@
         <button type="button" id="enable-notifications-button" class="btn btn-lite" hidden>Enable Desktop Notifications</button>
         <form method="get" action="/requests" class="page-size-form">
           <label for="page_size">Rows per page</label>
+          {% for name, value in list_params.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
           <select name="page_size" id="page_size" onchange="this.form.submit()">
             {% for size in page_size_options %}
               <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
             {% endfor %}
           </select>
         </form>
+        {# The reference's Search: over every column, run on the server (all pages);
+           Enter searches. The hidden fields keep the sort and column filters, which the
+           header menus read and change (see the column script). #}
+        <form method="get" action="/requests" class="search-field" id="request-search-form" role="search"{% if list_query.sort %} data-sort="{{ list_query.sort }}" data-dir="{{ 'desc' if list_query.desc else 'asc' }}"{% endif %}>
+          <input type="search" name="q" value="{{ list_query.q }}" id="request-search" placeholder="Search" aria-label="Search requests">
+          <button type="submit" class="search-field-icon search-field-submit" title="Search">{{ icon("search") }}<span class="sr-only">Search</span></button>
+          <input type="hidden" name="page_size" value="{{ page_size }}">
+          {% if list_query.sort %}<input type="hidden" name="sort" value="{{ list_query.sort }}"><input type="hidden" name="dir" value="{{ 'desc' if list_query.desc else 'asc' }}">{% endif %}
+          {% for key, value in list_query.filters.items() %}<input type="hidden" name="f-{{ key }}" value="{{ value }}" data-filter="{{ key }}">{% endfor %}
+        </form>
         <a href="/requests/new" class="btn btn-emph">New Request</a>
+        {# Every matching request (all pages), in the columns showing — the script adds `cols`. #}
+        <a href="/requests/export.csv{% if list_params %}?{{ list_params | urlencode }}{% endif %}" class="btn btn-lite btn-icon" id="request-export" title="Export to CSV" download>{{ icon("download") }}<span class="sr-only">Export to CSV</span></a>
         {# The reference's table settings: show / hide columns and Reset table layout
            (order and visibility, both kept per browser by the column script below).
-           Its Clear filters / Clear sort wait for the column header menus. #}
+           Clear filters / Clear sort undo the header menus' choices. #}
         <div class="table-settings">
           <button type="button" class="btn btn-lite btn-icon" id="request-table-settings" title="Table settings (show / hide columns)" aria-haspopup="true" aria-expanded="false" aria-controls="request-table-menu">{{ icon("settings") }}<span class="sr-only">Table settings</span></button>
           <div class="col-menu" id="request-table-menu" hidden>
             <div class="menu-title">Show / hide columns</div>
             <div class="menu-count">{{ requests | length }} of {{ total_count }} items</div>
-            {% for label in ["Type", "Task ID", "Module Name", "Client", "System", "URL", "Version", "Branch / Commit", "Changes", "Requested By", "Requested At", "Status", "Deployed At"] %}
-              <label class="menu-item cb"><input type="checkbox" data-col-toggle="{{ label | lower | replace(' / ', '-') | replace(' ', '-') }}" checked><span>{{ label }}</span></label>
+            {# Keys are the column script's own (header text, slugged) — request_query.COLUMNS. #}
+            {% for key, label in column_labels.items() %}
+              <label class="menu-item cb"><input type="checkbox" data-col-toggle="{{ key }}" checked><span>{{ label }}</span></label>
             {% endfor %}
             <div class="menu-sep"></div>
+            {% set filter_count = list_query.filters | length %}
+            <button type="button" class="menu-item" id="clear-filters"{% if not filter_count %} disabled{% endif %}>{{ icon("clearFilter", 14) }}{{ ("Clear " ~ filter_count ~ " filter" ~ ("s" if filter_count > 1 else "")) if filter_count else "Clear filters" }}</button>
+            <button type="button" class="menu-item" id="clear-sort"{% if not list_query.sort %} disabled{% endif %}>{{ icon("decline", 14) }}Clear sort</button>
             <button type="button" class="menu-item" id="reset-table-layout">{{ icon("clearFilter", 14) }}Reset table layout</button>
           </div>
         </div>
@@ -105,7 +122,11 @@
       </table>
       </div>
     {% else %}
-      <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
+      {% if list_query.q or list_query.filters %}
+        <p class="empty-state">No requests match the search or filters. <a href="/requests?page_size={{ page_size }}">Clear them</a>.</p>
+      {% else %}
+        <p class="empty-state">No deployment requests yet. <a href="/requests/new">Submit one</a>.</p>
+      {% endif %}
     {% endif %}
 
     {% if total_pages > 1 %}
@@ -113,13 +134,13 @@
       <div class="card-footer">
       <nav class="pagination" aria-label="Requests pagination">
         {% if page > 1 %}
-          <a href="/requests?page={{ page - 1 }}&page_size={{ page_size }}" class="button-secondary">Previous</a>
+          <a href="/requests?{{ dict(list_params, page=page - 1, page_size=page_size) | urlencode }}" class="button-secondary">Previous</a>
         {% else %}
           <span class="button-secondary is-disabled">Previous</span>
         {% endif %}
         <span class="pagination-status">Page {{ page }} of {{ total_pages }} ({{ total_count }} total)</span>
         {% if page < total_pages %}
-          <a href="/requests?page={{ page + 1 }}&page_size={{ page_size }}" class="button-secondary">Next</a>
+          <a href="/requests?{{ dict(list_params, page=page + 1, page_size=page_size) | urlencode }}" class="button-secondary">Next</a>
         {% else %}
           <span class="button-secondary is-disabled">Next</span>
         {% endif %}
@@ -634,6 +655,15 @@
     })();
   </script>
 
+  {# Icons the column script copies into the header menu and the sorted / filtered headers. #}
+  <template id="request-menu-icons">
+    <span data-icon="asc">{{ icon("sortAscending", 14) }}</span><span data-icon="desc">{{ icon("sortDescending", 14) }}</span>
+    <span data-icon="filter">{{ icon("filter", 12) }}</span><span data-icon="clear">{{ icon("clearFilter", 14) }}</span>
+    <span data-icon="decline">{{ icon("decline", 14) }}</span><span data-icon="left">{{ icon("navBack", 14) }}</span>
+    <span data-icon="right">{{ icon("slimArrowRight", 14) }}</span><span data-icon="hide">{{ icon("hide", 14) }}</span>
+  </template>
+  <div class="col-menu col-menu-fixed" id="request-header-menu" role="menu" hidden></div>
+
   {# Draggable column headers and the gear's show / hide. Both are this browser's own (localStorage), so the
      server always renders the default and nothing else depends on the order. Cells
      are tagged by column (data-col) for the CSS, which no longer sizes by position;
@@ -749,7 +779,6 @@
           var key = th.getAttribute("data-col");
           if (key === pinned) return;
           th.draggable = true;
-          th.title = "Drag to move this column";
           th.addEventListener("dragstart", function (event) {
             dragKey = key;
             th.classList.add("is-dragging");
@@ -782,12 +811,161 @@
         });
       });
 
+      // --- Sort and "contains" filters (the reference's header menus). They run on the
+      // server across every page, so each choice reloads the list with it in the URL;
+      // the search form's hidden fields hold the current ones.
+      var searchForm = document.getElementById("request-search-form");
+      var sortKey = searchForm.getAttribute("data-sort");
+      var sortDir = searchForm.getAttribute("data-dir");
+      var filters = {};
+      searchForm.querySelectorAll("[data-filter]").forEach(function (input) { filters[input.getAttribute("data-filter")] = input.value; });
+      var NOT_TEXT = ["requested-at", "deployed-at"];
+      function navigate(changes) {
+        var params = new URLSearchParams(new FormData(searchForm));
+        Object.keys(changes).forEach(function (name) {
+          if (changes[name] === null || changes[name] === "") params.delete(name);
+          else params.set(name, changes[name]);
+        });
+        if (!params.get("q")) params.delete("q");
+        params.delete("page");   // a new sort or filter starts again from page 1
+        location.href = "/requests?" + params.toString();
+      }
+      function change(name, value) { var c = {}; c[name] = value; return c; }
+      var iconTemplate = document.getElementById("request-menu-icons").content;
+      function iconFor(name) { return iconTemplate.querySelector('[data-icon="' + name + '"]').firstElementChild.cloneNode(true); }
+
+      // Sorted / filtered headers carry the reference's small icon after the label.
+      tables.forEach(function (table) {
+        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+          var key = th.getAttribute("data-col");
+          if (key === pinned) return;
+          var marks = document.createElement("span");
+          marks.className = "hdr-marks";
+          if (key === sortKey) marks.appendChild(iconFor(sortDir === "desc" ? "desc" : "asc"));
+          if (filters[key]) marks.appendChild(iconFor("filter"));
+          if (marks.childNodes.length) th.appendChild(marks);
+        });
+      });
+
+      var headerMenu = document.getElementById("request-header-menu");
+      function item(icon, text, onClick, disabled) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "menu-item";
+        button.setAttribute("role", "menuitem");
+        if (icon) button.appendChild(iconFor(icon));
+        button.appendChild(document.createTextNode(text));
+        button.disabled = !!disabled;
+        button.addEventListener("click", onClick);
+        return button;
+      }
+      function sep() { var d = document.createElement("div"); d.className = "menu-sep"; return d; }
+      function closeHeaderMenu() { headerMenu.hidden = true; headerMenu.innerHTML = ""; headerMenu.dataset.for = ""; }
+      function openHeaderMenu(th) {
+        var key = th.getAttribute("data-col");
+        var label = th.firstChild.textContent.trim();
+        headerMenu.innerHTML = "";
+        headerMenu.appendChild(item("asc", "Sort ascending", function () { navigate({ sort: key, dir: "asc" }); }));
+        headerMenu.appendChild(item("desc", "Sort descending", function () { navigate({ sort: key, dir: "desc" }); }));
+        if (key === sortKey) headerMenu.appendChild(item("decline", "Clear sort", function () { navigate({ sort: null, dir: null }); }));
+        if (NOT_TEXT.indexOf(key) === -1) {
+          headerMenu.appendChild(sep());
+          var box = document.createElement("div");
+          box.className = "menu-filter";
+          var title = document.createElement("label");
+          title.className = "menu-label";
+          title.textContent = "Filter by " + label;
+          var field = document.createElement("div");
+          field.className = "grid-field";
+          var input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Contains…";
+          input.value = filters[key] || "";
+          title.htmlFor = input.id = "header-filter-input";
+          input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") { event.preventDefault(); navigate(change("f-" + key, input.value.trim())); }
+          });
+          field.appendChild(input);
+          box.appendChild(title);
+          box.appendChild(field);
+          headerMenu.appendChild(box);
+          if (filters[key]) headerMenu.appendChild(item("clear", "Clear filter", function () { navigate(change("f-" + key, null)); }));
+        }
+        headerMenu.appendChild(sep());
+        var shown = current().filter(function (k) { return hiddenNow().indexOf(k) === -1; });
+        var at = shown.indexOf(key);
+        function move(step) {
+          var full = current();
+          var other = shown[at + step];
+          var i = full.indexOf(key), j = full.indexOf(other);
+          full[i] = other; full[j] = key;
+          apply(full); save(full); closeHeaderMenu();
+        }
+        headerMenu.appendChild(item("left", "Move left", function () { move(-1); }, at <= 0));
+        headerMenu.appendChild(item("right", "Move right", function () { move(1); }, at >= shown.length - 1));
+        headerMenu.appendChild(item("hide", "Hide column", function () {
+          applyHidden(hiddenNow().concat([key])); closeHeaderMenu();
+        }, shown.length <= 1));
+        var rect = th.getBoundingClientRect();
+        headerMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 250)) + "px";
+        headerMenu.style.top = (rect.bottom + 2) + "px";
+        headerMenu.hidden = false;
+        headerMenu.dataset.for = key;
+        var focusInput = headerMenu.querySelector("input");
+        if (focusInput) focusInput.focus();
+      }
+      tables.forEach(function (table) {
+        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+          if (th.getAttribute("data-col") === pinned) return;
+          th.classList.add("has-menu");
+          th.title = "Sort, filter, move or hide — or drag to move";
+          th.addEventListener("click", function (event) {
+            event.stopPropagation();
+            setMenu(false);
+            if (!headerMenu.hidden && headerMenu.dataset.for === th.getAttribute("data-col")) { closeHeaderMenu(); return; }
+            openHeaderMenu(th);
+          });
+        });
+      });
+      headerMenu.addEventListener("click", function (event) { event.stopPropagation(); });
+      document.addEventListener("click", closeHeaderMenu);
+      document.addEventListener("keydown", function (event) { if (event.key === "Escape") closeHeaderMenu(); });
+      // Fixed to the viewport, so it would drift off its header on scroll.
+      window.addEventListener("scroll", function (event) {
+        if (!headerMenu.contains(event.target)) closeHeaderMenu();
+      }, true);
+      if (gear) gear.addEventListener("click", closeHeaderMenu);
+
+      document.getElementById("clear-filters").addEventListener("click", function () {
+        var changes = {};
+        Object.keys(filters).forEach(function (k) { changes["f-" + k] = null; });
+        navigate(changes);
+      });
+      document.getElementById("clear-sort").addEventListener("click", function () { navigate({ sort: null, dir: null }); });
+
+      // CSV: the columns showing, in their order, as the reference's export does.
+      var exportLink = document.getElementById("request-export");
+      if (exportLink) {
+        exportLink.addEventListener("click", function () {
+          var url = new URL(exportLink.href, location.href);
+          var hidden = hiddenNow();
+          url.searchParams.set("cols", current().filter(function (k) { return hidden.indexOf(k) === -1; }).join(","));
+          exportLink.href = url.toString();
+        });
+      }
+
       if (resetButton) {
         resetButton.addEventListener("click", function () {
           apply(movable);
           save(movable);
           applyHidden([]);
           setMenu(false);
+          // The reference's reset clears sort and filters too.
+          if (sortKey || Object.keys(filters).length) {
+            var changes = { sort: null, dir: null };
+            Object.keys(filters).forEach(function (k) { changes["f-" + k] = null; });
+            navigate(changes);
+          }
         });
       }
     })();

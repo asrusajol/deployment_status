@@ -1,9 +1,9 @@
 """Every RequestStatus must be fully wired up.
 
 Adding a status to this app means touching five separate constants and each
-miss fails differently — RAIL_STAGES is a bare dict lookup inside
-request_list.html's row loop, so a missing entry 500s the whole Requests
-page, while a missing sort-set entry just silently sinks the row into
+miss fails differently — a status with no STATUS_TAGS entry renders with a
+borrowed tag (the Requests row falls back to "in progress"), so it looks
+like something it isn't, while a missing sort-set entry just silently sinks the row into
 history (which is how the pending_intake ordering regression shipped with a
 green suite). These tests iterate the enum itself, so a status added later
 fails them without anyone remembering this file exists.
@@ -18,14 +18,14 @@ from app.models.deployment_request import (
 from app.routers.dashboard import (
     FINISHED_REQUEST_STATUSES,
     OPEN_REQUEST_STATUS_ORDER,
-    RAIL_STAGES,
     STATUS_LABELS,
+    STATUS_TAGS,
 )
 
 
 @pytest.mark.parametrize("status", list(RequestStatus), ids=lambda s: s.value)
-def test_every_status_has_a_rail(status):
-    assert status in RAIL_STAGES
+def test_every_status_has_a_tag(status):
+    assert status in STATUS_TAGS
 
 
 @pytest.mark.parametrize("status", list(RequestStatus), ids=lambda s: s.value)

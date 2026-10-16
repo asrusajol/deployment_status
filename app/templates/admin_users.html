@@ -13,7 +13,7 @@
      the CRM sync — nothing here creates a person. "Active" is login access (a password
      on record): switching it on needs a new password, off removes it. Rows are only
      filtered in the browser, so Save always sends every user (see save_users()). #}
-  <form method="post" action="/admin/users/save" id="users-form" class="card users-card" autocomplete="off">
+  <form method="post" action="/admin/users/save" id="users-form" class="card card-fill users-card" autocomplete="off">
     <div class="toolbar">
       <h1 class="toolbar-title">Users (<span id="users-count">{{ users | length }}</span>)</h1>
       <div class="toolbar-buttons">

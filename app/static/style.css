@@ -36,7 +36,6 @@
   --sapContent_LabelColor: #556B82;
   --sapContent_NonInteractiveIconColor: #758CA4;
   --sapHoverColor: #EAECEE;
-  --sapSelectedBackground: #EBF8FF;
   --sapSelectedBorder: #0064D9;
   --sapContent_Selected_Hover_Background: #E3F0FF;
   --sapContent_Shadow0: 0 2px 4px rgba(34, 54, 73, 0.2), 0 0 2px rgba(34, 54, 73, 0.2);
@@ -52,8 +51,6 @@
   --switchKnobBg: #FFFFFF;
   --dialogDivider: #D9D9D9;
   --sapButton_Selected_BorderColor: #0064D9;
-  --sapField_InvalidColor: #E90B0B;
-  --sapField_InvalidBackground: #FFEAF4;
   --warningIconColor: #E76500;
   --sapList_Background: #FFFFFF;
   --sapGroup_TitleBackground: #FFFFFF;
@@ -121,7 +118,6 @@
   --on-accent: #FFFFFF;                      /* text on a filled brand/green/red/amber control */
   --panel: var(--sapBaseColor);
   --panel-raised: var(--sapBackgroundColor);
-  --panel-hover: var(--sapHoverColor);
   --hairline: var(--sapList_BorderColor);
   --hairline-strong: var(--sapButton_BorderColor);
   --paper: var(--sapTextColor);
@@ -130,13 +126,9 @@
   --shadow-pin: -6px 0 8px -6px rgba(34, 54, 73, 0.25);
 
   --amber: var(--stCriticalText);  --amber-dim: var(--stCriticalBg);  --amber-bd: var(--stCriticalBd);
-  --teal: var(--sapBrandColor);    --teal-dim: var(--sapSelectedBackground);
+  --teal: var(--sapBrandColor);
   --green: var(--stPositiveText);  --green-dim: var(--stPositiveBg);  --green-bd: var(--stPositiveBd);
   --red: var(--stNegativeText);    --red-dim: var(--stNegativeBg);    --red-bd: var(--stNegativeBd);
-  --violet: var(--sysLiveText);    --violet-dim: var(--sysLiveBg);
-  --slate-chip: var(--sapContent_LabelColor); --slate-chip-dim: var(--stNeutralBg);
-  --blue: var(--stInfoText);       --blue-dim: var(--stInfoBg);
-  --rose: var(--typeDatabase);     --rose-dim: var(--stNegativeBg);
 
   /* Theme-menu swatches: each shows its own theme's colour whichever theme is active. */
   --swatchStandard: #0070F2;
@@ -834,7 +826,6 @@ h1 {
 .st-critical { background: var(--stCriticalBg); border-color: var(--stCriticalBd); color: var(--stCriticalText); }
 .st-neutral { background: var(--stNeutralBg); border-color: var(--stNeutralBd); color: var(--stNeutralText); font-weight: 600; }
 .st-negative { background: var(--stNegativeBg); border-color: var(--stNegativeBd); color: var(--stNegativeText); }
-.requests-table .status-handler { font-size: 11px; line-height: 13px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Requests page: the cards sit flush with the content area; the table scroll box
    inside a card loses its own card look. */
@@ -1111,11 +1102,9 @@ code {
    in the second row left-aligned as per standard table styling. */
 .release-tracker-table thead tr:first-child th[colspan] { text-align: center; }
 
-/* Request type: which of the three "New Deployment Request" tabs a row came
-   from — blue/rose/slate, distinct from both the environment badges above and
-   the teal/green/amber/red workflow-status colors so "what kind of request"
-   never reads as "what stage it's at". test.local reuses slate-chip since it's
-   the same "internal infrastructure" signal as the System-column badge above. */
+/* Request type: which of the three "New Deployment Request" tabs a row came from, in
+   the --type* colours — distinct from the environment badges above and the workflow
+   status colours, so "what kind of request" never reads as "what stage it's at". */
 /* Rendered as bold coloured text, no chip — the reference's Type column. */
 .badge[class*="badge-type-"] { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.25; white-space: normal; }
 .badge-type-standard { color: var(--typeStandard); }
@@ -1127,76 +1116,14 @@ code {
   font-weight: 600;
 }
 
-.status-pending_approval, .status-submitted, .status-pending_intake { color: var(--amber); }
-.status-approved, .status-claimed, .status-in_progress { color: var(--teal); }
 .status-completed { color: var(--green); }
-.status-rejected, .status-failed { color: var(--red); }
 .status-rolled_back { color: var(--fog); }
 
-/* Who's currently handling an in_progress request (request_list.html) — sits under the
-   rail + status row inside the same cell, no extra column/row. .status-cell keeps the
-   rail and label on one line; .status-handler is a plain block below it, left-aligned
-   with the rail's own start (not indented under the label) — matches the design's
-   "starts from the progress bar" placement. */
 .status-cell {
   display: flex;
   align-items: center;
 }
 
-.status-handler {
-  margin-top: 0.2rem;
-  font-size: 0.72rem;
-  color: var(--fog);
-}
-
-/* --- Pipeline Rail ----------------------------------------------------------
-   The signature element: a literal rendering of the request's own state
-   machine (Submitted -> Approved -> Deployed, project_plan.md Section 4),
-   not a decorative sequence — order carries real information here. Colors
-   mirror the signal system above (amber = waiting, teal = in flight, green =
-   shipped, red = stopped). */
-
-.rail {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  margin-right: 0.65rem;
-  vertical-align: middle;
-}
-
-.rail-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--hairline-strong);
-}
-
-.rail-line {
-  width: 12px;
-  height: 2px;
-  flex: none;
-  background: var(--hairline-strong);
-}
-
-.rail-dot-amber, .rail-line-amber { background: var(--amber); }
-.rail-dot-teal, .rail-line-teal { background: var(--teal); }
-.rail-dot-green, .rail-line-green { background: var(--green); }
-.rail-dot-red, .rail-line-red { background: var(--red); }
-
-.rail-dot-amber.is-pulsing { box-shadow: 0 0 0 4px var(--amber-dim); }
-.rail-dot-teal.is-pulsing { box-shadow: 0 0 0 4px var(--teal-dim); }
-
-.is-pulsing { animation: railPulse 1.8s ease-in-out infinite; }
-
-@keyframes railPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .is-pulsing { animation: none; }
-}
 
 /* --- Empty / error states ---------------------------------------------------- */
 
@@ -1426,7 +1353,7 @@ code {
 .actions-inner > button:hover { filter: brightness(0.92); }
 .inline-form button.approve, .inline-form button.deploy,
 .actions-inner > button.approve, .actions-inner > button.deploy { background: var(--green); }
-/* Teal, not green — matches the "in flight" signal color (rail/status), since starting a
+/* Teal, not green — matches the "in flight" signal color (status), since starting a
    deployment isn't a completion the way approving/marking-deployed are. */
 .inline-form button.start,
 .actions-inner > button.start { background: var(--sapButton_Emphasized_Background); }
@@ -1529,20 +1456,6 @@ code {
 
 .button-secondary:hover { background: var(--sapHoverColor); }
 
-.button-primary {
-  padding: 0.45rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--sapButton_Emphasized_Background);
-  background: var(--sapButton_Emphasized_Background);
-  color: var(--sapButton_Emphasized_TextColor);
-  cursor: pointer;
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.button-primary:hover { filter: brightness(0.92); }
-
 /* --- Tabs (New Request form) -------------------------------------------------- */
 
 .tabs {
@@ -1617,15 +1530,6 @@ code {
    rather than a real gap — margin sits outside that border box instead. */
 .returned-to-you-table {
   margin-bottom: 2rem;
-}
-
-.queue-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
 }
 
 .page-size-form {
@@ -1871,45 +1775,12 @@ code {
    request_list.html) — the cursor is the only affordance saying so. */
 .requests-table [class*="badge-type-"] { cursor: help; }
 
-/* Timestamps in the requests table: the deploy time in the Action column, the
-   request time under the requester's name. Monospaced so they line up down the
-   page, muted so they read as metadata beside the action buttons rather than as
-   controls, and stacked date-over-time because on one line they widened the
-   Action column enough to push the whole table into horizontal scroll. */
-.action-times,
-.requester-asked-at {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--fog);
-  line-height: 1.35;
-}
-
-.requester-asked-at {
-  margin-top: 3px;
-}
-
 .cell-label {
   display: block;
   font-family: var(--font-body);
   font-size: 0.68rem;
   color: var(--fog-dim);
 }
-
-.action-times .localtime-date,
-.action-times .localtime-time,
-.requester-asked-at .localtime-date,
-.requester-asked-at .localtime-time {
-  display: block;
-  white-space: nowrap;
-}
-
-/* Withdrawn is neither a failure nor a rejection, so its rail dot is the neutral
-   slate the test.local badge already uses, not red. */
-.rail-dot-slate, .rail-line-slate { background: var(--slate-chip); }
-
-/* Returned: amber, the signal this system already uses for "waiting on a person". */
-.status-returned { color: var(--amber); font-weight: 600; }
-.status-withdrawn { color: var(--fog); }
 
 .return-log-button {
   /* Inline with the status label, never its own line: it is an annotation on the
@@ -2051,18 +1922,6 @@ code {
 .checklist-fieldset legend { margin-bottom: 0.4rem; }
 .checklist-log-who { display: block; color: var(--fog-dim); font-size: 0.8rem; }
 
-/* Checklists page: when a term is due. Teal for Start (the in-flight colour Start uses),
-   green for Mark Deployed (the success colour Mark Deployed uses). */
-.checklist-due {
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  border: 1px solid var(--hairline-strong);
-}
-.checklist-due-before_start { color: var(--teal); border-color: var(--teal-dim); }
-.checklist-due-before_complete { color: var(--green); border-color: var(--green-dim); }
-
 /* --- Form fields: the reference's compact input (sap.m.Input) -----------------------
    One rule for every text field and select in the app, last in the file so it wins over
    each component's own sizing rules above: light grey frame, darker bottom edge, small
@@ -2151,10 +2010,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor)
   color: var(--sapButton_Lite_TextColor);
   filter: none;
 }
-/* Status lines that replace the buttons ("Awaiting …") and the deploy time keep a
-   whole row of the cell to themselves rather than sitting between icons. */
-.requests-table td .actions-inner > .muted,
-.requests-table td .actions-inner > .action-times { flex-basis: 100%; text-align: center; }
+/* Status lines that replace the buttons ("Awaiting …") keep a whole row of the cell
+   to themselves rather than sitting between icons. */
+.requests-table td .actions-inner > .muted { flex-basis: 100%; text-align: center; }
 
 /* Text kept for screen readers (and the tests) while the button shows only its icon. */
 .sr-only {
@@ -2233,7 +2091,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor)
 .toolbar-lead { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .toolbar-lead .btn-icon { margin-left: -8px; }
 .page-card .card-body > .subtitle:first-child { margin-top: 0; }
-.ico-flip { transform: rotate(180deg); }
 
 
 /* ================= Settings pages (Users, Management Checklist) =================
@@ -2284,7 +2141,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor)
 .grid-field.has-vh input { padding-right: 34px; letter-spacing: .5px; }
 .grid-field .vh .pw-shown, .grid-field .vh.is-shown .pw-hidden { display: none; }
 .grid-field .vh.is-shown .pw-shown { display: inline-flex; }
-.grid-field.is-invalid { box-shadow: inset 0 0 0 1px var(--sapField_InvalidColor), inset 0 -2px 0 var(--sapField_InvalidColor); background: var(--sapField_InvalidBackground); }
 
 .unsaved-note { margin-right: auto; padding-left: 8px; font-size: 12px; color: var(--sapContent_LabelColor); }
 .message-strip { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 16px; font-size: 14px; }
@@ -2354,3 +2210,61 @@ dialog.dialog > form { display: flex; flex-direction: column; max-height: calc(1
 .col-menu .menu-sep { height: 1px; margin: 4px 0; background: var(--sapList_BorderColor); }
 .cb input:disabled { opacity: .4; cursor: default; }
 .requests-table .col-hidden { display: none; }
+
+/* Requests Search: a form, so its icon is the submit button. */
+form.search-field { margin: 0; }
+.search-field input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
+.search-field .search-field-submit { top: 0; right: 0; height: 26px; padding: 0 8px; border: none; background: none; display: inline-flex; align-items: center; pointer-events: auto; cursor: pointer; border-radius: var(--radius-field); }
+.search-field .search-field-submit:hover { background: var(--sapHoverColor); }
+
+/* Header menus (sort / filter / move / hide), fixed under the clicked header. */
+.col-menu.col-menu-fixed { position: fixed; right: auto; top: 0; left: 0; }
+.col-menu .menu-filter { padding: 6px 12px; }
+.col-menu .menu-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--sapContent_LabelColor); }
+.col-menu .menu-item:disabled { opacity: .4; cursor: default; }
+.col-menu .menu-item:disabled:hover { background: none; }
+.requests-table thead th.has-menu { cursor: pointer; user-select: none; }
+.requests-table thead th.has-menu:hover { background: var(--sapContent_Selected_Hover_Background); }
+.requests-table thead .hdr-marks { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; color: var(--sapBrandColor); }
+
+/* Absolutely positioned bits inside a cell (the .sr-only names) would otherwise anchor
+   outside the scroll box, escape its clipping and widen the whole page. */
+.table-scroll { position: relative; }
+
+/* ================= Full-height frame (the reference's layout) =================
+   The window never scrolls: shell on top, nav and content filling the rest. A table
+   page's card (.card-fill) takes the remaining height and its table scrolls inside it,
+   header row pinned and the horizontal scrollbar always in view at the card's foot —
+   before, the scrollbar sat below the last row, off screen on a full page. Pages
+   without one (forms, Clients, Change Password) scroll inside the content area. */
+html:has(body.app-body), body.app-body { height: 100%; }
+body.app-body { overflow: hidden; display: flex; flex-direction: column; }
+body.app-body > .shell { flex: none; }
+body.app-body > .layout { flex: 1; min-height: 0; align-items: stretch; }
+body.app-body .sidenav { position: static; height: auto; }
+body.app-body .page { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 0; }
+body.app-body .page > .card { flex: none; }
+body.app-body .page > .card + .card { margin-top: 0; }
+body.app-body .page > .card.card-fill { flex: 1 1 auto; min-height: 260px; }
+
+/* The scrolling box inside each fill card, and the boxes between it and the card. */
+.card-fill > .table-scroll,
+.card-fill > .panels,
+.card-fill > .inner-wrap,
+.card-fill .inner-card,
+.card-fill .inner-card > .table-scroll { flex: 1 1 auto; min-height: 0; }
+.card-fill > .table-scroll,
+.card-fill .inner-card > .table-scroll { overflow: auto; }
+.card-fill > .panels { overflow-y: auto; position: relative; }   /* relative: see .table-scroll */
+.card-fill .inner-card { display: flex; flex-direction: column; overflow: hidden; }
+.card-fill > .card-footer, .card-fill > .toolbar, .card-fill > .tabbar { flex: none; }
+
+/* Header rows stay put while the rows scroll under them. Sticky cells need the table's
+   own overflow visible (see .requests-table), and the pinned corner cells sit above
+   both the header row and the pinned columns. */
+.card-fill .status-table { overflow: visible; border-collapse: separate; border-spacing: 0; }
+.card-fill .status-table thead th { position: sticky; top: 0; z-index: 3; }
+.card-fill .requests-table thead th:last-child { z-index: 4; }
+.card-fill .release-tracker-table thead tr + tr th { top: 20px; }
+.card-fill .release-tracker-table thead .col-client,
+.card-fill .release-tracker-table thead .col-action { z-index: 4; }

@@ -9,24 +9,6 @@
    Each keeps its old classes and data- hooks for request_list.html's scripts, its
    name as the tooltip, and the name again as screen-reader text. #}
 {%- from "_icons.html" import icon -%}
-{#- The reference's status tag: variant colour + leading SAP icon. It has four states
-    (Deployed / Withdraw / Pending / In Progress); ours has more, so each maps to the
-    nearest one, and outcomes it has no tag for (Rejected, Failed, Rolled Back) use the
-    negative tag. -#}
-{%- set STATUS_TAGS = {
-  "completed": ("positive", "deployed"),
-  "returned": ("info", "withdraw"),
-  "pending_intake": ("critical", "pending"),
-  "submitted": ("critical", "pending"),
-  "pending_approval": ("critical", "pending"),
-  "approved": ("critical", "pending"),
-  "claimed": ("neutral", "progress"),
-  "in_progress": ("neutral", "progress"),
-  "withdrawn": ("neutral", "decline"),
-  "rejected": ("negative", "errorCircle"),
-  "failed": ("negative", "errorCircle"),
-  "rolled_back": ("negative", "errorCircle"),
-} -%}
 {%- set show_times = r.status in FINISHED_REQUEST_STATUSES and r.finished_at -%}
         <tr>
           {# The 6px type stripe sits on this first cell (an inset shadow, as the
@@ -126,9 +108,9 @@
           <td class="requester-cell">{{ r.requester.name if r.requester else "—" }}</td>
           <td class="requested-at-cell">{% if r.created_at %}{{ localtime(r.created_at) }}{% else %}—{% endif %}</td>
           <td>
-            {# .get with a fallback — a status missing from STATUS_TAGS must never 500
+            {# .get with a fallback — a status missing from status_tags (dashboard.STATUS_TAGS) must never 500
                the whole page for one row. #}
-            {% set tag = STATUS_TAGS.get(r.status.value, ("neutral", "progress")) %}
+            {% set tag = status_tags.get(r.status, ("neutral", "progress")) %}
             {# Who is handling / who deployed rides on the tag's tooltip (and as
                screen-reader text) so every row stays the reference's single line. #}
             {% if r.status == RequestStatus.in_progress and r.current_executor %}
