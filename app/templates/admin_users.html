@@ -1,113 +1,191 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% block title %}Admin — Users — Deployment Tracker{% endblock %}
+{% block title %}Users — Deployment Tracker{% endblock %}
+{% macro switch(name, on, title, locked=false) -%}
+  <label class="switch{{ ' is-locked' if locked }}" title="{{ title }}">
+    <input type="checkbox" name="{{ name }}" role="switch"{% if on %} checked{% endif %}{% if locked %} disabled{% endif %}>
+    <span class="toggle">{{ icon("accept", 12, class="switch-on") }}{{ icon("minus", 12, class="switch-off") }}</span>
+  </label>
+{%- endmacro %}
 {% block content %}
-  {# Undesigned page in the reference's frame: one card, the title in its toolbar. #}
-  <section class="card page-card">
-  <div class="toolbar">
-    <div class="toolbar-lead"><a href="/management" class="btn btn-lite btn-icon" title="Back to Management">{{ icon("navBack") }}<span class="sr-only">Management</span></a><h1 class="toolbar-title">Users</h1></div>
-  </div>
-  <div class="card-body">
-  <p class="subtitle">Grant/reset login access and manage roles. Every user here comes from the CRM sync — this page never creates a new person, only enables/changes access for one that already exists.</p>
+  {% set role_labels = {"developer": "Developer", "team_lead": "Team Lead", "devops": "DevOps", "admin": "Admin"} %}
+  {# The reference's Users page: one editable grid and one Save. Every user comes from
+     the CRM sync — nothing here creates a person. "Active" is login access (a password
+     on record): switching it on needs a new password, off removes it. Rows are only
+     filtered in the browser, so Save always sends every user (see save_users()). #}
+  <form method="post" action="/admin/users/save" id="users-form" class="card users-card" autocomplete="off">
+    <div class="toolbar">
+      <h1 class="toolbar-title">Users (<span id="users-count">{{ users | length }}</span>)</h1>
+      <div class="toolbar-buttons">
+        <div class="seg" role="group" aria-label="Show users">
+          <button type="button" data-users-filter="all">All</button>
+          <button type="button" data-users-filter="active" class="on">Active</button>
+          <button type="button" data-users-filter="inactive">Inactive</button>
+        </div>
+      </div>
+    </div>
 
-  {% if error %}
-    <p class="error">{{ error }}</p>
-  {% endif %}
+    {% if error %}
+      <p class="message-strip message-error" role="alert">{{ icon("errorCircle") }}<span>{{ error }}</span></p>
+    {% endif %}
 
-  <div class="table-scroll">
-  <table class="status-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Username</th>
-        <th>Role</th>
-        <th>Login Access</th>
-        <th>Grant / Reset Password</th>
-        <th>Show others' returns</th>
-        <th>Management access</th>
-        <th>Checklist audit</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.name }}</td>
-        <td>{{ u.username or "—" }}</td>
-        <td>
-          <form method="post" action="/admin/users/{{ u.id }}/set-role" class="inline-form">
-            <select name="role">
-              {% for r in roles %}
-                <option value="{{ r.value }}" {% if u.role == r %}selected{% endif %}>{{ r.value | capitalize }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit">Save</button>
-          </form>
-        </td>
-        <td>
-          {% if u.password_hash %}
-            {% if u.must_change_password %}
-              <span class="status status-pending_approval">Must change password</span>
+    <div class="table-scroll">
+    <table class="grid-table users-table">
+      <colgroup>
+        <col style="width:56px"><col style="width:200px"><col style="width:140px"><col style="width:194px">
+        <col style="width:200px"><col style="width:132px"><col style="width:132px"><col style="width:132px"><col style="width:88px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="center">Active</th>
+          <th>Full Name</th>
+          <th>User Name</th>
+          <th>Role</th>
+          <th>Password</th>
+          <th class="center">Show Others</th>
+          <th class="center">Management Access</th>
+          <th class="center">Checklist Audit</th>
+          <th class="center">Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        {% set is_admin_row = u.role.value == "admin" %}
+        <tr data-user-row data-active="{{ '1' if u.password_hash else '0' }}">
+          <td class="btn-cell">
+            <input type="hidden" name="user_ids" value="{{ u.id }}">
+            {% if u.password_hash %}
+              <span class="cell-icon" title="{{ 'Can log in — must change password at next login' if u.must_change_password else 'Can log in' }}">{{ icon("accept") }}</span>
             {% else %}
-              <span class="status status-completed">Active</span>
+              <span class="cell-icon" title="No login access">{{ icon("decline") }}</span>
             {% endif %}
-          {% else %}
-            <span class="muted">No login access</span>
-          {% endif %}
-        </td>
-        <td>
-          <form method="post" action="/admin/users/{{ u.id }}/set-password" class="inline-form">
-            {% if not u.username %}
-              <input type="text" name="username" placeholder="Set username" required style="width:8rem">
+          </td>
+          <td title="{{ u.name }}">{{ u.name }}</td>
+          <td class="{{ 'ctl-cell' if not u.username }}">
+            {% if u.username %}
+              {{ u.username }}
+            {% else %}
+              <div class="grid-field"><input type="text" name="username-{{ u.id }}" placeholder="Set username" aria-label="Username for {{ u.name }}"></div>
             {% endif %}
-            <input type="password" name="new_password" placeholder="New password" required minlength="8" style="width:9rem">
-            <button type="submit">{{ "Reset" if u.password_hash else "Grant Access" }}</button>
-          </form>
-        </td>
-        <td>
-          {# Meaningful for admins only — a returned request an admin doesn't own is
-             excluded from their main queue (list_requests() in app/routers/dashboard.py)
-             unless this is checked. Shown as "—" for other roles rather than hidden
-             entirely, so it's clear the setting exists but does nothing for them yet. #}
-          {% if u.role.value == "admin" %}
-            <form method="post" action="/admin/users/{{ u.id }}/set-return-override" class="inline-form">
-              <label>
-                <input type="checkbox" name="can_manage_other_returns" {% if u.can_manage_other_returns %}checked{% endif %}>
-              </label>
-              <button type="submit">Save</button>
-            </form>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if u.role.value == "admin" %}
-            <span class="muted">Always</span>
-          {% else %}
-            <form method="post" action="/admin/users/{{ u.id }}/set-management-access" class="inline-form">
-              <label>
-                <input type="checkbox" name="can_access_management" {% if u.can_access_management %}checked{% endif %}>
-              </label>
-              <button type="submit">Save</button>
-            </form>
-          {% endif %}
-        </td>
-        <td>
-          {% if u.role.value == "admin" %}
-            <span class="muted">Always</span>
-          {% else %}
-            <form method="post" action="/admin/users/{{ u.id }}/set-checklist-audit-access" class="inline-form">
-              <label>
-                <input type="checkbox" name="can_view_checklist_audit" {% if u.can_view_checklist_audit %}checked{% endif %}>
-              </label>
-              <button type="submit">Save</button>
-            </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  </div>
-  </section>
+          </td>
+          <td class="ctl-cell">
+            <div class="grid-field grid-select">
+              <select name="role-{{ u.id }}" aria-label="Role for {{ u.name }}" data-role-select>
+                {% for r in roles %}
+                  <option value="{{ r.value }}" {% if u.role == r %}selected{% endif %}>{{ role_labels.get(r.value, r.value) }}</option>
+                {% endfor %}
+              </select>
+              {{ icon("slimDown", class="vh") }}
+            </div>
+          </td>
+          <td class="ctl-cell">
+            <div class="grid-field has-vh">
+              <input type="password" name="password-{{ u.id }}" placeholder="{{ 'New password' if u.password_hash else 'Set password' }}" autocomplete="new-password" aria-label="New password for {{ u.name }}" data-password>
+              <button type="button" class="vh clickable" title="Show password" data-password-toggle>{{ icon("hide", class="pw-hidden") }}{{ icon("show", class="pw-shown") }}</button>
+            </div>
+          </td>
+          {# Show Others only does anything for admins; admins always have Management and
+             Checklist Audit — so those show locked for the roles they don't apply to. #}
+          <td class="btn-cell">{{ switch("show_others-" ~ u.id, u.can_manage_other_returns, "Show others' returned requests in this admin's queue", locked=not is_admin_row) }}</td>
+          <td class="btn-cell">{{ switch("management-" ~ u.id, is_admin_row or u.can_access_management, "Management access" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
+          <td class="btn-cell">{{ switch("audit-" ~ u.id, is_admin_row or u.can_view_checklist_audit, "Checklist audit" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
+          <td class="btn-cell">{{ switch("active-" ~ u.id, u.password_hash, "Login access", locked=(u.id == current_user.id)) }}{% if u.id == current_user.id and u.password_hash %}<input type="hidden" name="active-{{ u.id }}" value="on">{% endif %}</td>
+        </tr>
+        {% endfor %}
+        <tr class="grid-empty" id="users-empty" hidden><td colspan="9">No users</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="card-footer">
+      <span class="unsaved-note" id="users-unsaved" hidden>Unsaved changes</span>
+      <button type="button" class="btn btn-lite" id="users-cancel" hidden>Cancel</button>
+      <button type="submit" class="btn btn-emph" id="users-save" disabled>Save</button>
+    </div>
+  </form>
+
+  <script>
+    (function () {
+      var form = document.getElementById("users-form");
+      var rows = Array.prototype.slice.call(form.querySelectorAll("[data-user-row]"));
+      var count = document.getElementById("users-count");
+      var empty = document.getElementById("users-empty");
+
+      // All / Active / Inactive — the reference opens on Active.
+      var filterButtons = form.querySelectorAll("[data-users-filter]");
+      function applyFilter(value) {
+        var shown = 0;
+        rows.forEach(function (row) {
+          var match = value === "all" || (value === "active") === (row.getAttribute("data-active") === "1");
+          row.hidden = !match;
+          if (match) shown += 1;
+        });
+        filterButtons.forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-users-filter") === value); });
+        count.textContent = shown;
+        empty.hidden = shown !== 0;
+      }
+      filterButtons.forEach(function (b) {
+        b.addEventListener("click", function () { applyFilter(b.getAttribute("data-users-filter")); });
+      });
+      applyFilter("active");
+
+      // Show / hide what's typed in a password field.
+      form.querySelectorAll("[data-password-toggle]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var input = button.parentNode.querySelector("input");
+          var show = input.type === "password";
+          input.type = show ? "text" : "password";
+          button.classList.toggle("is-shown", show);
+          button.title = show ? "Hide password" : "Show password";
+        });
+      });
+
+      rows.forEach(function (row) {
+        var active = row.querySelector('input[name^="active-"][type="checkbox"]');
+        // Typing a password means giving access with it, so Active turns on with it.
+        row.querySelector("[data-password]").addEventListener("input", function (event) {
+          if (event.target.value && !active.disabled) active.checked = true;
+        });
+        // The locked switches follow the role picked: admins always have Management and
+        // Checklist Audit, and only admins have Show Others.
+        row.querySelector("[data-role-select]").addEventListener("change", function (event) {
+          var admin = event.target.value === "admin";
+          [["management", admin], ["audit", admin], ["show_others", !admin]].forEach(function (pair) {
+            var input = row.querySelector('input[name^="' + pair[0] + '-"]');
+            input.disabled = pair[1];
+            input.closest(".switch").classList.toggle("is-locked", pair[1]);
+            if (pair[1] && pair[0] !== "show_others") input.checked = true;
+          });
+        });
+      });
+
+      // Save is live only once something changed, as in the reference.
+      var save = document.getElementById("users-save");
+      var cancel = document.getElementById("users-cancel");
+      var unsaved = document.getElementById("users-unsaved");
+      function snapshot() {
+        return Array.prototype.map.call(form.elements, function (el) {
+          return el.name ? el.name + "=" + (el.type === "checkbox" ? el.checked : el.value) + (el.disabled ? "!" : "") : "";
+        }).join("&");
+      }
+      var initial = snapshot();
+      function sync() {
+        var dirty = snapshot() !== initial;
+        save.disabled = !dirty;
+        cancel.hidden = !dirty;
+        unsaved.hidden = !dirty;
+      }
+      form.addEventListener("input", sync);
+      form.addEventListener("change", sync);
+      cancel.addEventListener("click", function () {
+        form.reset();
+        form.querySelectorAll("[data-role-select]").forEach(function (select) { select.dispatchEvent(new Event("change")); });
+        sync();
+      });
+      window.addEventListener("beforeunload", function (event) {
+        if (!save.disabled && !form.dataset.submitting) { event.preventDefault(); event.returnValue = ""; }
+      });
+      form.addEventListener("submit", function () { form.dataset.submitting = "1"; });
+    })();
+  </script>
 {% endblock %}

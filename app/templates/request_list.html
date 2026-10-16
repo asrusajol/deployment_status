@@ -74,9 +74,22 @@
             {% endfor %}
           </select>
         </form>
-        {# Shown only once the columns have been dragged out of the default order. #}
-        <button type="button" id="reset-columns" class="btn btn-lite" title="Put the columns back in the default order" hidden>Reset Columns</button>
         <a href="/requests/new" class="btn btn-emph">New Request</a>
+        {# The reference's table settings: show / hide columns and Reset table layout
+           (order and visibility, both kept per browser by the column script below).
+           Its Clear filters / Clear sort wait for the column header menus. #}
+        <div class="table-settings">
+          <button type="button" class="btn btn-lite btn-icon" id="request-table-settings" title="Table settings (show / hide columns)" aria-haspopup="true" aria-expanded="false" aria-controls="request-table-menu">{{ icon("settings") }}<span class="sr-only">Table settings</span></button>
+          <div class="col-menu" id="request-table-menu" hidden>
+            <div class="menu-title">Show / hide columns</div>
+            <div class="menu-count">{{ requests | length }} of {{ total_count }} items</div>
+            {% for label in ["Type", "Task ID", "Module Name", "Client", "System", "URL", "Version", "Branch / Commit", "Changes", "Requested By", "Requested At", "Status", "Deployed At"] %}
+              <label class="menu-item cb"><input type="checkbox" data-col-toggle="{{ label | lower | replace(' / ', '-') | replace(' ', '-') }}" checked><span>{{ label }}</span></label>
+            {% endfor %}
+            <div class="menu-sep"></div>
+            <button type="button" class="menu-item" id="reset-table-layout">{{ icon("clearFilter", 14) }}Reset table layout</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -621,7 +634,7 @@
     })();
   </script>
 
-  {# Draggable column headers. The order is this browser's own (localStorage), so the
+  {# Draggable column headers and the gear's show / hide. Both are this browser's own (localStorage), so the
      server always renders the default and nothing else depends on the order. Cells
      are tagged by column (data-col) for the CSS, which no longer sizes by position;
      Action stays last because it's the pinned column. Both tables share one order. #}
@@ -630,7 +643,9 @@
       var tables = document.querySelectorAll("table[data-column-order]");
       if (!tables.length) return;
       var storeKey = tables[0].getAttribute("data-column-order");
-      var resetButton = document.getElementById("reset-columns");
+      var resetButton = document.getElementById("reset-table-layout");
+      var hiddenKey = storeKey + "-hidden";
+      var toggles = document.querySelectorAll("[data-col-toggle]");
       function slug(text) { return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
       var defaultOrder = [];
@@ -670,7 +685,35 @@
             });
           });
         });
-        if (resetButton) resetButton.hidden = order.join() === movable.join();
+      }
+
+      // Show / hide: hidden columns get .col-hidden on every cell; at least one stays.
+      function readHidden() {
+        try {
+          var saved = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+          if (Array.isArray(saved)) return saved.filter(function (k) { return movable.indexOf(k) !== -1; });
+        } catch (err) {}
+        return [];
+      }
+      function applyHidden(keys) {
+        if (keys.length >= movable.length) keys = keys.slice(0, movable.length - 1);
+        tables.forEach(function (table) {
+          table.querySelectorAll("[data-col]").forEach(function (cell) {
+            cell.classList.toggle("col-hidden", keys.indexOf(cell.getAttribute("data-col")) !== -1);
+          });
+        });
+        toggles.forEach(function (box) {
+          box.checked = keys.indexOf(box.getAttribute("data-col-toggle")) === -1;
+          box.disabled = box.checked && keys.length === movable.length - 1;
+        });
+        try {
+          if (keys.length) localStorage.setItem(hiddenKey, JSON.stringify(keys));
+          else localStorage.removeItem(hiddenKey);
+        } catch (err) {}
+      }
+      function hiddenNow() {
+        return Array.prototype.filter.call(toggles, function (box) { return !box.checked; })
+          .map(function (box) { return box.getAttribute("data-col-toggle"); });
       }
       function save(order) {
         try {
@@ -684,7 +727,22 @@
       }
 
       apply(readSaved() || movable);
+      applyHidden(readHidden());
+      toggles.forEach(function (box) { box.addEventListener("change", function () { applyHidden(hiddenNow()); }); });
 
+      // The gear's menu: opens under the button, closes on a click elsewhere or Escape.
+      var gear = document.getElementById("request-table-settings");
+      var menu = document.getElementById("request-table-menu");
+      function setMenu(open) {
+        menu.hidden = !open;
+        gear.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      if (gear && menu) {
+        gear.addEventListener("click", function (event) { event.stopPropagation(); setMenu(menu.hidden); });
+        menu.addEventListener("click", function (event) { event.stopPropagation(); });
+        document.addEventListener("click", function () { setMenu(false); });
+        document.addEventListener("keydown", function (event) { if (event.key === "Escape") setMenu(false); });
+      }
       var dragKey = null;
       tables.forEach(function (table) {
         Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
@@ -728,6 +786,8 @@
         resetButton.addEventListener("click", function () {
           apply(movable);
           save(movable);
+          applyHidden([]);
+          setMenu(false);
         });
       }
     })();

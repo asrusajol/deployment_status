@@ -95,14 +95,28 @@
           {{ nav_item("/seeder-collection", "Seeder Collection", "shield", path.startswith("/seeder-collection")) }}
         {% endif %}
         {{ nav_item("/clients", "Client", "person", path.startswith("/clients")) }}
-        {# The reference's Settings group (Users, Management Checklist) is our Management
-           hub. Mirrors app.auth.can_access_management — the route's require_management
-           is the actual gate; this only hides a link that would 403. Users stays behind
-           the hub (no /admin/users link here) — see test_management.py. #}
-        {% if current_user.role.value == "admin" or current_user.can_access_management %}
+        {# The reference's Settings group: a toggle (not a link) that opens Users and
+           Management Checklist beneath it, open by default on their own pages. Mirrors
+           app.auth — require_admin / require_management are the actual gates; this
+           only hides links that would 403. /management (the old hub) still works. #}
+        {% set is_admin_nav = current_user.role.value == "admin" %}
+        {% if is_admin_nav or current_user.can_access_management %}
+          {% set on_users = path.startswith("/admin/users") %}
+          {% set on_checklist = path.startswith("/management") %}
+          {% set settings_open = on_users or on_checklist %}
           <div class="sidenav-spacer"></div>
           <div class="sidenav-divider"></div>
-          {{ nav_item("/management", "Settings", "settings" if schertech else "gearNav", path.startswith("/management") or path.startswith("/admin")) }}
+          <button type="button" class="nav-item nav-settings" id="nav-settings" title="Settings" aria-expanded="{{ 'true' if settings_open else 'false' }}" aria-controls="nav-settings-group">
+            <span class="nav-ico">{{ icon("settings" if schertech else "gearNav") }}</span>
+            <span class="nav-label">Settings</span>
+            <span class="nav-chev">{{ icon("down", class="nav-chev-open") }}{{ icon("right", class="nav-chev-closed") }}</span>
+          </button>
+          <div class="nav-group" id="nav-settings-group"{% if not settings_open %} hidden{% endif %}>
+            {% if is_admin_nav %}
+              <a href="/admin/users" class="nav-item nav-sub{{ ' active' if on_users }}" title="Users"{% if on_users %} aria-current="page"{% endif %}><span class="nav-label">Users</span>{% if on_users %}<span class="nav-dot"></span>{% endif %}</a>
+            {% endif %}
+            <a href="/management/checklists" class="nav-item nav-sub{{ ' active' if on_checklist }}" title="Management Checklist"{% if on_checklist %} aria-current="page"{% endif %}><span class="nav-label">Management Checklist</span>{% if on_checklist %}<span class="nav-dot"></span>{% endif %}</a>
+          </div>
         {% endif %}
       </nav>
       <div class="sidenav-footer"><span>Deployment Tracker</span><span>&copy; schertech</span></div>
@@ -145,6 +159,23 @@
         var collapsed = root.classList.toggle("nav-collapsed");
         try { localStorage.setItem("dt-nav", collapsed ? "collapsed" : "open"); } catch (e) {}
         sync();
+      });
+
+      // Settings opens / closes its group; on the folded rail (where the group can't
+      // show) it unfolds the nav and opens the group, as in the reference.
+      var settings = document.getElementById("nav-settings");
+      var group = document.getElementById("nav-settings-group");
+      if (!settings || !group) return;
+      settings.addEventListener("click", function () {
+        var open = group.hidden;
+        if (root.classList.contains("nav-collapsed")) {
+          root.classList.remove("nav-collapsed");
+          try { localStorage.setItem("dt-nav", "open"); } catch (e) {}
+          sync();
+          open = true;
+        }
+        group.hidden = !open;
+        settings.setAttribute("aria-expanded", open ? "true" : "false");
       });
     })();
   </script>

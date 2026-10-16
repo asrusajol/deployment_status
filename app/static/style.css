@@ -47,6 +47,13 @@
   --sapContent_IconColor: #1D2D3E;
   --sapNegativeText: #AA0808;
   --btnNegLiteBg: #FFD6E9;
+  --switchOnBg: #0064D9;
+  --switchOffBg: #788FA6;
+  --switchKnobBg: #FFFFFF;
+  --dialogDivider: #D9D9D9;
+  --sapButton_Selected_BorderColor: #0064D9;
+  --sapField_InvalidColor: #E90B0B;
+  --sapField_InvalidBackground: #FFEAF4;
   --warningIconColor: #E76500;
   --sapList_Background: #FFFFFF;
   --sapGroup_TitleBackground: #FFFFFF;
@@ -177,6 +184,8 @@
   --sysMinW: 0px;
 
   --sapButton_Lite_TextColor: #005981;
+  --switchOnBg: #005981;
+  --sapButton_Selected_BorderColor: #005981;
 }
 
 * { box-sizing: border-box; }
@@ -398,6 +407,7 @@ a { color: inherit; }
 [data-theme="schertech"] .nav-item { padding: 12px 8px; border-radius: var(--radius-sm); border: none; }
 [data-theme="schertech"] .nav-label { font-size: 16px; line-height: 19px; }
 [data-theme="schertech"] .nav-dot { width: 8px; height: 8px; }
+[data-theme="schertech"] .nav-sub { padding-left: 36px; }
 [data-theme="schertech"] .nav-dot::before { width: 8px; height: 8px; }
 [data-theme="schertech"] .sidenav-divider { display: none; }
 [data-theme="schertech"] .sidenav-footer {
@@ -413,12 +423,23 @@ a { color: inherit; }
 
 /* Hamburger-collapsed: the reference's 60px icon rail. The class sits on <html> (set
    before first paint in base.html) so the choice survives page loads. */
+/* Settings: a toggle with a chevron, its sub-items indented under it. */
+.nav-settings { background: none; font: inherit; text-align: left; cursor: pointer; }
+.nav-chev { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: var(--navText); flex-shrink: 0; }
+.nav-settings[aria-expanded="true"] .nav-chev-closed,
+.nav-settings[aria-expanded="false"] .nav-chev-open { display: none; }
+.nav-group { display: flex; flex-direction: column; gap: inherit; }
+.nav-group[hidden] { display: none; }
+.nav-sub { padding-left: 36px; }
+
 .nav-collapsed .sidenav { width: 60px; }
 .nav-collapsed .sidenav nav { padding-left: 8px; padding-right: 8px; }
 .nav-collapsed .nav-item { justify-content: center; }
 .nav-collapsed .nav-label,
 .nav-collapsed .nav-dot,
-.nav-collapsed .sidenav-footer { display: none !important; }
+.nav-collapsed .sidenav-footer,
+.nav-collapsed .nav-chev,
+.nav-collapsed .nav-group { display: none !important; }
 
 @media (max-width: 1100px) {
   .shell-theme-label { display: none; }
@@ -1992,174 +2013,7 @@ code {
 .management-card-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--sapTitleColor); }
 .management-card-text { font-size: 14px; color: var(--sapContent_LabelColor); }
 
-/* Checklists page (management_checklists.html): one list of terms grouped by type,
-   each row the wording + its type badge, with admin controls beside it. */
-.checklist-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.checklist-head .subtitle { margin-bottom: 0; }
-
-.checklist-add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin: 1rem 0 0;
-  padding: 1rem 1.1rem;
-  background: var(--panel);
-  border: 1px solid var(--sapSelectedBorder);
-  border-radius: var(--radius);
-}
-.checklist-add[hidden] { display: none; }
-.checklist-add-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1 1 320px; }
-.checklist-add-actions { display: flex; gap: 0.5rem; }
-
-.checklist-add input[type="text"],
-.checklist-add select,
-.checklist-edit input[type="text"],
-.checklist-edit select {
-  width: 100%;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.9rem;
-  font-family: var(--font-body);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--hairline-strong);
-  background: var(--sapField_Background);
-  color: var(--paper);
-}
-.checklist-add input::placeholder { color: var(--fog-dim); }
-.checklist-add input:focus, .checklist-add select:focus,
-.checklist-edit input:focus, .checklist-edit select:focus { outline: none; border-color: var(--teal); }
-
-/* Primary buttons only — .button-secondary (Cancel) keeps its own outlined style;
-   including it here stripped its border and left it as bare text. */
-.checklist-add button:not(.button-secondary), .checklist-edit button:not(.button-secondary) {
-  padding: 0.45rem 0.9rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.checklist-add button.start, .checklist-edit button.start,
-.checklist-head button.start {
-  background: var(--teal);
-  color: var(--on-accent);
-}
-.checklist-head button.start {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.checklist-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0.75rem; }
-.filter-chip {
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fog);
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-/* Hover only firms up the border — changing the text colour made a hovered chip look
-   selected next to the real one. */
-.filter-chip:not(.is-active):hover { border-color: var(--fog); }
-.filter-chip.is-active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
-
-.checklist-panel, .checklist-retired {
-  background: var(--panel);
-  border-radius: var(--radius);
-  box-shadow: var(--sapContent_Shadow0);
-}
-.checklist-list { list-style: none; margin: 0; padding: 0; }
-.checklist-list[hidden] { display: none; }
-.checklist-panel .checklist-list + .checklist-list { border-top: 1px solid var(--hairline-strong); }
-
-.checklist-term, .checklist-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.85rem;
-  padding: 0.8rem 1.1rem;
-  border-top: 1px solid var(--hairline);
-}
-.checklist-list > li:first-child { border-top: none; }
-.checklist-empty { align-items: center; gap: 0.6rem; font-size: 0.88rem; }
-
-.checklist-num {
-  flex: none;
-  width: 1.6rem;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--fog-dim);
-  padding-top: 0.1rem;
-}
-.checklist-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
-.checklist-text { color: var(--paper); font-size: 0.92rem; line-height: 1.45; }
-.checklist-term.is-retired .checklist-text { color: var(--fog-dim); text-decoration: line-through; }
-.checklist-edit { display: flex; flex-wrap: wrap; gap: 0.4rem; width: 100%; }
-.checklist-edit[hidden] { display: none; }
-.checklist-edit input[type="text"] { flex: 1 1 320px; width: auto; }
-.checklist-edit select { flex: 0 1 220px; width: auto; }
-
-.checklist-actions { flex: none; display: flex; align-items: center; gap: 0.3rem; }
-.checklist-actions form { display: flex; gap: 0.3rem; margin: 0; }
-.icon-action, .text-action {
-  height: 1.9rem;
-  border: 1px solid var(--sapButton_BorderColor);
-  border-radius: var(--radius-sm);
-  background: var(--sapButton_Background);
-  color: var(--sapButton_TextColor);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-.icon-action { width: 1.9rem; padding: 0; }
-.text-action { padding: 0 0.65rem; font-weight: 600; }
-.icon-action:hover, .text-action:hover { background: var(--sapHoverColor); }
-.text-action.is-danger { color: var(--red); border-color: var(--red-bd); }
-.text-action.is-danger:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
-
-.checklist-empty-note { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--fog); }
-.checklist-empty-note[hidden] { display: none; }
-.checklist-retired { margin-top: 1rem; }
-.checklist-retired summary {
-  padding: 0.7rem 1.1rem;
-  color: var(--fog);
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-.checklist-retired[open] summary { border-bottom: 1px solid var(--hairline); }
-
-.checklist-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.checklist-chips[hidden], .checklist-text[hidden] { display: none; }
-
-/* "Applies to" — one checkbox per request type, labelled with its badge. */
-.checklist-types {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.8rem;
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-.checklist-types legend { float: left; margin-right: 0.4rem; }
-.checklist-type-option { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
-.checklist-type-option input { accent-color: var(--teal); }
-.checklist-add .checklist-types { flex: 1 1 100%; }
-.checklist-edit .checklist-types { flex: 1 1 100%; }
-.checklist-edit-actions { display: flex; gap: 0.4rem; }
-
-@media (max-width: 640px) {
-  .checklist-term { flex-wrap: wrap; }
-  .checklist-actions { width: 100%; padding-left: 2.45rem; }
-}
+/* Checklists page: see "Settings pages" at the end of this file. */
 
 /* Checklist audit dialog: the terms confirmed at one start. */
 .checklist-log-items {
@@ -2380,3 +2234,123 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor)
 .toolbar-lead .btn-icon { margin-left: -8px; }
 .page-card .card-body > .subtitle:first-child { margin-top: 0; }
 .ico-flip { transform: rotate(180deg); }
+
+
+/* ================= Settings pages (Users, Management Checklist) =================
+   The reference's grid table (`.ath-table`), segmented button, switch and in-cell
+   field. Scoped class names: the templates' own `.field` predates the design. */
+.grid-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 14px; background: var(--sapList_Background); }
+.grid-table th, .grid-table td {
+  height: 32px; padding: 0 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-right: 1px solid var(--sapList_BorderColor); border-bottom: 1px solid var(--sapList_BorderColor);
+  color: var(--sapTextColor); background: var(--sapList_Background); text-align: left;
+}
+.grid-table thead th { position: sticky; top: 0; z-index: 3; background: var(--sapList_HeaderBackground); font-weight: 700; color: var(--sapList_HeaderTextColor); }
+.grid-table tbody tr:hover td { background: var(--sapHoverColor); }
+.grid-table .center { text-align: center; }
+.grid-table td.btn-cell { padding: 0 4px; text-align: center; }
+.grid-table td.ctl-cell { padding: 0 4px; }
+.grid-table tr.grid-empty td { height: 96px; text-align: center; color: var(--sapContent_LabelColor); }
+.grid-table tr.grid-empty:hover td { background: var(--sapList_Background); }
+.cell-icon { color: var(--sapContent_NonInteractiveIconColor); display: inline-flex; padding: 5px 8px; }
+.ath-action { display: inline-flex; align-items: center; justify-content: center; }
+
+.seg { display: flex; align-items: flex-start; background: var(--sapButton_Background); border: 1px solid var(--sapButton_BorderColor); border-radius: 8px; }
+.seg button { padding: 5px 8px; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-weight: 700; font-size: 14px; line-height: 14px; color: var(--sapButton_TextColor); margin: -1px 0; cursor: pointer; }
+.seg button:hover:not(.on) { background: var(--sapHoverColor); }
+.seg button.on { background: var(--sapContent_Selected_Hover_Background); border-color: var(--sapButton_Selected_BorderColor); }
+
+/* Switch: a real checkbox (so the form posts it) drawn as the reference's switch. */
+.switch { width: 32px; height: 20px; border-radius: 12px; background: var(--switchOffBg); position: relative; flex-shrink: 0; display: inline-block; vertical-align: middle; transition: background .15s; cursor: pointer; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+.switch .toggle { position: absolute; top: 2px; left: 2px; width: 20px; height: 16px; border-radius: 12px; background: var(--switchKnobBg); display: flex; align-items: center; justify-content: center; color: var(--sapTextColor); transition: left .15s; pointer-events: none; }
+.switch:has(input:checked) { background: var(--switchOnBg); }
+.switch:has(input:checked) .toggle { left: 10px; color: var(--switchOnBg); }
+.switch:has(input:checked) .switch-off,
+.switch:not(:has(input:checked)) .switch-on { display: none; }
+.switch:has(input:focus-visible) { outline: 2px solid var(--sapSelectedBorder); outline-offset: 1px; }
+.switch.is-locked { opacity: .4; cursor: default; }
+
+/* In-cell field (the reference's `.field`): input or select, optional icon at the end. */
+.grid-field { position: relative; display: flex; align-items: center; height: 26px; width: 100%; background: var(--sapField_Background); border-radius: var(--radius-field); box-shadow: var(--sapField_Shadow), inset 0 -1px 0 var(--sapField_BorderColor); }
+.grid-field:focus-within { outline: 2px solid var(--sapSelectedBorder); outline-offset: 1px; }
+.grid-field input, .grid-field select { flex: 1; min-width: 0; width: 100%; height: 100%; border: none; outline: none; background: transparent; padding: 0 8px; font: inherit; font-size: 14px; color: var(--sapField_TextColor); appearance: none; -webkit-appearance: none; box-shadow: none; border-radius: 0; }
+.grid-field select { padding-right: 32px; cursor: pointer; }
+.grid-field input::placeholder { font-style: italic; color: var(--sapField_PlaceholderTextColor); opacity: 1; }
+.grid-field .vh { position: absolute; right: 0; top: 0; height: 100%; padding: 5px 8px; border: none; border-radius: var(--radius-field); background: none; color: var(--sapContent_IconColor); display: flex; align-items: center; pointer-events: none; }
+.grid-field .vh.clickable { pointer-events: auto; cursor: pointer; }
+.grid-field .vh.clickable:hover { background: var(--sapHoverColor); }
+.grid-field.has-vh input { padding-right: 34px; letter-spacing: .5px; }
+.grid-field .vh .pw-shown, .grid-field .vh.is-shown .pw-hidden { display: none; }
+.grid-field .vh.is-shown .pw-shown { display: inline-flex; }
+.grid-field.is-invalid { box-shadow: inset 0 0 0 1px var(--sapField_InvalidColor), inset 0 -2px 0 var(--sapField_InvalidColor); background: var(--sapField_InvalidBackground); }
+
+.unsaved-note { margin-right: auto; padding-left: 8px; font-size: 12px; color: var(--sapContent_LabelColor); }
+.message-strip { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 16px; font-size: 14px; }
+.message-error { background: var(--stNegativeBg); color: var(--stNegativeText); border-bottom: 1px solid var(--stNegativeBd); }
+.users-card .table-scroll { flex: 1; }
+
+/* A switch drawn on a <button> (the checklist's Before Start / Before Mark Deployed,
+   which post on click) or a read-only <span>, rather than on a checkbox. */
+button.switch { border: none; padding: 0; font: inherit; }
+.switch.on { background: var(--switchOnBg); }
+.switch.on .toggle { left: 10px; color: var(--switchOnBg); }
+.switch .toggle .ico { font-size: 12px; }
+
+/* Management Checklist: Add Item over the reference's tab bar, then a nested card
+   holding the table, with its own toolbar (title, Search, Active / Retire). */
+.toolbar.toolbar-flush { border-bottom: none; }
+.tabbar { display: flex; gap: 4px; padding: 0 16px; border-top: 1px solid var(--sapGroup_TitleBorderColor); border-bottom: 1px solid var(--sapGroup_TitleBorderColor); flex-shrink: 0; background: var(--sapBaseColor); }
+.tabbar .tab { position: relative; padding: 9px 12px 8px; border: none; background: none; font: inherit; font-weight: 700; font-size: 16px; color: var(--sapTitleColor); cursor: pointer; }
+.tabbar .tab:first-child { padding-left: 2px; }
+.tabbar .tab.on { color: var(--sapBrandColor); }
+.tabbar .tab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 2px 2px 0 0; background: var(--sapBrandColor); }
+.inner-wrap { padding: 12px; display: flex; background: var(--sapBaseColor); }
+.inner-wrap > .inner-card { flex: 1; min-width: 0; }
+.checklist-card .checklist-empty-note { margin: 0; padding: 0 16px 12px; background: var(--sapBaseColor); font-size: 12px; color: var(--sapContent_LabelColor); }
+.grid-table th.num, .grid-table td.num { text-align: right; }
+.grid-table .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid-table tr.is-retired .cell-text { color: var(--sapContent_LabelColor); }
+.grid-table .inline-form, .grid-table .switch-form { display: inline-flex; margin: 0; }
+.st-tag.st-icon-only { width: 28px; padding: 0; justify-content: center; vertical-align: middle; }
+
+/* The reference's dialog (Add / Edit Item). */
+dialog.dialog { padding: 0; border: none; border-radius: 12px; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); background: var(--sapBaseColor); color: var(--sapTextColor); box-shadow: var(--sapContent_Shadow3); white-space: normal; text-align: left; }
+dialog.dialog::backdrop { background: var(--sapBlockLayer); }
+dialog.dialog > form { display: flex; flex-direction: column; max-height: calc(100vh - 48px); margin: 0; }
+.dialog-header { height: 40px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--dialogDivider); }
+.dialog-title { font-weight: 700; font-size: 16px; color: var(--sapTitleColor); }
+.dialog-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: grid; gap: 10px; }
+.dialog-footer { flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 6px 16px; border-top: 1px solid var(--dialogDivider); min-height: 38px; }
+.dialog-field { display: block; margin: 0; padding: 0; border: none; min-width: 0; }
+.label { display: block; padding: 0; font-size: 14px; color: var(--sapContent_LabelColor); margin-bottom: 6px; }
+.dialog-choices { display: grid; grid-template-columns: 1fr 1fr; margin-left: -8px; }
+
+/* The reference's checkbox and radio: 32px hit area, a 16px box. Real inputs, drawn. */
+.cb, .rb { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; cursor: pointer; font-size: 14px; color: var(--sapTextColor); user-select: none; }
+.cb input, .rb input { appearance: none; -webkit-appearance: none; width: 32px; height: 32px; margin: 0; flex-shrink: 0; cursor: pointer; background: none; border: none; box-shadow: none; position: relative; }
+.cb input::before, .rb input::before { content: ""; position: absolute; left: 8px; top: 8px; width: 16px; height: 16px; background: var(--sapField_Background); box-shadow: inset 0 0 0 1px var(--sapField_BorderColor); }
+.cb input::before { border-radius: 4px; }
+.rb input::before { border-radius: 50%; }
+.cb:hover input::before, .rb:hover input::before { box-shadow: inset 0 0 0 1px var(--sapSelectedBorder); background: var(--sapContent_Selected_Hover_Background); }
+.cb input:checked::after { content: "\E05B"; font-family: "SAP-icons"; position: absolute; left: 8px; top: 8px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--sapBrandColor); }
+.rb input:checked::after { content: ""; position: absolute; left: 12px; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--sapBrandColor); }
+.cb input:focus-visible, .rb input:focus-visible { outline: 2px solid var(--sapSelectedBorder); outline-offset: -4px; }
+
+/* .btn sets display, which would otherwise beat the hidden attribute. */
+.btn[hidden] { display: none; }
+
+/* Requests table settings (the gear): the reference's column menu. */
+.table-settings { position: relative; display: inline-flex; }
+.col-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 300; min-width: 235px; max-height: 70vh; overflow: auto; padding: 4px 0; background: var(--sapBaseColor); border-radius: 12px; box-shadow: var(--sapContent_Shadow2); text-align: left; }
+.col-menu[hidden] { display: none; }
+.col-menu .menu-title { padding: 6px 12px 4px; font-size: 12px; font-weight: 600; color: var(--sapContent_LabelColor); }
+.col-menu .menu-count { padding: 0 12px 6px; font-size: 12px; color: var(--sapContent_LabelColor); }
+.col-menu .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; border: none; background: none; font: inherit; font-size: 14px; text-align: left; color: var(--sapTextColor); cursor: pointer; white-space: nowrap; }
+.col-menu .menu-item.cb { min-height: 0; padding: 0 12px 0 4px; gap: 4px; }
+.col-menu .menu-item:hover { background: var(--sapHoverColor); }
+.col-menu .menu-item .ico { color: var(--sapContent_LabelColor); flex-shrink: 0; }
+.col-menu .menu-sep { height: 1px; margin: 4px 0; background: var(--sapList_BorderColor); }
+.cb input:disabled { opacity: .4; cursor: default; }
+.requests-table .col-hidden { display: none; }

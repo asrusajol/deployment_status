@@ -190,6 +190,10 @@ def edit_checklist_item(
     types_submitted: str | None = Form(None),
     # Before start / Before Mark Deployed; left as it is when absent.
     due: str | None = Form(None),
+    # The design's Sort Order, which here is the term's place in one type's list (order
+    # is per type); set from that type's tab. Left alone when absent.
+    position: str | None = Form(None),
+    position_type: str | None = Form(None),
     view: str | None = Form(None),
 ):
     # Safe to reword or reassign: ChecklistConfirmation snapshots the label, and each
@@ -205,9 +209,36 @@ def edit_checklist_item(
     item.types = kept + added
     item.label = new_label
     item.due = _parse_due(due, item.due)
+    if position not in (None, ""):
+        _place(db, item, position, position_type)
     _touch(item, current_user)
     db.commit()
     return _back(view)
+
+
+def _place(db: Session, item: ChecklistItem, position: str, position_type: str | None) -> None:
+    """Puts the term at `position` (1 = first; past the end = last) in one type's list,
+    renumbering that type 1..n. Only that type moves — the others keep their order."""
+    if not position.strip().isdigit() or int(position) < 1:
+        raise HTTPException(status_code=400, detail="Sort order must be a whole number from 1.")
+    (request_type,) = _parse_types([position_type or ""])
+    link = next((t for t in item.types if t.request_type == request_type), None)
+    if link is None:
+        raise HTTPException(status_code=400, detail="That term isn't assigned to this request type.")
+    db.flush()
+    others = (
+        db.query(ChecklistItemType)
+        .join(ChecklistItemType.item)
+        .filter(ChecklistItemType.request_type == request_type, ChecklistItemType.item_id != item.id)
+        .order_by(ChecklistItemType.position, ChecklistItemType.item_id)
+        .all()
+    )
+    # The number is the one the tab shows — counted over active terms only, so retired
+    # ones (still holding positions) go after them rather than shifting the count.
+    active = [t for t in others if t.item.is_active]
+    active.insert(min(int(position), len(active) + 1) - 1, link)
+    for number, row in enumerate(active + [t for t in others if not t.item.is_active], start=1):
+        row.position = number
 
 
 @router.post("/checklists/{item_id}/move")

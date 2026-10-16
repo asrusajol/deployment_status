@@ -1,219 +1,318 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% block title %}Checklists — Management — Deployment Tracker{% endblock %}
+{% block title %}Management Checklist — Deployment Tracker{% endblock %}
 
-{# "Applies to" checkboxes, shared by the Add form and every Edit form. #}
-{% macro type_checkboxes(checked_types) %}
-  <fieldset class="checklist-types">
-    <legend class="cell-label">Applies to</legend>
-    {% for request_type in type_labels %}
-      <label class="checklist-type-option">
-        <input type="checkbox" name="request_types" value="{{ request_type.value }}" {% if request_type in checked_types %}checked{% endif %}>
-        <span class="badge badge-type-{{ request_type.value }}">{{ type_labels[request_type] }}</span>
-      </label>
-    {% endfor %}
+{# The reference's Add / Edit Item fields: Name, Applies to, When, and — in a type's
+   own tab only, since order is per type — Sort Order. #}
+{% macro item_fields(item, group_type, number) %}
+  <label class="dialog-field">
+    <span class="label">Name<span class="req">*</span></span>
+    <span class="grid-field"><input type="text" name="label" value="{{ item.label if item else '' }}" maxlength="500" required placeholder="e.g. Restart Supervisor (eg. laravel-worker, scheduler worker)"></span>
+  </label>
+  <fieldset class="dialog-field checklist-types">
+    <legend class="label">Applies to:</legend>
+    <div class="dialog-choices">
+      {% set checked_types = (item.types | map(attribute="request_type") | list) if item else ([group_type] if group_type else []) %}
+      {% for request_type in type_labels %}
+        <label class="cb"><input type="checkbox" name="request_types" value="{{ request_type.value }}" {% if request_type in checked_types %}checked{% endif %}><span>{{ type_labels[request_type] }}</span></label>
+      {% endfor %}
+    </div>
   </fieldset>
-{% endmacro %}
-
-{# When the term is due: Before start gates Start Deployment; Before Mark Deployed is for
-   steps that can only be done once the work has run, and gates Mark Deployed. #}
-{% macro due_choice(current) %}
-  <fieldset class="checklist-types">
-    <legend class="cell-label">When</legend>
-    {% for value, text in due_labels.items() %}
-      <label class="checklist-type-option">
-        <input type="radio" name="due" value="{{ value }}" {% if value == current %}checked{% endif %}>
-        <span>{{ text }}</span>
-      </label>
-    {% endfor %}
+  <fieldset class="dialog-field">
+    <legend class="label">When:</legend>
+    <div class="dialog-choices">
+      {% set current_due = item.due if item else "before_start" %}
+      {% for value, text in due_labels.items() %}
+        <label class="rb"><input type="radio" name="due" value="{{ value }}" {% if value == current_due %}checked{% endif %}><span>{{ text }}</span></label>
+      {% endfor %}
+    </div>
   </fieldset>
+  {% if item and group_type %}
+    <label class="dialog-field">
+      <span class="label">Sort Order<span class="req">*</span></span>
+      <span class="grid-field"><input type="text" name="position" value="{{ number }}" inputmode="numeric" pattern="[0-9]+" required></span>
+      <input type="hidden" name="position_type" value="{{ group_type.value }}">
+    </label>
+  {% endif %}
 {% endmacro %}
 
 {# One term's row. A term assigned to several types appears under each of them;
-   `group_type` is the type this row sits under (None for "not assigned" and retired),
-   and `number` is its place in that type's Start pop-up. Admin controls sit beside the
-   text; the edit form stays hidden until ✎ opens it. #}
+   `group_type` is the tab it sits in (None for All), `number` its place in that type's
+   Start pop-up. Admins get the switches, Edit and Retire; others only read. #}
 {% macro term_row(item, number, group_type) %}
-  <li class="checklist-term{% if not item.is_active %} is-retired{% endif %}" data-item-id="{{ item.id }}">
-    <span class="checklist-num">{{ number }}</span>
-    <div class="checklist-body">
-      <span class="checklist-text">{{ item.label }}</span>
-      {% if is_admin %}
-        <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit" hidden>
-          <input type="hidden" name="view" value="{{ view }}">
-          <input type="hidden" name="types_submitted" value="1">
-          <input type="text" name="label" value="{{ item.label }}" maxlength="500" required>
-          {{ type_checkboxes(item.types | map(attribute="request_type") | list) }}
-          {{ due_choice(item.due) }}
-          <div class="checklist-edit-actions">
-            <button type="submit" class="start">Save</button>
-            <button type="button" class="button-secondary" data-edit-cancel>Cancel</button>
-          </div>
-        </form>
-      {% endif %}
-      <span class="checklist-chips">
-        <span class="checklist-due checklist-due-{{ item.due }}">{{ due_labels[item.due] }}</span>
-        {% for assignment in item.types %}
-          <span class="badge badge-type-{{ assignment.request_type.value }}">{{ type_labels[assignment.request_type] }}</span>
+  {% set retired = not item.is_active %}
+  <tr class="checklist-term{% if retired %} is-retired{% endif %}" data-item-id="{{ item.id }}"{% if retired %} data-retired hidden{% endif %} data-label="{{ item.label }}">
+    <td class="checklist-item-cell"><span class="cell-text" title="{{ item.label }}{% if not item.types %} — Not assigned to any request type{% endif %}">{{ item.label }}{% if not item.types %} <span class="muted">· Not assigned</span>{% endif %}</span>
+        {% if is_admin and not retired %}
+          <dialog class="dialog checklist-edit-dialog" aria-label="Edit Item">
+            <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit">
+              <div class="dialog-header"><span class="dialog-title">Edit Item</span></div>
+              <div class="dialog-body">
+                <input type="hidden" name="view" value="{{ view }}">
+                <input type="hidden" name="types_submitted" value="1">
+                {{ item_fields(item, group_type, number) }}
+              </div>
+              <div class="dialog-footer">
+                <button type="submit" class="btn btn-emph">Save Changes</button>
+                <button type="button" class="btn btn-lite" data-dialog-close>Cancel</button>
+              </div>
+            </form>
+          </dialog>
+        {% endif %}
+    </td>
+    {% set assigned = item.types | map(attribute="request_type") | list %}
+    {% for request_type in type_labels %}
+      {% set yes = request_type in assigned %}
+      <td class="btn-cell" data-applies="{{ request_type.value }}" data-yes="{{ 1 if yes else 0 }}">
+        {% if yes %}<span class="st-tag st-positive st-icon-only" title="Yes">{{ icon("deployed", 12) }}</span>{% else %}<span class="st-tag st-negative st-icon-only" title="No">{{ icon("errorCircle", 12) }}</span>{% endif %}
+      </td>
+    {% endfor %}
+    {% for value, text in due_labels.items() %}
+      {% set on = item.due == value %}
+      <td class="btn-cell">
+        {% if is_admin and not retired %}
+          {# A submit button carrying the other "when": flipping either switch moves the
+             term to the other step, as the reference's pair does. #}
+          <form method="post" action="/management/checklists/{{ item.id }}/edit" class="switch-form">
+            <input type="hidden" name="view" value="{{ view }}">
+            <input type="hidden" name="label" value="{{ item.label }}">
+            <button type="submit" name="due" value="{{ due_labels | reject('equalto', value) | first if on else value }}" class="switch{{ ' on' if on }}" role="switch" data-due-switch="{{ value }}" aria-checked="{{ 'true' if on else 'false' }}" title="{{ text }}">
+              <span class="toggle">{{ icon("accept" if on else "minus", 12) }}</span>
+            </button>
+          </form>
         {% else %}
-          <span class="muted">Not assigned</span>
-        {% endfor %}
-      </span>
-    </div>
-    {% if is_admin %}
-      <div class="checklist-actions">
-        {% if item.is_active %}
-          <button type="button" class="icon-action" title="Edit wording and types" data-edit-toggle>{{ icon("edit") }}<span class="sr-only">Edit</span></button>
-          {% if group_type %}
-            <form method="post" action="/management/checklists/{{ item.id }}/move">
-          <input type="hidden" name="view" value="{{ view }}">
-              <input type="hidden" name="request_type" value="{{ group_type.value }}">
-              <button type="submit" name="direction" value="up" class="icon-action" title="Move up in {{ type_labels[group_type] }}">{{ icon("down", class="ico-flip") }}<span class="sr-only">Move up</span></button>
-              <button type="submit" name="direction" value="down" class="icon-action" title="Move down in {{ type_labels[group_type] }}">{{ icon("down") }}<span class="sr-only">Move down</span></button>
+          <span class="switch{{ ' on' if on }} is-locked" role="switch" data-due-switch="{{ value }}" aria-checked="{{ 'true' if on else 'false' }}" aria-disabled="true" title="{{ text }}"><span class="toggle">{{ icon("accept" if on else "minus", 12) }}</span></span>
+        {% endif %}
+      </td>
+    {% endfor %}
+    <td class="num" data-sort-order="{{ number if group_type else '' }}">{{ number if group_type and not retired else "" }}</td>
+    <td class="btn-cell">
+      {% if is_admin %}
+        <div class="ath-action">
+          {% if not retired %}
+            <button type="button" class="btn btn-lite btn-icon" title="Edit" data-edit-toggle>{{ icon("edit") }}<span class="sr-only">Edit</span></button>
+            <form method="post" action="/management/checklists/{{ item.id }}/deactivate" class="inline-form" data-confirm-retire="{{ item.label }}">
+              <input type="hidden" name="view" value="{{ view }}">
+              <button type="submit" class="btn btn-lite btn-icon" title="Retire">{{ icon("del") }}<span class="sr-only">Retire</span></button>
+            </form>
+          {% else %}
+            <form method="post" action="/management/checklists/{{ item.id }}/activate" class="inline-form">
+              <input type="hidden" name="view" value="{{ view }}">
+              <button type="submit" class="btn btn-lite btn-icon" title="Restore to active">{{ icon("ret") }}<span class="sr-only">Restore</span></button>
             </form>
           {% endif %}
-          <form method="post" action="/management/checklists/{{ item.id }}/deactivate">
-          <input type="hidden" name="view" value="{{ view }}">
-            <button type="submit" class="text-action is-danger">Retire</button>
-          </form>
-        {% else %}
-          <form method="post" action="/management/checklists/{{ item.id }}/activate">
-          <input type="hidden" name="view" value="{{ view }}">
-            <button type="submit" class="text-action">Restore</button>
-          </form>
-        {% endif %}
-      </div>
-    {% endif %}
-  </li>
+        </div>
+      {% endif %}
+    </td>
+  </tr>
+{% endmacro %}
+
+{% macro group_table(key, rows, group_type, empty_text) %}
+  <table class="grid-table checklist-table" data-group="{{ key }}"{% if view != key %} hidden{% endif %}>
+    <colgroup>
+      <col style="width:260px"><col style="width:140px"><col style="width:140px"><col style="width:140px">
+      <col style="width:140px"><col style="width:140px"><col style="width:90px"><col style="width:100px">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Item</th>
+        {% for request_type in type_labels %}<th class="center">{{ type_labels[request_type] }}</th>{% endfor %}
+        <th class="center">Before Start</th>
+        <th class="center">Before Mark Deployed</th>
+        <th class="num">Sort Order</th>
+        <th class="center">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item, number in rows %}
+        {{ term_row(item, number, group_type) }}
+      {% endfor %}
+      {% for item in retired if not group_type or group_type in (item.types | map(attribute="request_type") | list) %}
+        {{ term_row(item, "", group_type) }}
+      {% endfor %}
+      <tr class="grid-empty" data-empty-row{% if rows %} hidden{% endif %}><td colspan="8">{{ empty_text }}</td></tr>
+    </tbody>
+  </table>
 {% endmacro %}
 
 {% block content %}
-  {# Undesigned page in the reference's frame (its "Management Checklist" sits under
-     Settings): one card, title and Add term in its toolbar. #}
-  <section class="card page-card">
-  <div class="toolbar">
-    <div class="toolbar-lead"><a href="/management" class="btn btn-lite btn-icon" title="Back to Management">{{ icon("navBack") }}<span class="sr-only">Management</span></a><h1 class="toolbar-title">Checklists</h1></div>
-    <div class="toolbar-buttons"><button type="button" class="btn btn-emph" id="checklist-add-toggle">Add term</button></div>
-  </div>
-  <div class="card-body">
-  <div class="checklist-head">
-    <div>
-      <p class="subtitle">Terms DevOps tick before Start Deployment, or before Mark Deployed for steps done after the work. Ticks are saved as they're made. One term can apply to several request types; a type with no active terms starts with one click. A DB dump shared with the requestor (not restored) skips the checklist.</p>
+  {% set tab_labels = {"all": "All"} %}
+  {% set view_type = (sections | map(attribute=0) | selectattr("value", "equalto", view) | first) if view != "all" else none %}
+  {% for request_type in type_labels %}{% set _ = tab_labels.update({request_type.value: type_labels[request_type]}) %}{% endfor %}
+  {# The reference's Management Checklist: a card with Add Item, tabs per request type,
+     and a table per tab with search and Active / Retire. Tabs, search and Active /
+     Retire only filter in the browser; every change posts and comes back to the tab. #}
+  <section class="card checklist-card">
+    <div class="toolbar toolbar-flush">
+      <h1 class="toolbar-title">Management Checklist</h1>
+      <div class="toolbar-buttons"><button type="button" class="btn btn-emph" id="checklist-add-toggle">Add Item</button></div>
     </div>
-  </div>
-
-  <form method="post" action="/management/checklists" class="checklist-add" id="checklist-add-form" hidden>
-          <input type="hidden" name="view" value="{{ view }}">
-    <label class="checklist-add-field">
-      <span class="cell-label">Term</span>
-      <input type="text" name="label" maxlength="500" required placeholder="e.g. Snapshot the target database">
-    </label>
-    {{ type_checkboxes([]) }}
-    {{ due_choice("before_start") }}
-    <div class="checklist-add-actions">
-      <button type="submit" class="start">Add</button>
-      <button type="button" class="button-secondary" id="checklist-add-cancel">Cancel</button>
-    </div>
-  </form>
-
-  {# Filters only the view in this browser — no request, no state. #}
-  <div class="checklist-filter" role="group" aria-label="Filter by request type">
-    <button type="button" class="filter-chip{% if view == "all" %} is-active{% endif %}" data-checklist-filter="all">All</button>
-    {% for request_type, _rows in sections %}
-      <button type="button" class="filter-chip{% if view == request_type.value %} is-active{% endif %}" data-checklist-filter="{{ request_type.value }}">{{ type_labels[request_type] }}</button>
-    {% endfor %}
-  </div>
-
-  <div class="checklist-panel">
-    {# All: each term once, with every type it applies to. Order is per type, so the
-       ↑↓ controls live only in a type's own view below. #}
-    <ol class="checklist-list" data-group="all"{% if view != "all" %} hidden{% endif %}>
-      {% for item in all_items %}
-        {{ term_row(item, loop.index, None) }}
-      {% else %}
-        <li class="checklist-empty"><span class="muted">No terms yet — use + Add term.</span></li>
+    <div class="tabbar" role="tablist" aria-label="Request type">
+      {% for key, text in tab_labels.items() %}
+        <button type="button" class="tab{{ ' on' if view == key }}" data-checklist-filter="{{ key }}" role="tab" aria-selected="{{ 'true' if view == key else 'false' }}">{{ text }}</button>
       {% endfor %}
-    </ol>
-    {# One type's view: its terms in its Start pop-up order, with ↑↓. Hidden until its
-       chip is picked. #}
-    {% for request_type, rows in sections %}
-      <ol class="checklist-list" data-group="{{ request_type.value }}"{% if view != request_type.value %} hidden{% endif %}>
-        {% for item, _position in rows %}
-          {{ term_row(item, loop.index, request_type) }}
-        {% else %}
-          <li class="checklist-empty"><span class="muted">No terms — Start Deployment is one click for this type.</span></li>
-        {% endfor %}
-      </ol>
-    {% endfor %}
-  </div>
+    </div>
+    <div class="inner-wrap">
+      <div class="card inner-card">
+        <div class="toolbar">
+          <span class="toolbar-title" id="checklist-title" data-title-all="All Management Checklist">{{ "All Management" if view == "all" else tab_labels[view] }} Checklist ({{ all_items | length if view == "all" else (sections | selectattr(0, "equalto", view_type) | map(attribute=1) | first | length) }})</span>
+          <div class="toolbar-buttons">
+            <div class="search-field">
+              <input type="text" id="checklist-search" placeholder="Search" aria-label="Search checklist items">
+              {{ icon("search", class="search-field-icon") }}
+            </div>
+            <div class="seg" role="group" aria-label="Show">
+              <button type="button" class="on" data-checklist-state="active">Active</button>
+              <button type="button" data-checklist-state="retired">Retire</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-scroll">
+          {% set all_rows = [] %}{% for item in all_items %}{% set _ = all_rows.append((item, loop.index)) %}{% endfor %}
+          {{ group_table("all", all_rows, none, "No items yet — use Add Item.") }}
+          {% for request_type, rows in sections %}
+            {% set numbered = [] %}{% for item, _position in rows %}{% set _ = numbered.append((item, loop.index)) %}{% endfor %}
+            {{ group_table(request_type.value, numbered, request_type, "No terms — Start Deployment is one click for this type.") }}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
 
-  {% set empty_types = sections | selectattr(1, "equalto", []) | map(attribute=0) | list %}
-  {% if empty_types %}
-    <p class="checklist-empty-note" data-empty-note{% if view != "all" %} hidden{% endif %}>
-      No terms yet:
-      {% for request_type in empty_types %}{{ type_labels[request_type] }}{% if not loop.last %} · {% endif %}{% endfor %}
-      — Start Deployment is one click for these.
-    </p>
-  {% endif %}
+    {% set empty_types = sections | selectattr(1, "equalto", []) | map(attribute=0) | list %}
+    {% if empty_types %}
+      <p class="checklist-empty-note" data-empty-note{% if view != "all" %} hidden{% endif %}>
+        No terms yet:
+        {% for request_type in empty_types %}{{ type_labels[request_type] }}{% if not loop.last %} · {% endif %}{% endfor %}
+        — Start Deployment is one click for these.
+      </p>
+    {% endif %}
+  </section>
 
-  {% if retired %}
-    <details class="checklist-retired">
-      <summary>Retired ({{ retired | length }})</summary>
-      <ol class="checklist-list">
-        {% for item in retired %}
-          {{ term_row(item, "–", None) }}
-        {% endfor %}
-      </ol>
-    </details>
-  {% endif %}
+  <dialog class="dialog" id="checklist-add-dialog" aria-label="Add Item">
+    <form method="post" action="/management/checklists" class="checklist-add" id="checklist-add-form">
+      <div class="dialog-header"><span class="dialog-title">Add Item</span></div>
+      <div class="dialog-body">
+        <input type="hidden" name="view" value="{{ view }}">
+        {{ item_fields(none, none, "") }}
+      </div>
+      <div class="dialog-footer">
+        <button type="submit" class="btn btn-emph">Add Checklist</button>
+        <button type="button" class="btn btn-lite" data-dialog-close>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  {# The reference's retire confirmation. The form still posts on its own without JS. #}
+  <dialog class="mbox" id="checklist-retire-dialog" aria-labelledby="checklist-retire-title">
+    <div class="mbox-head" id="checklist-retire-title">{{ icon("warning", class="mbox-warning") }}Warning</div>
+    <p class="mbox-text" id="checklist-retire-text"></p>
+    <div class="mbox-foot">
+      <button type="button" class="btn btn-emph" id="checklist-retire-ok" autofocus>OK</button>
+      <button type="button" class="btn btn-lite" id="checklist-retire-cancel">Cancel</button>
+    </div>
+  </dialog>
 
   <script>
     (function () {
-      var addForm = document.getElementById("checklist-add-form");
-      document.getElementById("checklist-add-toggle").addEventListener("click", function () {
-        addForm.hidden = false;
-        addForm.querySelector('input[name="label"]').focus();
-      });
-      document.getElementById("checklist-add-cancel").addEventListener("click", function () {
-        addForm.reset();
-        addForm.hidden = true;
-      });
+      var tabs = document.querySelectorAll("[data-checklist-filter]");
+      var states = document.querySelectorAll("[data-checklist-state]");
+      var search = document.getElementById("checklist-search");
+      var title = document.getElementById("checklist-title");
+      var note = document.querySelector("[data-empty-note]");
+      var tabLabels = {};
+      tabs.forEach(function (tab) { tabLabels[tab.getAttribute("data-checklist-filter")] = tab.textContent.trim(); });
+      var view = (document.querySelector(".tab.on") || tabs[0]).getAttribute("data-checklist-filter");
+      var state = "active";
 
-      // ✎ swaps a row's text for its edit form; Cancel swaps back. Scoped to the row
-      // clicked — a term assigned to several types has one row under each.
-      function setEditing(row, editing) {
-        var form = row.querySelector(".checklist-edit");
-        form.hidden = !editing;
-        row.querySelector(".checklist-text").hidden = editing;
-        row.querySelector(".checklist-chips").hidden = editing;
-        if (editing) form.querySelector('input[name="label"]').focus();
-        else form.reset();
-      }
-      document.querySelectorAll("[data-edit-toggle]").forEach(function (button) {
-        button.addEventListener("click", function () { setEditing(button.closest(".checklist-term"), true); });
-      });
-      document.querySelectorAll("[data-edit-cancel]").forEach(function (button) {
-        button.addEventListener("click", function () { setEditing(button.closest(".checklist-term"), false); });
-      });
-
-      var chips = document.querySelectorAll("[data-checklist-filter]");
-      chips.forEach(function (chip) {
-        chip.addEventListener("click", function () {
-          var type = chip.getAttribute("data-checklist-filter");
-          chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
-          document.querySelectorAll(".checklist-panel .checklist-list").forEach(function (list) {
-            list.hidden = list.getAttribute("data-group") !== type;
+      function render() {
+        var needle = search.value.trim().toLowerCase();
+        var shown = 0;
+        document.querySelectorAll(".checklist-table").forEach(function (table) {
+          var current = table.getAttribute("data-group") === view;
+          table.hidden = !current;
+          if (!current) return;
+          table.querySelectorAll("tr.checklist-term").forEach(function (row) {
+            var match = (row.hasAttribute("data-retired") === (state === "retired")) &&
+              (row.getAttribute("data-label") || "").toLowerCase().indexOf(needle) !== -1;
+            row.hidden = !match;
+            if (match) shown += 1;
           });
-          var note = document.querySelector("[data-empty-note]");
-          if (note) note.hidden = type !== "all";
-          // Every form posts the view back so the redirect lands here again; the URL
-          // keeps it across a manual refresh too.
-          document.querySelectorAll('input[name="view"]').forEach(function (input) { input.value = type; });
-          history.replaceState(null, "", type === "all" ? location.pathname : location.pathname + "?view=" + type);
+          table.querySelector("[data-empty-row]").hidden = shown !== 0;
         });
+        title.innerHTML = "";
+        title.appendChild(document.createTextNode((view === "all" ? "All Management" : tabLabels[view]) + " Checklist (" + shown + ")"));
+        if (note) note.hidden = view !== "all" || state !== "active";
+      }
+
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          view = tab.getAttribute("data-checklist-filter");
+          tabs.forEach(function (t) {
+            t.classList.toggle("on", t === tab);
+            t.setAttribute("aria-selected", t === tab ? "true" : "false");
+          });
+          // Every form posts the view back so the redirect lands on this tab again; the
+          // URL keeps it across a manual refresh too.
+          document.querySelectorAll('input[name="view"]').forEach(function (input) { input.value = view; });
+          history.replaceState(null, "", view === "all" ? location.pathname : location.pathname + "?view=" + view);
+          render();
+        });
+      });
+      states.forEach(function (button) {
+        button.addEventListener("click", function () {
+          state = button.getAttribute("data-checklist-state");
+          states.forEach(function (b) { b.classList.toggle("on", b === button); });
+          render();
+        });
+      });
+      search.addEventListener("input", render);
+      render();
+
+      // Add Item / Edit Item dialogs.
+      var addDialog = document.getElementById("checklist-add-dialog");
+      document.getElementById("checklist-add-toggle").addEventListener("click", function () {
+        var form = addDialog.querySelector("form");
+        form.reset();
+        // Applies to starts on the tab you're in, as in the reference.
+        form.querySelectorAll('input[name="request_types"]').forEach(function (box) {
+          box.checked = view !== "all" && box.value === view;
+        });
+        addDialog.showModal();
+      });
+      document.querySelectorAll("[data-edit-toggle]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var dialog = button.closest("tr").querySelector(".checklist-edit-dialog");
+          dialog.querySelector("form").reset();
+          dialog.showModal();
+        });
+      });
+      document.querySelectorAll("[data-dialog-close]").forEach(function (button) {
+        button.addEventListener("click", function () { button.closest("dialog").close(); });
+      });
+
+      // Retire asks first, in the reference's Warning box.
+      var retireDialog = document.getElementById("checklist-retire-dialog");
+      var pending = null;
+      document.querySelectorAll("form[data-confirm-retire]").forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+          if (!retireDialog.showModal) return;
+          event.preventDefault();
+          pending = form;
+          document.getElementById("checklist-retire-text").textContent =
+            'Do you want to retire "' + form.getAttribute("data-confirm-retire") + '"?';
+          retireDialog.showModal();
+        });
+      });
+      document.getElementById("checklist-retire-ok").addEventListener("click", function () {
+        var form = pending;
+        pending = null;
+        retireDialog.close();
+        if (form) form.submit();
+      });
+      document.getElementById("checklist-retire-cancel").addEventListener("click", function () {
+        pending = null;
+        retireDialog.close();
       });
     })();
   </script>
-  </div>
-  </section>
 {% endblock %}
