@@ -216,3 +216,46 @@ def test_granting_needs_a_username_and_refuses_a_taken_one(web):
     rows["u3"] = {"role": "developer", "active": True, "password": "temp-pass-1"}
     assert _save(client, rows).status_code == 400
     assert _fresh(session, 3).password_hash is None
+
+
+def test_switches_turn_off_when_left_unticked(web):
+    client, session = web
+    _seed(session)
+    dev = _fresh(session, 2)
+    dev.can_access_management = dev.can_view_checklist_audit = True
+    admin = _fresh(session, 1)
+    admin.can_manage_other_returns = True
+    session.commit()
+    login_as(client, "root")
+
+    _save(client, _unchanged())   # every switch above left off
+
+    assert _fresh(session, 2).can_access_management is False
+    assert _fresh(session, 2).can_view_checklist_audit is False
+    assert _fresh(session, 1).can_manage_other_returns is False
+
+
+def test_granted_user_can_log_in_and_must_pick_a_password(web):
+    client, session = web
+    _seed(session)
+    login_as(client, "root")
+    rows = _unchanged()
+    rows["u3"] = {"role": "developer", "active": True, "password": "temp-pass-1", "username": "newhire"}
+    _save(client, rows)
+    client.post("/logout")
+
+    response = client.post("/login", data={"username": "newhire", "password": "temp-pass-1"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert client.get("/requests", follow_redirects=False).headers["location"] == "/change-password"
+
+
+def test_show_others_is_only_switchable_on_admin_rows(web):
+    client, session = web
+    _seed(session)
+    login_as(client, "root")
+
+    page = client.get("/admin/users").text
+
+    assert re.search(r'name="show_others-1" role="switch"(?![^>]*disabled)[^>]*>', page)
+    assert re.search(r'name="show_others-2" role="switch"[^>]*disabled', page)

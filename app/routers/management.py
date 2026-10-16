@@ -1,7 +1,7 @@
-"""Management tab: a hub for management tools, gated by require_management.
+"""Management: the checklist terms, gated by require_management.
 
-Users (/admin/users) stays admin-only and keeps its URL; the hub only links to it.
-Checklists: anyone with Management access can view and add terms; editing, reordering
+Settings in the nav holds Users (/admin/users, admin-only) and this page. Anyone with
+Management access can view and add terms; editing (wording, types, when, sort order)
 and retiring are admin-only (require_admin). See
 docs/superpowers/specs/2026-09-30-request-checklists-design.md.
 """
@@ -43,12 +43,12 @@ def _back(view: str | None) -> RedirectResponse:
 
 
 @router.get("")
-def management_hub(request: Request, current_user: User = Depends(require_management)):
-    return templates.TemplateResponse(
-        request,
-        "management.html",
-        {"current_user": current_user, "is_admin": current_user.role == UserRole.admin},
-    )
+def management_hub(current_user: User = Depends(require_management)):
+    """The old Management hub. Settings now opens in the nav (Users, Management
+    Checklist), so the URL — still in bookmarks — goes to the first one this user
+    can open."""
+    url = "/admin/users" if current_user.role == UserRole.admin else CHECKLISTS_URL
+    return RedirectResponse(url=url, status_code=303)
 
 
 def _clean_label(label: str) -> str:
@@ -239,36 +239,6 @@ def _place(db: Session, item: ChecklistItem, position: str, position_type: str |
     active.insert(min(int(position), len(active) + 1) - 1, link)
     for number, row in enumerate(active + [t for t in others if not t.item.is_active], start=1):
         row.position = number
-
-
-@router.post("/checklists/{item_id}/move")
-def move_checklist_item(
-    item_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
-    direction: str = Form(...),
-    request_type: str = Form(...),
-    view: str | None = Form(None),
-):
-    if direction not in ("up", "down"):
-        raise HTTPException(status_code=400, detail="direction must be up or down")
-    item = _get_item_or_404(db, item_id)
-    (parsed_type,) = _parse_types([request_type])
-    link = next((t for t in item.types if t.request_type == parsed_type), None)
-    if link is None:
-        raise HTTPException(status_code=400, detail="That term isn't assigned to this request type.")
-    same_type = db.query(ChecklistItemType).filter(
-        ChecklistItemType.request_type == parsed_type, ChecklistItemType.item_id != item.id
-    )
-    if direction == "up":
-        neighbour = same_type.filter(ChecklistItemType.position < link.position).order_by(ChecklistItemType.position.desc()).first()
-    else:
-        neighbour = same_type.filter(ChecklistItemType.position > link.position).order_by(ChecklistItemType.position.asc()).first()
-    if neighbour is not None:
-        link.position, neighbour.position = neighbour.position, link.position
-        _touch(item, current_user)
-        db.commit()
-    return _back(view)
 
 
 def _set_active(db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:

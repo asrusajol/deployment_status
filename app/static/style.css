@@ -1859,31 +1859,6 @@ code {
 .inline-form button.return:hover,
 .actions-inner > button.return:hover { background: var(--amber-dim); filter: none; }
 
-/* Management hub (management.html): one card per tool, only the ones the viewer may open. */
-.management-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.9rem;
-  margin-top: 1rem;
-}
-/* SAP Generic Tile: white, 16px radius, Shadow0, lifting to Shadow2 on hover. */
-.management-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-height: 140px;
-  padding: 1rem;
-  background: var(--panel);
-  border-radius: 16px;
-  box-shadow: var(--sapContent_Shadow0);
-  color: var(--paper);
-  text-decoration: none;
-  transition: box-shadow 0.15s ease;
-}
-.management-card:hover { box-shadow: var(--sapContent_Shadow2); }
-.management-card-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--sapTitleColor); }
-.management-card-text { font-size: 14px; color: var(--sapContent_LabelColor); }
-
 /* Checklists page: see "Settings pages" at the end of this file. */
 
 /* Checklist audit dialog: the terms confirmed at one start. */
@@ -1962,8 +1937,8 @@ code {
 
 input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor); }
 
-/* Inline text inputs (Users' set-password, Clients' add-URL) had only browser defaults. */
-.inline-form input[type="text"], .inline-form input[type="password"] {
+/* Inline text inputs (Clients' add-URL) had only browser defaults. */
+.inline-form input[type="text"] {
   padding: 0.25rem 0.4rem;
   font-family: var(--font-body);
   font-size: 0.82rem;

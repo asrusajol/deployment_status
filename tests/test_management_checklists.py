@@ -69,14 +69,7 @@ def test_user_without_management_access_gets_403(web):
     assert client.post("/management/checklists", data={"request_types": "standard", "label": "x"}).status_code == 403
 
 
-def test_hub_links_to_checklists_for_management_user(web):
-    client, session = web
-    _seed_users(session)
-    login_as(client, "mgr")
-    assert 'href="/management/checklists"' in client.get("/management").text
-
-
-def test_management_user_cannot_edit_move_or_retire(web):
+def test_management_user_cannot_edit_or_retire(web):
     client, session = web
     _seed_users(session)
     first = _item(session, label="Close cronjobs", position=1)
@@ -84,7 +77,6 @@ def test_management_user_cannot_edit_move_or_retire(web):
     login_as(client, "mgr")
 
     assert _edit(client, first, "changed", (LOCAL,)).status_code == 403
-    assert client.post(f"/management/checklists/{first.id}/move", data={"direction": "down", "request_type": "db_dump_restore"}).status_code == 403
     assert client.post(f"/management/checklists/{first.id}/deactivate").status_code == 403
     session.expire_all()
     assert session.get(ChecklistItem, first.id).label == "Close cronjobs"
@@ -99,7 +91,7 @@ def test_management_user_sees_no_admin_controls(web):
 
     row = _row(client.get("/management/checklists").text, item.id)
 
-    assert "/edit" not in row and "/move" not in row and "/deactivate" not in row
+    assert "/edit" not in row and "/deactivate" not in row
 
 
 # --- listing ------------------------------------------------------------------------
@@ -116,8 +108,6 @@ def test_term_shows_under_every_type_it_is_assigned_to_with_all_its_chips(web):
         row = _row(page, shared.id, group)
         assert _applies(row, DUMP, True) and _applies(row, LOCAL, True) and _applies(row, STD, False)
     assert f'data-item-id="{shared.id}"' not in _group(page, "standard")
-
-
 
 
 def test_retired_terms_sit_behind_the_retire_switch(web):
@@ -323,33 +313,7 @@ def test_edit_rejects_unknown_type(web):
     assert _types(session, item) == {DUMP: 1}
 
 
-# --- move / retire ------------------------------------------------------------------
-
-def test_admin_moves_term_within_one_type_only(web):
-    client, session = web
-    _seed_users(session)
-    a = _item(session, label="A", types=(DUMP, LOCAL), position=1)
-    b = _item(session, label="B", types=(DUMP, LOCAL), position=2)
-    login_as(client, "root")
-
-    client.post(f"/management/checklists/{b.id}/move", data={"direction": "up", "request_type": "db_dump_restore"})
-
-    assert _types(session, a) == {DUMP: 2, LOCAL: 1}
-    assert _types(session, b) == {DUMP: 1, LOCAL: 2}
-
-
-def test_move_past_the_end_is_a_no_op(web):
-    client, session = web
-    _seed_users(session)
-    a = _item(session, label="A")
-    login_as(client, "root")
-
-    response = client.post(f"/management/checklists/{a.id}/move", data={"direction": "up", "request_type": "db_dump_restore"},
-                           follow_redirects=False)
-
-    assert response.status_code == 303
-    assert _types(session, a) == {DUMP: 1}
-
+# --- retire ------------------------------------------------------------------
 
 # --- sort order (the design's Sort Order, kept per type) -------------------------------
 
@@ -416,18 +380,6 @@ def test_management_user_cannot_set_sort_order(web):
     assert _sort(client, a, "1").status_code == 403
 
 
-@pytest.mark.parametrize("data", [
-    {"direction": "sideways", "request_type": "db_dump_restore"},
-    {"direction": "up", "request_type": "test_local"},  # not assigned there
-])
-def test_move_rejects_bad_input(web, data):
-    client, session = web
-    _seed_users(session)
-    a = _item(session, label="A")
-    login_as(client, "root")
-    assert client.post(f"/management/checklists/{a.id}/move", data=data).status_code == 400
-
-
 def test_admin_retires_and_restores_term(web):
     client, session = web
     _seed_users(session)
@@ -465,10 +417,6 @@ def test_link_rows_have_no_orphans_after_unassign(web):
     assert session.query(ChecklistItemType).count() == 0
 
 
-
-
-
-
 def test_all_view_lists_each_term_once_with_all_its_types(web):
     # Regression: the All view repeated a shared term under every type it belongs to,
     # separated by per-type header rows — cluttered, and the same term twice.
@@ -490,7 +438,7 @@ def test_all_view_lists_each_term_once_with_all_its_types(web):
     assert "data-edit-toggle" in row
 
 
-def test_type_view_shows_only_that_types_terms_in_its_order_with_move_controls(web):
+def test_type_view_shows_only_that_types_terms_in_its_order_with_sort_order(web):
     client, session = web
     _seed_users(session)
     first = _item(session, label="A", types=(DUMP,), position=2)
@@ -560,12 +508,11 @@ def test_unknown_view_falls_back_to_all(web):
 
 
 @pytest.mark.parametrize("action,data", [
-    ("move", {"direction": "down", "request_type": "db_dump_restore"}),
     ("deactivate", {}),
     ("edit", {"label": "Stop cron", "request_types": "db_dump_restore", "types_submitted": "1"}),
 ])
 def test_actions_return_to_the_view_they_were_made_from(web, action, data):
-    # Regression: every save/move/retire redirected to the bare page, dropping back to All.
+    # Regression: every save/retire redirected to the bare page, dropping back to All.
     client, session = web
     _seed_users(session)
     item = _item(session, label="Close cronjobs", types=(DUMP,))
