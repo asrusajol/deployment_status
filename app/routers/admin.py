@@ -131,6 +131,20 @@ def set_checklist_audit_access(
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+@router.post("/users/{user_id}/set-approve-all-access")
+def set_approve_all_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    can_approve_all_requests: bool = Form(False),
+):
+    """Grants or revokes approve/reject on every team's requests (User.can_approve_all_requests)."""
+    user = _get_user_or_404(db, user_id)
+    user.can_approve_all_requests = can_approve_all_requests
+    db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
 def _rerender_with_error(request: Request, db: Session, admin: User, error: str):
     users = db.query(User).order_by(User.name).all()
     return templates.TemplateResponse(
