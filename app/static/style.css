@@ -705,16 +705,16 @@ h1 {
 
 /* Draggable headers (the page script): the dragged one dims, a 2px brand line marks
    where it will land. */
-.requests-table[data-cols] thead th[draggable="true"] { cursor: grab; }
-.requests-table thead th.is-dragging { opacity: 0.5; }
-.requests-table thead th.drop-before { box-shadow: inset 2px 0 0 var(--sapSelectedBorder); }
-.requests-table thead th.drop-after { box-shadow: inset -2px 0 0 var(--sapSelectedBorder); }
+table[data-cols] thead th[draggable="true"] { cursor: grab; }
+table[data-cols] thead th.is-dragging { opacity: 0.5; }
+table[data-cols] thead th.drop-before { box-shadow: inset 2px 0 0 var(--sapSelectedBorder); }
+table[data-cols] thead th.drop-after { box-shadow: inset -2px 0 0 var(--sapSelectedBorder); }
 
 /* System: the reference's `.sys` tag. */
 .badge.sys-tag,
 .requests-table:not([data-cols]) td:nth-child(5) .badge,
 .requests-table td[data-col="system"] .badge,
-.deployment-table td:nth-child(2) .badge {
+.deployment-table:not([data-cols]) td:nth-child(2) .badge, .deployment-table td[data-col="system"] .badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -859,21 +859,22 @@ h1 {
   word-wrap: normal;
 }
 .deployment-table thead th { white-space: nowrap; font-size: 14px; }
-.deployment-table th:nth-child(1), .deployment-table td:nth-child(1) { width: 180px; }   /* Client */
-.deployment-table th:nth-child(2), .deployment-table td:nth-child(2) { width: 96px; text-align: center; } /* System */
-.deployment-table th:nth-child(3), .deployment-table td:nth-child(3) { width: 160px; padding: 0 4px; } /* URL */
-.deployment-table th:nth-child(4), .deployment-table td:nth-child(4) { width: 90px; }    /* Task ID */
-.deployment-table th:nth-child(5), .deployment-table td:nth-child(5) { width: 170px; }   /* Branch */
-.deployment-table th:nth-child(6), .deployment-table td:nth-child(6) { width: 110px; }   /* Commit */
-.deployment-table th:nth-child(7), .deployment-table td:nth-child(7) { width: 74px; }    /* Version */
-.deployment-table th:nth-child(8), .deployment-table td:nth-child(8) { width: 170px; padding: 0 4px; } /* Changes */
-.deployment-table th:nth-child(9), .deployment-table td:nth-child(9) { width: 170px; }   /* Requested By */
-.deployment-table th:nth-child(10), .deployment-table td:nth-child(10) { width: 170px; } /* Approved By */
-.deployment-table th:nth-child(11), .deployment-table td:nth-child(11) { width: 170px; } /* Deployed By */
-.deployment-table th:nth-child(12), .deployment-table td:nth-child(12) { width: 185px; text-align: right; } /* Requested At */
-.deployment-table th:nth-child(13), .deployment-table td:nth-child(13) { width: 185px; text-align: right; } /* Deployed At */
-.deployment-table th:nth-child(3), .deployment-table th:nth-child(8) { padding: 0 8px; }
-.deployment-table td:nth-child(3):has(.url-stack) { white-space: normal; height: auto; padding: 3px 4px; }
+.deployment-table:not([data-cols]) :is(th, td):nth-child(1), .deployment-table [data-col="client"] { width: 180px; }   /* Client */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(2), .deployment-table [data-col="system"] { width: 96px; text-align: center; } /* System */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(3), .deployment-table [data-col="url"] { width: 160px; padding: 0 4px; } /* URL */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(4), .deployment-table [data-col="task-id"] { width: 90px; }    /* Task ID */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(5), .deployment-table [data-col="branch"] { width: 170px; }   /* Branch */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(6), .deployment-table [data-col="commit"] { width: 110px; }   /* Commit */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(7), .deployment-table [data-col="version"] { width: 74px; }    /* Version */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(8), .deployment-table [data-col="changes"] { width: 170px; padding: 0 4px; } /* Changes */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(9), .deployment-table [data-col="requested-by"] { width: 170px; }   /* Requested By */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(10), .deployment-table [data-col="approved-by"] { width: 170px; } /* Approved By */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(11), .deployment-table [data-col="deployed-by"] { width: 170px; } /* Deployed By */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(12), .deployment-table [data-col="requested-at"] { width: 185px; text-align: right; } /* Requested At */
+.deployment-table:not([data-cols]) :is(th, td):nth-child(13), .deployment-table [data-col="deployed-at"] { width: 185px; text-align: right; } /* Deployed At */
+.deployment-table:not([data-cols]) th:nth-child(3), .deployment-table:not([data-cols]) th:nth-child(8),
+.deployment-table th[data-col="url"], .deployment-table th[data-col="changes"] { padding: 0 8px; }
+.deployment-table td:has(.url-stack) { white-space: normal; height: auto; padding: 3px 4px; }
 .deployment-table .url-stack { display: flex; flex-direction: column; gap: 3px; }
 
 .changes-cell, .branch-commit-cell, .url-cell {
@@ -2052,7 +2053,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--sapBrandColor)
 .toolbar { padding-top: 4px; padding-bottom: 4px; }
 /* System tag cells: the tag's 80px minimum plus 8px a side would overflow the
    reference's 96/100px column, so these cells take 4px. */
-.requests-table td:nth-child(5), .deployment-table td:nth-child(2) { padding: 0 4px; }
+.requests-table td[data-col="system"], .deployment-table td[data-col="system"],
+.requests-table:not([data-cols]) td:nth-child(5), .deployment-table:not([data-cols]) td:nth-child(2) { padding: 0 4px; }
 .toolbar .toolbar-filter .filter-field select { padding: 0 28px 0 8px; line-height: 24px; }
 
 /* Release Tracker rows: one 32px line like the reference's grid; long client names
@@ -2188,7 +2190,9 @@ dialog.dialog > form { display: flex; flex-direction: column; max-height: calc(1
 .col-menu .menu-item .ico { color: var(--sapContent_LabelColor); flex-shrink: 0; }
 .col-menu .menu-sep { height: 1px; margin: 4px 0; background: var(--sapList_BorderColor); }
 .cb input:disabled { opacity: .4; cursor: default; }
-.requests-table .col-hidden { display: none; }
+table[data-cols] .col-hidden { display: none; }
+/* A row a header filter leaves out (grid.js). */
+table[data-cols] tr.grid-out { display: none; }
 
 /* Requests Search: a form, so its icon is the submit button. */
 form.search-field { margin: 0; }
@@ -2202,9 +2206,9 @@ form.search-field { margin: 0; }
 .col-menu .menu-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--sapContent_LabelColor); }
 .col-menu .menu-item:disabled { opacity: .4; cursor: default; }
 .col-menu .menu-item:disabled:hover { background: none; }
-.requests-table thead th.has-menu { cursor: pointer; user-select: none; }
-.requests-table thead th.has-menu:hover { background: var(--sapContent_Selected_Hover_Background); }
-.requests-table thead .hdr-marks { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; color: var(--sapBrandColor); }
+table[data-cols] thead th.has-menu { cursor: pointer; user-select: none; }
+table[data-cols] thead th.has-menu:hover { background: var(--sapContent_Selected_Hover_Background); }
+table[data-cols] thead .hdr-marks { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; color: var(--sapBrandColor); }
 
 /* Absolutely positioned bits inside a cell (the .sr-only names) would otherwise anchor
    outside the scroll box, escape its clipping and widen the whole page. */
@@ -2404,14 +2408,16 @@ a.health-row:hover { background: var(--sapHoverColor); }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
-/* Requests column widths: the reference's resize grip on each header's right edge. */
-.requests-table thead th { position: relative; }
-.requests-table .col-resizer { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 1; }
-.requests-table .col-resizer:hover, body.is-resizing .requests-table .col-resizer:active { background: var(--sapSelectedBorder); }
+/* Column widths: the reference's resize grip on each header's right edge (grid.js). */
+/* The resize grip's anchor — zero specificity, so sticky headers keep position: sticky
+   (which anchors it too). */
+:where(table[data-cols]) thead th { position: relative; }
+table[data-cols] .col-resizer { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 1; }
+table[data-cols] .col-resizer:hover, body.is-resizing table[data-cols] .col-resizer:active { background: var(--sapSelectedBorder); }
 body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none; }
 /* The reference's empty grid lines under the last row. */
-.requests-table tr.filler-row td { background: var(--sapList_Background); }
-.requests-table tbody tr.filler-row:hover td { background: var(--sapList_Background); }
+table[data-cols] tr.filler-row td { background: var(--sapList_Background); }
+table[data-cols] tbody tr.filler-row:hover td { background: var(--sapList_Background); }
 
 /* Form dialogs (New / Edit Request, Add / Edit Seeder, Edit Version): the loaded
    page's card becomes the dialog — its toolbar the header, its body scrolling. */

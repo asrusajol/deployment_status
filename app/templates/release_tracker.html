@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% from "_localtime.html" import localtime %}
 {% from "_icons.html" import icon %}
+{% from "_table_settings.html" import table_settings %}
 {% block title %}Release Tracker — Deployment Tracker{% endblock %}
 {% block content %}
   {% set show_task_id_filter = false %}
@@ -14,12 +15,13 @@
     <div class="toolbar-buttons">
       {% include "_deployment_filter_bar.html" %}
       {% include "_deployment_export_button.html" %}
+      {% if rows %}{{ table_settings("dt-release-columns") }}{% endif %}
     </div>
   </div>
 
   {% if rows %}
     <div class="table-scroll">
-    <table class="status-table release-tracker-table">
+    <table class="status-table release-tracker-table" data-column-order="dt-release-columns">
       <thead>
         {# Reference layout: Client, then Action pinned beside it (one pencil per row),
            then the Test / Live / Main Version groups. #}
@@ -61,6 +63,13 @@
       </tbody>
     </table>
     </div>
+    {# Grouped header (Test / Live / Main Version): sort, filter, hide and resize, but
+       no reordering — a group's columns stay under it (the reference's menu leaves out
+       Move for grouped tables). Client and Action stay pinned. #}
+    <script>dtGrid(document.querySelectorAll('table[data-column-order="dt-release-columns"]'), {
+      pinned: ["client", "action"], noMenu: ["action"],
+      notText: ["test-update-at", "live-update-at", "main-version-update-at"],
+    });</script>
   {% else %}
     <p class="empty-state">No deployments have been confirmed with a version yet.</p>
   {% endif %}

@@ -106,8 +106,10 @@ def test_release_tracker_filters_by_client(web):
 
     response = client.get("/release-tracker", params={"client_id": "1"})
 
-    assert "1.0" in response.text
-    assert "9.0" not in response.text
+    # The rows only — icon outlines elsewhere on the page are full of digits like "9.0".
+    body = response.text[response.text.index("<tbody>"):response.text.index("</tbody>")]
+    assert "1.0" in body
+    assert "9.0" not in body
 
 
 def test_release_tracker_export_xlsx(web):

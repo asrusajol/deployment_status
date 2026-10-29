@@ -886,7 +886,6 @@ def list_requests(
             "active_requests_json": active_requests_json,
             "list_query": list_query,
             "list_params": list_query.params(),
-            "column_labels": request_query.COLUMNS,
         },
     )
 

@@ -110,6 +110,12 @@ maintained**: `standard` (SAP Morning Horizon — white shell, blue `#0064D9`) a
   Use the reference's classes for new UI: `.btn` + `.btn-emph` / `.btn-std` / `.btn-lite` /
   `.btn-icon`, `.st-tag.st-{positive,info,critical,neutral,negative}` for statuses,
   `.panel` for collapsible tiles, `.ro-field` for read-only values, `.mbox` dialogs.
+- List tables get the design's table features from `app/static/grid.js`: give the
+  `<table>` a `data-column-order="dt-…-columns"` key, call `dtGrid(tables, {pinned,
+  noMenu, notText})` after it, and add `_table_settings.html`'s gear where the design
+  has one. Cells are keyed `data-col` from the header text, so size columns by
+  `[data-col="…"]`, not `:nth-child`; give `data-value` to cells whose text isn't their
+  value (switches, pickers, icons). Requests passes `server` hooks because it pages.
 - Icon-only buttons keep their old classes and `data-` hooks (scripts and tests key on
   them), a `title` with the action's name, and the name again in `<span class="sr-only">`.
 - The templates' `.field` and `.status` classes predate the design and mean

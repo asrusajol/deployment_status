@@ -2,7 +2,8 @@
 {% import "_copy_button.html" as copy_btn %}
 {% if rows %}
   <div class="table-scroll">
-  <table class="status-table deployment-table">
+  {# grid_key: the including page names its layout (grid.js keeps one per page). #}
+  <table class="status-table deployment-table" data-column-order="{{ grid_key }}">
     <thead>
       <tr>
         <th>Client</th>
@@ -79,6 +80,7 @@
     </tbody>
   </table>
   </div>
+  <script>dtGrid(document.querySelectorAll('table[data-column-order="{{ grid_key }}"]'), { notText: ["requested-at", "deployed-at"] });</script>
 {% else %}
   <p class="empty-state">{{ empty_message }}</p>
 {% endif %}

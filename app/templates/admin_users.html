@@ -30,14 +30,14 @@
     {% endif %}
 
     <div class="table-scroll">
-    <table class="grid-table users-table">
+    <table class="grid-table users-table" data-column-order="dt-users-columns">
       <colgroup>
         <col style="width:56px"><col style="width:200px"><col style="width:140px"><col style="width:194px">
         <col style="width:200px"><col style="width:132px"><col style="width:132px"><col style="width:132px"><col style="width:88px">
       </colgroup>
       <thead>
         <tr>
-          <th class="center">Active</th>
+          <th class="center" data-key="active-icon" data-label="Active (login)">Active</th>
           <th>Full Name</th>
           <th>User Name</th>
           <th>Role</th>
@@ -52,7 +52,7 @@
         {% for u in users %}
         {% set is_admin_row = u.role.value == "admin" %}
         <tr data-user-row data-active="{{ '1' if u.password_hash else '0' }}">
-          <td class="btn-cell">
+          <td class="btn-cell" data-value="{{ 'Yes' if u.password_hash else 'No' }}">
             <input type="hidden" name="user_ids" value="{{ u.id }}">
             {% if u.password_hash %}
               <span class="cell-icon" title="{{ 'Can log in — must change password at next login' if u.must_change_password else 'Can log in' }}">{{ icon("accept") }}</span>
@@ -61,14 +61,14 @@
             {% endif %}
           </td>
           <td title="{{ u.name }}">{{ u.name }}</td>
-          <td class="{{ 'ctl-cell' if not u.username }}">
+          <td class="{{ 'ctl-cell' if not u.username }}" data-value="{{ u.username or '' }}">
             {% if u.username %}
               {{ u.username }}
             {% else %}
               <div class="grid-field"><input type="text" name="username-{{ u.id }}" placeholder="Set username" aria-label="Username for {{ u.name }}"></div>
             {% endif %}
           </td>
-          <td class="ctl-cell">
+          <td class="ctl-cell" data-value="{{ role_labels.get(u.role.value, u.role.value) }}">
             <div class="grid-field grid-select">
               <select name="role-{{ u.id }}" aria-label="Role for {{ u.name }}" data-role-select>
                 {% for r in roles %}
@@ -86,10 +86,10 @@
           </td>
           {# Show Others only does anything for admins; admins always have Management and
              Checklist Audit — so those show locked for the roles they don't apply to. #}
-          <td class="btn-cell">{{ switch("show_others-" ~ u.id, u.can_manage_other_returns, "Show others' returned requests in this admin's queue", locked=not is_admin_row) }}</td>
-          <td class="btn-cell">{{ switch("management-" ~ u.id, is_admin_row or u.can_access_management, "Management access" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
-          <td class="btn-cell">{{ switch("audit-" ~ u.id, is_admin_row or u.can_view_checklist_audit, "Checklist audit" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
-          <td class="btn-cell">{{ switch("active-" ~ u.id, u.password_hash, "Login access", locked=(u.id == current_user.id)) }}{% if u.id == current_user.id and u.password_hash %}<input type="hidden" name="active-{{ u.id }}" value="on">{% endif %}</td>
+          <td class="btn-cell" data-value="{{ 'On' if u.can_manage_other_returns else 'Off' }}">{{ switch("show_others-" ~ u.id, u.can_manage_other_returns, "Show others' returned requests in this admin's queue", locked=not is_admin_row) }}</td>
+          <td class="btn-cell" data-value="{{ 'On' if is_admin_row or u.can_access_management else 'Off' }}">{{ switch("management-" ~ u.id, is_admin_row or u.can_access_management, "Management access" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
+          <td class="btn-cell" data-value="{{ 'On' if is_admin_row or u.can_view_checklist_audit else 'Off' }}">{{ switch("audit-" ~ u.id, is_admin_row or u.can_view_checklist_audit, "Checklist audit" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
+          <td class="btn-cell" data-value="{{ 'On' if u.password_hash else 'Off' }}">{{ switch("active-" ~ u.id, u.password_hash, "Login access", locked=(u.id == current_user.id)) }}{% if u.id == current_user.id and u.password_hash %}<input type="hidden" name="active-{{ u.id }}" value="on">{% endif %}</td>
         </tr>
         {% endfor %}
         <tr class="grid-empty" id="users-empty" hidden><td colspan="9">No users</td></tr>
@@ -111,22 +111,32 @@
       var count = document.getElementById("users-count");
       var empty = document.getElementById("users-empty");
 
+      // The design's table features (grid.js). Its column filters and All / Active /
+      // Inactive combine: a row shows only if both let it.
+      var grid = dtGrid(form.querySelectorAll("table[data-column-order]"), { noMenu: ["password"] });
+
       // All / Active / Inactive — the reference opens on Active.
       var filterButtons = form.querySelectorAll("[data-users-filter]");
+      var filterValue = "active";
       function applyFilter(value) {
-        var shown = 0;
+        filterValue = value;
+        var shown = 0, left = 0;
         rows.forEach(function (row) {
           var match = value === "all" || (value === "active") === (row.getAttribute("data-active") === "1");
           row.hidden = !match;
           if (match) shown += 1;
+          if (match && !row.classList.contains("grid-out")) left += 1;   // grid-out: a column filter
         });
         filterButtons.forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-users-filter") === value); });
+        // The title counts by this filter only; column filters show in the gear's count.
         count.textContent = shown;
-        empty.hidden = shown !== 0;
+        empty.hidden = left !== 0;
+        if (grid) grid.refresh();
       }
       filterButtons.forEach(function (b) {
         b.addEventListener("click", function () { applyFilter(b.getAttribute("data-users-filter")); });
       });
+      form.addEventListener("dt-grid-change", function () { applyFilter(filterValue); });
       applyFilter("active");
 
       // Show / hide what's typed in a password field.

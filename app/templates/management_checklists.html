@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_table_settings.html" import table_settings %}
 {% block title %}Management Checklist — Deployment Tracker{% endblock %}
 
 {# The reference's Add / Edit Item fields: Name, Applies to, When, and — in a type's
@@ -42,7 +43,7 @@
 {% macro term_row(item, number, group_type) %}
   {% set retired = not item.is_active %}
   <tr class="checklist-term{% if retired %} is-retired{% endif %}" data-item-id="{{ item.id }}"{% if retired %} data-retired hidden{% endif %} data-label="{{ item.label }}">
-    <td class="checklist-item-cell"><span class="cell-text" title="{{ item.label }}{% if not item.types %} — Not assigned to any request type{% endif %}">{{ item.label }}{% if not item.types %} <span class="muted">· Not assigned</span>{% endif %}</span>
+    <td class="checklist-item-cell" data-value="{{ item.label }}"><span class="cell-text" title="{{ item.label }}{% if not item.types %} — Not assigned to any request type{% endif %}">{{ item.label }}{% if not item.types %} <span class="muted">· Not assigned</span>{% endif %}</span>
         {% if is_admin and not retired %}
           <dialog class="dialog checklist-edit-dialog" aria-label="Edit Item">
             <form method="post" action="/management/checklists/{{ item.id }}/edit" class="checklist-edit">
@@ -63,13 +64,13 @@
     {% set assigned = item.types | map(attribute="request_type") | list %}
     {% for request_type in type_labels %}
       {% set yes = request_type in assigned %}
-      <td class="btn-cell" data-applies="{{ request_type.value }}" data-yes="{{ 1 if yes else 0 }}">
+      <td class="btn-cell" data-applies="{{ request_type.value }}" data-yes="{{ 1 if yes else 0 }}" data-value="{{ 'Yes' if yes else 'No' }}">
         {% if yes %}<span class="st-tag st-positive st-icon-only" title="Yes">{{ icon("deployed", 12) }}</span>{% else %}<span class="st-tag st-negative st-icon-only" title="No">{{ icon("errorCircle", 12) }}</span>{% endif %}
       </td>
     {% endfor %}
     {% for value, text in due_labels.items() %}
       {% set on = item.due == value %}
-      <td class="btn-cell">
+      <td class="btn-cell" data-value="{{ 'On' if on else 'Off' }}">
         {% if is_admin and not retired %}
           {# A submit button carrying the other "when": flipping either switch moves the
              term to the other step, as the reference's pair does. #}
@@ -108,7 +109,7 @@
 {% endmacro %}
 
 {% macro group_table(key, rows, group_type, empty_text) %}
-  <table class="grid-table checklist-table" data-group="{{ key }}"{% if view != key %} hidden{% endif %}>
+  <table class="grid-table checklist-table" data-group="{{ key }}" data-column-order="dt-checklist-columns"{% if view != key %} hidden{% endif %}>
     <colgroup>
       <col style="width:260px"><col style="width:140px"><col style="width:140px"><col style="width:140px">
       <col style="width:140px"><col style="width:140px"><col style="width:90px"><col style="width:100px">
@@ -165,6 +166,7 @@
               <button type="button" class="on" data-checklist-state="active">Active</button>
               <button type="button" data-checklist-state="retired">Retire</button>
             </div>
+            {{ table_settings("dt-checklist-columns") }}
           </div>
         </div>
         <div class="table-scroll">
@@ -226,7 +228,7 @@
 
       function render() {
         var needle = search.value.trim().toLowerCase();
-        var shown = 0;
+        var shown = 0, left = 0;   // title counts tab + search + Active / Retire; column filters show in the gear
         document.querySelectorAll(".checklist-table").forEach(function (table) {
           var current = table.getAttribute("data-group") === view;
           table.hidden = !current;
@@ -236,9 +238,11 @@
               (row.getAttribute("data-label") || "").toLowerCase().indexOf(needle) !== -1;
             row.hidden = !match;
             if (match) shown += 1;
+            if (match && !row.classList.contains("grid-out")) left += 1;   // grid-out: a column filter
           });
-          table.querySelector("[data-empty-row]").hidden = shown !== 0;
+          table.querySelector("[data-empty-row]").hidden = left !== 0;
         });
+        if (grid) grid.refresh();
         title.innerHTML = "";
         title.appendChild(document.createTextNode((view === "all" ? "All Management" : tabLabels[view]) + " Checklist (" + shown + ")"));
         if (note) note.hidden = view !== "all" || state !== "active";
@@ -266,6 +270,14 @@
         });
       });
       search.addEventListener("input", render);
+      // The design's table features (grid.js), one layout for the All tab and each
+      // type's tab. Its column filters combine with the tab, search and Active / Retire.
+      var grid = dtGrid(document.querySelectorAll('table[data-column-order="dt-checklist-columns"]'), {
+        pinned: ["action"], noMenu: ["action"],
+      });
+      document.addEventListener("dt-grid-change", function (event) {
+        if (event.detail && event.detail.key === "dt-checklist-columns") render();
+      });
       render();
 
       // Add Item / Edit Item dialogs.

@@ -1,14 +1,17 @@
 {% extends "base.html" %}
+{% from "_table_settings.html" import table_settings %}
 {% block title %}Deployment History — Deployment Tracker{% endblock %}
 {% block content %}
   {% set filter_action = "/dashboard/history" %}
   {% set export_action = "/dashboard/history/export.xlsx" %}
+  {% set grid_key = "dt-history-columns" %}
   <section class="card card-fill">
   <div class="toolbar">
     <h1 class="toolbar-title">History ({{ rows | length }})</h1>
     <div class="toolbar-buttons">
       {% include "_deployment_filter_bar.html" %}
       {% include "_deployment_export_button.html" %}
+      {% if rows %}{{ table_settings(grid_key) }}{% endif %}
     </div>
   </div>
 

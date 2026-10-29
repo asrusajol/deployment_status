@@ -449,7 +449,7 @@ def test_type_view_shows_only_that_types_terms_in_its_order_with_sort_order(web)
     page = client.get("/management/checklists").text
     dump_view = _group(page, "db_dump_restore")
 
-    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore" hidden>', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore" data-column-order="dt-checklist-columns" hidden>', page)
     assert dump_view.index(f'data-item-id="{second.id}"') < dump_view.index(f'data-item-id="{first.id}"')
     assert "Only local" not in dump_view
     row = _row(dump_view, first.id)
@@ -492,8 +492,8 @@ def test_page_opens_on_the_view_named_in_the_url(web):
 
     page = client.get("/management/checklists?view=db_dump_restore").text
 
-    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore">', page)
-    assert re.search(r'<table class="grid-table checklist-table" data-group="all" hidden>', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore" data-column-order="dt-checklist-columns">', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="all" data-column-order="dt-checklist-columns" hidden>', page)
     assert re.search(r'class="tab on" data-checklist-filter="db_dump_restore"', page)
 
 
@@ -504,7 +504,7 @@ def test_unknown_view_falls_back_to_all(web):
 
     page = client.get("/management/checklists?view=nope").text
 
-    assert re.search(r'<table class="grid-table checklist-table" data-group="all">', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="all" data-column-order="dt-checklist-columns">', page)
 
 
 @pytest.mark.parametrize("action,data", [

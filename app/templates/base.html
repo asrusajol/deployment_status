@@ -14,6 +14,8 @@
   {% include "_favicon.html" %}
   <link rel="preload" href="/static/fonts/SAP-icons.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
+  {# The shared table behaviour (drag, resize, header menus, gear) — app/static/grid.js. #}
+  <script src="/static/grid.js?v={{ static_version }}"></script>
   <script>
     // Applied before first paint so a collapsed nav never flashes open. Per browser,
     // like the reference (which keeps it in React state); storage can be blocked, in
@@ -127,6 +129,13 @@
     </main>
   </div>
   {% include "_toasts.html" %}
+  {# Icons grid.js copies into header menus and sorted / filtered headers. #}
+  <template id="grid-icons">
+    <span data-icon="asc">{{ icon("sortAscending", 14) }}</span><span data-icon="desc">{{ icon("sortDescending", 14) }}</span>
+    <span data-icon="filter">{{ icon("filter", 12) }}</span><span data-icon="clear">{{ icon("clearFilter", 14) }}</span>
+    <span data-icon="decline">{{ icon("decline", 14) }}</span><span data-icon="left">{{ icon("navBack", 14) }}</span>
+    <span data-icon="right">{{ icon("slimArrowRight", 14) }}</span><span data-icon="hide">{{ icon("hide", 14) }}</span>
+  </template>
   {% if show_nav %}{% include "_form_dialog.html" %}{% endif %}
 
   <script>

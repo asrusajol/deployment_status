@@ -1184,9 +1184,9 @@ def test_requests_queue_columns_can_be_dragged_into_a_saved_order(web):
     assert head.index(">Requested At</th>") < head.index(">Status</th>")
 
 
-def test_requests_toolbar_has_the_table_settings_gear_listing_every_column_but_action(web):
-    """The design's gear: show / hide columns (per browser, like the order). Action is
-    the pinned column and isn't in the list."""
+def test_requests_toolbar_has_the_table_settings_gear(web):
+    """The design's gear: show / hide columns (per browser, like the order). grid.js
+    builds the column list from the table's headers, leaving out the pinned Action."""
     client, session = web
     _seed_pending_request(session)
     login_as(client, "lead")
@@ -1195,10 +1195,10 @@ def test_requests_toolbar_has_the_table_settings_gear_listing_every_column_but_a
 
     gear = re.search(r'<button[^>]*id="request-table-settings"[^>]*>', text).group(0)
     assert 'title="Table settings (show / hide columns)"' in gear
-    menu = text[text.index('id="request-table-menu"') : text.index("</div>", text.index('id="reset-table-layout"'))]
-    for label in ("Type", "Task ID", "Status", "Requested At", "Deployed At", "Branch / Commit"):
-        assert f"<span>{label}</span>" in menu
-    assert "<span>Action</span>" not in menu
+    assert 'data-grid-gear="dt-request-columns"' in gear
+    menu = text[text.index('id="request-table-menu"'):text.index('id="reset-table-layout"')]
+    assert "data-grid-columns" in menu
+    assert "1 of 1 items" in menu
 
 
 def test_requests_queue_shows_url_column_with_copy_button(web):

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% from "_localtime.html" import localtime_attr %}
+{% from "_table_settings.html" import table_settings %}
 {% block title %}Dashboard — Deployment Tracker{% endblock %}
 
 {% macro sys_tag(environment) -%}
@@ -216,12 +217,14 @@
 
     {% set filter_action = "/dashboard" %}
     {% set export_action = "/dashboard/export.xlsx" %}
+    {% set grid_key = "dt-status-columns" %}
     <section class="card dash-status">
     <div class="toolbar">
       <h1 class="toolbar-title">Current Deployment Status ({{ rows | length }})</h1>
       <div class="toolbar-buttons">
         {% include "_deployment_filter_bar.html" %}
         {% include "_deployment_export_button.html" %}
+        {% if rows %}{{ table_settings(grid_key) }}{% endif %}
       </div>
     </div>
 

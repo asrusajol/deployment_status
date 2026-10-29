@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_copy_button.html" as copy_btn %}
 {% from "_localtime.html" import localtime, localtime_text, localtime_attr %}
+{% from "_table_settings.html" import table_settings %}
 {% block title %}Requests — Deployment Tracker{% endblock %}
 {% block content %}
   {# Everything the notification script needs, independent of pagination below — an
@@ -90,25 +91,9 @@
         <a href="/requests/new" class="btn btn-emph" data-dialog="wide">New Request</a>
         {# Every matching request (all pages), in the columns showing — the script adds `cols`. #}
         <a href="/requests/export.csv{% if list_params %}?{{ list_params | urlencode }}{% endif %}" class="btn btn-lite btn-icon" id="request-export" title="Export to CSV" download>{{ icon("download") }}<span class="sr-only">Export to CSV</span></a>
-        {# The reference's table settings: show / hide columns and Reset table layout
-           (order and visibility, both kept per browser by the column script below).
-           Clear filters / Clear sort undo the header menus' choices. #}
-        <div class="table-settings">
-          <button type="button" class="btn btn-lite btn-icon" id="request-table-settings" title="Table settings (show / hide columns)" aria-haspopup="true" aria-expanded="false" aria-controls="request-table-menu">{{ icon("settings") }}<span class="sr-only">Table settings</span></button>
-          <div class="col-menu" id="request-table-menu" hidden>
-            <div class="menu-title">Show / hide columns</div>
-            <div class="menu-count">{{ requests | length }} of {{ total_count }} items</div>
-            {# Keys are the column script's own (header text, slugged) — request_query.COLUMNS. #}
-            {% for key, label in column_labels.items() %}
-              <label class="menu-item cb"><input type="checkbox" data-col-toggle="{{ key }}" checked><span>{{ label }}</span></label>
-            {% endfor %}
-            <div class="menu-sep"></div>
-            {% set filter_count = list_query.filters | length %}
-            <button type="button" class="menu-item" id="clear-filters"{% if not filter_count %} disabled{% endif %}>{{ icon("clearFilter", 14) }}{{ ("Clear " ~ filter_count ~ " filter" ~ ("s" if filter_count > 1 else "")) if filter_count else "Clear filters" }}</button>
-            <button type="button" class="menu-item" id="clear-sort"{% if not list_query.sort %} disabled{% endif %}>{{ icon("decline", 14) }}Clear sort</button>
-            <button type="button" class="menu-item" id="reset-table-layout">{{ icon("clearFilter", 14) }}Reset table layout</button>
-          </div>
-        </div>
+        {# The reference's table settings (_table_settings.html); Clear filters / Clear
+           sort undo the header menus' choices. #}
+        {% call table_settings("dt-request-columns", menu_id="request-table-menu", button_id="request-table-settings", reset_id="reset-table-layout") %}{{ requests | length }} of {{ total_count }} items{% endcall %}
       </div>
     </div>
 
@@ -657,171 +642,19 @@
     })();
   </script>
 
-  {# Icons the column script copies into the header menu and the sorted / filtered headers. #}
-  <template id="request-menu-icons">
-    <span data-icon="asc">{{ icon("sortAscending", 14) }}</span><span data-icon="desc">{{ icon("sortDescending", 14) }}</span>
-    <span data-icon="filter">{{ icon("filter", 12) }}</span><span data-icon="clear">{{ icon("clearFilter", 14) }}</span>
-    <span data-icon="decline">{{ icon("decline", 14) }}</span><span data-icon="left">{{ icon("navBack", 14) }}</span>
-    <span data-icon="right">{{ icon("slimArrowRight", 14) }}</span><span data-icon="hide">{{ icon("hide", 14) }}</span>
-  </template>
-  <div class="col-menu col-menu-fixed" id="request-header-menu" role="menu" hidden></div>
-
-  {# Draggable column headers and the gear's show / hide. Both are this browser's own (localStorage), so the
-     server always renders the default and nothing else depends on the order. Cells
-     are tagged by column (data-col) for the CSS, which no longer sizes by position;
-     Action stays last because it's the pinned column. Both tables share one order. #}
+  {# The table behaviour is grid.js (drag, resize, the gear's show / hide, header menus,
+     filler rows), with the layout kept per browser. Requests pages on the server, so
+     its sort, filters and search run there: the header menus reload the list with
+     them in the URL, and the search form's hidden fields hold the current ones.
+     Action stays last because it's the pinned column. Both tables share one layout. #}
   <script>
     (function () {
-      var tables = document.querySelectorAll("table[data-column-order]");
+      var tables = document.querySelectorAll('table[data-column-order="dt-request-columns"]');
       if (!tables.length) return;
-      var storeKey = tables[0].getAttribute("data-column-order");
-      var resetButton = document.getElementById("reset-table-layout");
-      var hiddenKey = storeKey + "-hidden";
-      var toggles = document.querySelectorAll("[data-col-toggle]");
-      function slug(text) { return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
-      var defaultOrder = [];
-      tables.forEach(function (table, index) {
-        var keys = Array.prototype.map.call(table.tHead.rows[0].cells, function (th) { return slug(th.textContent); });
-        if (index === 0) defaultOrder = keys;
-        Array.prototype.forEach.call(table.rows, function (row) {
-          if (row.cells.length !== keys.length) return;
-          Array.prototype.forEach.call(row.cells, function (cell, i) { cell.setAttribute("data-col", keys[i]); });
-          // The type stripe marks the row's left edge wherever the Type column sits.
-          var typeCell = row.querySelector('td[data-col="type"]');
-          var match = typeCell && typeCell.className.match(/type-cell-(\S+)/);
-          if (match) row.setAttribute("data-type", match[1]);
-        });
-        table.setAttribute("data-cols", "");
-      });
-      var movable = defaultOrder.slice(0, -1);   // all but Action
-      var pinned = defaultOrder[defaultOrder.length - 1];
-
-      function readSaved() {
-        try {
-          var saved = JSON.parse(localStorage.getItem(storeKey) || "null");
-          // A column added or renamed since it was saved: fall back to the default.
-          if (Array.isArray(saved) && saved.length === movable.length &&
-              movable.every(function (k) { return saved.indexOf(k) !== -1; })) return saved;
-        } catch (err) {}
-        return null;
-      }
-      function apply(order) {
-        var full = order.concat([pinned]);
-        tables.forEach(function (table) {
-          Array.prototype.forEach.call(table.rows, function (row) {
-            if (row.cells.length !== full.length) return;
-            full.forEach(function (key) {
-              var cell = row.querySelector(':scope > [data-col="' + key + '"]');
-              if (cell) row.appendChild(cell);
-            });
-          });
-        });
-      }
-
-      // Show / hide: hidden columns get .col-hidden on every cell; at least one stays.
-      function readHidden() {
-        try {
-          var saved = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
-          if (Array.isArray(saved)) return saved.filter(function (k) { return movable.indexOf(k) !== -1; });
-        } catch (err) {}
-        return [];
-      }
-      function applyHidden(keys) {
-        if (keys.length >= movable.length) keys = keys.slice(0, movable.length - 1);
-        tables.forEach(function (table) {
-          table.querySelectorAll("[data-col]").forEach(function (cell) {
-            cell.classList.toggle("col-hidden", keys.indexOf(cell.getAttribute("data-col")) !== -1);
-          });
-        });
-        toggles.forEach(function (box) {
-          box.checked = keys.indexOf(box.getAttribute("data-col-toggle")) === -1;
-          box.disabled = box.checked && keys.length === movable.length - 1;
-        });
-        try {
-          if (keys.length) localStorage.setItem(hiddenKey, JSON.stringify(keys));
-          else localStorage.removeItem(hiddenKey);
-        } catch (err) {}
-      }
-      function hiddenNow() {
-        return Array.prototype.filter.call(toggles, function (box) { return !box.checked; })
-          .map(function (box) { return box.getAttribute("data-col-toggle"); });
-      }
-      function save(order) {
-        try {
-          if (order.join() === movable.join()) localStorage.removeItem(storeKey);
-          else localStorage.setItem(storeKey, JSON.stringify(order));
-        } catch (err) {}
-      }
-      function current() {
-        return Array.prototype.map.call(tables[0].tHead.rows[0].cells, function (th) { return th.getAttribute("data-col"); })
-          .filter(function (k) { return k !== pinned; });
-      }
-
-      apply(readSaved() || movable);
-      applyHidden(readHidden());
-      toggles.forEach(function (box) { box.addEventListener("change", function () { applyHidden(hiddenNow()); }); });
-
-      // The gear's menu: opens under the button, closes on a click elsewhere or Escape.
-      var gear = document.getElementById("request-table-settings");
-      var menu = document.getElementById("request-table-menu");
-      function setMenu(open) {
-        menu.hidden = !open;
-        gear.setAttribute("aria-expanded", open ? "true" : "false");
-      }
-      if (gear && menu) {
-        gear.addEventListener("click", function (event) { event.stopPropagation(); setMenu(menu.hidden); });
-        menu.addEventListener("click", function (event) { event.stopPropagation(); });
-        document.addEventListener("click", function () { setMenu(false); });
-        document.addEventListener("keydown", function (event) { if (event.key === "Escape") setMenu(false); });
-      }
-      var dragKey = null;
-      tables.forEach(function (table) {
-        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
-          var key = th.getAttribute("data-col");
-          if (key === pinned) return;
-          th.draggable = true;
-          th.addEventListener("dragstart", function (event) {
-            dragKey = key;
-            th.classList.add("is-dragging");
-            event.dataTransfer.effectAllowed = "move";
-            try { event.dataTransfer.setData("text/plain", key); } catch (err) {}
-          });
-          th.addEventListener("dragend", function () {
-            dragKey = null;
-            document.querySelectorAll(".is-dragging, .drop-before, .drop-after").forEach(function (el) {
-              el.classList.remove("is-dragging", "drop-before", "drop-after");
-            });
-          });
-          th.addEventListener("dragover", function (event) {
-            if (!dragKey || dragKey === key) return;
-            event.preventDefault();
-            var after = event.offsetX > th.offsetWidth / 2;
-            th.classList.toggle("drop-after", after);
-            th.classList.toggle("drop-before", !after);
-          });
-          th.addEventListener("dragleave", function () { th.classList.remove("drop-before", "drop-after"); });
-          th.addEventListener("drop", function (event) {
-            event.preventDefault();
-            if (!dragKey || dragKey === key) return;
-            var after = th.classList.contains("drop-after");
-            var order = current().filter(function (k) { return k !== dragKey; });
-            order.splice(order.indexOf(key) + (after ? 1 : 0), 0, dragKey);
-            apply(order);
-            save(order);
-          });
-        });
-      });
-
-      // --- Sort and "contains" filters (the reference's header menus). They run on the
-      // server across every page, so each choice reloads the list with it in the URL;
-      // the search form's hidden fields hold the current ones.
       var searchForm = document.getElementById("request-search-form");
-      var sortKey = searchForm.getAttribute("data-sort");
-      var sortDir = searchForm.getAttribute("data-dir");
       var filters = {};
       searchForm.querySelectorAll("[data-filter]").forEach(function (input) { filters[input.getAttribute("data-filter")] = input.value; });
-      var NOT_TEXT = ["requested-at", "deployed-at"];
       function navigate(changes) {
         var params = new URLSearchParams(new FormData(searchForm));
         Object.keys(changes).forEach(function (name) {
@@ -832,264 +665,66 @@
         params.delete("page");   // a new sort or filter starts again from page 1
         location.href = "/requests?" + params.toString();
       }
-      function change(name, value) { var c = {}; c[name] = value; return c; }
-      var iconTemplate = document.getElementById("request-menu-icons").content;
-      function iconFor(name) { return iconTemplate.querySelector('[data-icon="' + name + '"]').firstElementChild.cloneNode(true); }
-
-      // Sorted / filtered headers carry the reference's small icon after the label.
-      tables.forEach(function (table) {
-        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
-          var key = th.getAttribute("data-col");
-          if (key === pinned) return;
-          var marks = document.createElement("span");
-          marks.className = "hdr-marks";
-          if (key === sortKey) marks.appendChild(iconFor(sortDir === "desc" ? "desc" : "asc"));
-          if (filters[key]) marks.appendChild(iconFor("filter"));
-          if (marks.childNodes.length) th.appendChild(marks);
-        });
-      });
-
-      var headerMenu = document.getElementById("request-header-menu");
-      function item(icon, text, onClick, disabled) {
-        var button = document.createElement("button");
-        button.type = "button";
-        button.className = "menu-item";
-        button.setAttribute("role", "menuitem");
-        if (icon) button.appendChild(iconFor(icon));
-        button.appendChild(document.createTextNode(text));
-        button.disabled = !!disabled;
-        button.addEventListener("click", onClick);
-        return button;
-      }
-      function sep() { var d = document.createElement("div"); d.className = "menu-sep"; return d; }
-      function closeHeaderMenu() { headerMenu.hidden = true; headerMenu.innerHTML = ""; headerMenu.dataset.for = ""; }
-      function openHeaderMenu(th) {
-        var key = th.getAttribute("data-col");
-        var label = th.firstChild.textContent.trim();
-        headerMenu.innerHTML = "";
-        headerMenu.appendChild(item("asc", "Sort ascending", function () { navigate({ sort: key, dir: "asc" }); }));
-        headerMenu.appendChild(item("desc", "Sort descending", function () { navigate({ sort: key, dir: "desc" }); }));
-        if (key === sortKey) headerMenu.appendChild(item("decline", "Clear sort", function () { navigate({ sort: null, dir: null }); }));
-        if (NOT_TEXT.indexOf(key) === -1) {
-          headerMenu.appendChild(sep());
-          var box = document.createElement("div");
-          box.className = "menu-filter";
-          var title = document.createElement("label");
-          title.className = "menu-label";
-          title.textContent = "Filter by " + label;
-          var field = document.createElement("div");
-          field.className = "grid-field";
-          var input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "Contains…";
-          input.value = filters[key] || "";
-          title.htmlFor = input.id = "header-filter-input";
-          input.addEventListener("keydown", function (event) {
-            if (event.key === "Enter") { event.preventDefault(); navigate(change("f-" + key, input.value.trim())); }
-          });
-          field.appendChild(input);
-          box.appendChild(title);
-          box.appendChild(field);
-          headerMenu.appendChild(box);
-          if (filters[key]) headerMenu.appendChild(item("clear", "Clear filter", function () { navigate(change("f-" + key, null)); }));
-        }
-        headerMenu.appendChild(sep());
-        var shown = current().filter(function (k) { return hiddenNow().indexOf(k) === -1; });
-        var at = shown.indexOf(key);
-        function move(step) {
-          var full = current();
-          var other = shown[at + step];
-          var i = full.indexOf(key), j = full.indexOf(other);
-          full[i] = other; full[j] = key;
-          apply(full); save(full); closeHeaderMenu();
-        }
-        headerMenu.appendChild(item("left", "Move left", function () { move(-1); }, at <= 0));
-        headerMenu.appendChild(item("right", "Move right", function () { move(1); }, at >= shown.length - 1));
-        headerMenu.appendChild(item("hide", "Hide column", function () {
-          applyHidden(hiddenNow().concat([key])); closeHeaderMenu();
-        }, shown.length <= 1));
-        var rect = th.getBoundingClientRect();
-        headerMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 250)) + "px";
-        headerMenu.style.top = (rect.bottom + 2) + "px";
-        headerMenu.hidden = false;
-        headerMenu.dataset.for = key;
-        var focusInput = headerMenu.querySelector("input");
-        if (focusInput) focusInput.focus();
-      }
-      tables.forEach(function (table) {
-        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
-          if (th.getAttribute("data-col") === pinned) return;
-          th.classList.add("has-menu");
-          th.title = "Sort, filter, move or hide — or drag to move";
-          th.addEventListener("click", function (event) {
-            event.stopPropagation();
-            setMenu(false);
-            if (!headerMenu.hidden && headerMenu.dataset.for === th.getAttribute("data-col")) { closeHeaderMenu(); return; }
-            openHeaderMenu(th);
-          });
-        });
-      });
-      headerMenu.addEventListener("click", function (event) { event.stopPropagation(); });
-      document.addEventListener("click", closeHeaderMenu);
-      document.addEventListener("keydown", function (event) { if (event.key === "Escape") closeHeaderMenu(); });
-      // Fixed to the viewport, so it would drift off its header on scroll.
-      window.addEventListener("scroll", function (event) {
-        if (!headerMenu.contains(event.target)) closeHeaderMenu();
-      }, true);
-      if (gear) gear.addEventListener("click", closeHeaderMenu);
-
-      document.getElementById("clear-filters").addEventListener("click", function () {
-        var changes = {};
+      function withoutFilters(changes) {
         Object.keys(filters).forEach(function (k) { changes["f-" + k] = null; });
-        navigate(changes);
+        return changes;
+      }
+
+      var grid = dtGrid(tables, {
+        pinned: ["action"], noMenu: ["action"], notText: ["requested-at", "deployed-at"],
+        server: {
+          sort: searchForm.getAttribute("data-sort"), dir: searchForm.getAttribute("data-dir"), filters: filters,
+          onSort: function (key, dir) { navigate({ sort: key, dir: key ? dir : null }); },
+          onFilter: function (key, value) { var c = {}; c["f-" + key] = value || null; navigate(c); },
+          onClearFilters: function () { navigate(withoutFilters({})); },
+          onReset: function () { navigate(withoutFilters({ sort: null, dir: null })); },
+        },
       });
-      document.getElementById("clear-sort").addEventListener("click", function () { navigate({ sort: null, dir: null }); });
+
+      // The type stripe marks the row's left edge wherever the Type column sits.
+      tables.forEach(function (table) {
+        table.querySelectorAll("td.type-cell").forEach(function (cell) {
+          var match = cell.className.match(/type-cell-(\S+)/);
+          if (match) cell.parentNode.setAttribute("data-type", match[1]);
+        });
+      });
 
       // CSV: the columns showing, in their order, as the reference's export does.
       var exportLink = document.getElementById("request-export");
       if (exportLink) {
         exportLink.addEventListener("click", function () {
           var url = new URL(exportLink.href, location.href);
-          var hidden = hiddenNow();
-          url.searchParams.set("cols", current().filter(function (k) { return hidden.indexOf(k) === -1; }).join(","));
+          url.searchParams.set("cols", grid.shown().join(","));
           exportLink.href = url.toString();
         });
       }
 
-      // --- Column widths: drag a header's right edge, as in the reference (min 50px).
-      // Kept per browser with the order; Reset table layout clears them too.
-      var widthKey = storeKey + "-widths";
-      function readWidths() {
-        try {
-          var saved = JSON.parse(localStorage.getItem(widthKey) || "{}");
-          return saved && typeof saved === "object" ? saved : {};
-        } catch (err) { return {}; }
-      }
-      function applyWidths(widths) {
-        tables.forEach(function (table) {
-          Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
-            var w = widths[th.getAttribute("data-col")];
-            th.style.width = w ? w + "px" : "";
-          });
-        });
-        try {
-          if (Object.keys(widths).length) localStorage.setItem(widthKey, JSON.stringify(widths));
-          else localStorage.removeItem(widthKey);
-        } catch (err) {}
-      }
-      var widths = readWidths();
-      applyWidths(widths);
-      tables.forEach(function (table) {
-        Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
-          var key = th.getAttribute("data-col");
-          if (key === pinned) return;
-          var grip = document.createElement("span");
-          grip.className = "col-resizer";
-          grip.setAttribute("aria-hidden", "true");
-          grip.addEventListener("click", function (event) { event.stopPropagation(); });
-          grip.addEventListener("mousedown", function (event) {
-            event.preventDefault();
-            event.stopPropagation();
-            var startX = event.clientX, startW = th.getBoundingClientRect().width;
-            th.draggable = false;
-            document.body.classList.add("is-resizing");
-            function move(e) {
-              widths[key] = Math.max(50, Math.round(startW + e.clientX - startX));
-              applyWidths(widths);
-            }
-            function up() {
-              document.removeEventListener("mousemove", move);
-              document.removeEventListener("mouseup", up);
-              document.body.classList.remove("is-resizing");
-              th.draggable = true;
-              fitRows();
-            }
-            document.addEventListener("mousemove", move);
-            document.addEventListener("mouseup", up);
-          });
-          th.appendChild(grip);
-        });
-      });
-
-      // --- Rows per page "Auto": how many rows fit this screen, kept in a cookie for
-      // the server (it can't know the window height). A first visit, or a screen that
-      // now fits a different number, reloads once with it; what's left under the last
-      // row gets the reference's empty grid lines.
+      // Rows per page "Auto": how many rows fit this screen, kept in a cookie for the
+      // server (it can't know the window height). A first visit, or a screen that now
+      // fits a different number, reloads once with it.
       var scroll = document.getElementById("request-scroll");
-      var mainTable = scroll && scroll.querySelector("table");
-      var fillers = [];
-      function measure() {
-        var body = mainTable.tBodies[0];
-        var sample = body.querySelector("tr:not(.filler-row)");
-        var rowH = sample ? sample.getBoundingClientRect().height : 33;
-        var free = scroll.clientHeight - mainTable.tHead.getBoundingClientRect().height;
-        return { rowH: rowH, rows: Math.floor(free / rowH), free: free };
-      }
-      function fitRows() {
-        if (!mainTable) return;
-        fillers.forEach(function (row) { row.remove(); });
-        fillers = [];
-        var m = measure();
-        var real = mainTable.tBodies[0].querySelectorAll("tr:not(.filler-row)").length;
-        var keys = current().concat([pinned]);
-        for (var i = real; i < m.rows; i++) {   // whole rows only, so the box never scrolls for them
-          var row = document.createElement("tr");
-          row.className = "filler-row";
-          row.setAttribute("aria-hidden", "true");
-          keys.forEach(function (key) {
-            var td = document.createElement("td");
-            td.setAttribute("data-col", key);
-            if (hiddenNow().indexOf(key) !== -1) td.classList.add("col-hidden");
-            row.appendChild(td);
-          });
-          mainTable.tBodies[0].appendChild(row);
-          fillers.push(row);
-        }
-      }
-      if (scroll && mainTable) {
+      if (scroll) {
         var auto = scroll.getAttribute("data-rows-auto") === "1";
         var cookieName = scroll.getAttribute("data-rows-cookie");
-        var fit = Math.max(5, Math.min(100, measure().rows));
-        document.cookie = cookieName + "=" + fit + "; path=/; max-age=31536000; samesite=lax";
+        function fit() { return Math.max(5, Math.min(100, grid.measure().rows)); }
+        function remember(n) { document.cookie = cookieName + "=" + n + "; path=/; max-age=31536000; samesite=lax"; }
+        var fits = fit();
+        remember(fits);
         var shownSize = parseInt(scroll.getAttribute("data-page-size"), 10);
         var total = parseInt(scroll.getAttribute("data-total"), 10);
-        var guard = "dt-rows-fit-reloaded";
-        var already = null;
+        var guard = "dt-rows-fit-reloaded", already = null;
         try { already = sessionStorage.getItem(guard); } catch (err) {}
-        // Reload only when it would show a different set of rows, and only once per
-        // measured value — a layout that measures differently after reload can't loop.
-        if (auto && fit !== shownSize && total > Math.min(fit, shownSize) && already !== String(fit)) {
-          try { sessionStorage.setItem(guard, String(fit)); } catch (err) {}
+        // Only when it would show a different set of rows, and once per measured value
+        // — a layout that measures differently after the reload can't loop.
+        if (auto && fits !== shownSize && total > Math.min(fits, shownSize) && already !== String(fits)) {
+          try { sessionStorage.setItem(guard, String(fits)); } catch (err) {}
           location.reload();
           return;
         }
-        fitRows();
         var resizeTimer = null;
         window.addEventListener("resize", function () {
           clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(function () {
-            var now = Math.max(5, Math.min(100, measure().rows));
-            document.cookie = cookieName + "=" + now + "; path=/; max-age=31536000; samesite=lax";
-            fitRows();
-          }, 200);
-        });
-      }
-
-      if (resetButton) {
-        resetButton.addEventListener("click", function () {
-          apply(movable);
-          save(movable);
-          applyHidden([]);
-          widths = {};
-          applyWidths(widths);
-          fitRows();
-          setMenu(false);
-          // The reference's reset clears sort and filters too.
-          if (sortKey || Object.keys(filters).length) {
-            var changes = { sort: null, dir: null };
-            Object.keys(filters).forEach(function (k) { changes["f-" + k] = null; });
-            navigate(changes);
-          }
+          resizeTimer = setTimeout(function () { remember(fit()); }, 200);
         });
       }
     })();
