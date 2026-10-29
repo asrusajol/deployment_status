@@ -122,8 +122,12 @@ def can_approve_deployment_request(current_user: User, deployment_request) -> bo
     team lead correctly promoted to `team_lead` whose own Team.leader_user_id was still
     NULL. Matching on machine_group_id directly is self-healing across re-syncs instead
     of depending on that one field having been populated in the right order.
+
+    User.can_approve_all_requests lifts the same-team rule for one user: the company
+    gave a particular team lead sign-off on every team's requests. It's granted per user
+    on /admin/users rather than inherited from a role.
     """
-    if current_user.role == UserRole.admin:
+    if current_user.role == UserRole.admin or current_user.can_approve_all_requests:
         return True
     if current_user.role != UserRole.team_lead:
         return False

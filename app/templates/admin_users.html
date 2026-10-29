@@ -21,6 +21,7 @@
         <th>Show others' returns</th>
         <th>Management access</th>
         <th>Checklist audit</th>
+        <th>Approve all requests</th>
       </tr>
     </thead>
     <tbody>
@@ -93,6 +94,18 @@
             <form method="post" action="/admin/users/{{ u.id }}/set-checklist-audit-access" class="inline-form">
               <label>
                 <input type="checkbox" name="can_view_checklist_audit" {% if u.can_view_checklist_audit %}checked{% endif %}>
+              </label>
+              <button type="submit">Save</button>
+            </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.role.value == "admin" %}
+            <span class="muted">Always</span>
+          {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/set-approve-all-access" class="inline-form">
+              <label>
+                <input type="checkbox" name="can_approve_all_requests" {% if u.can_approve_all_requests %}checked{% endif %}>
               </label>
               <button type="submit">Save</button>
             </form>

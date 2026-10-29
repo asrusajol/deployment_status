@@ -55,6 +55,10 @@ class User(Base):
     # request rows. Its own grant, independent of role or team — see
     # docs/superpowers/specs/2026-09-30-request-checklists-design.md. Ignored for admins.
     can_view_checklist_audit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Approve/reject any team's request, not only the user's own team's — granted by the
+    # company to one specific team lead, who must stay a team_lead, so a switch rather
+    # than a role (see can_approve_deployment_request() in app/auth.py). Ignored for admins.
+    can_approve_all_requests: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     # Mirrored from the in-house API's daily user-roster sync (project_plan.md, Section 6):
     # employees are represented as "Machine" records in that system, hence machine_group_id.
