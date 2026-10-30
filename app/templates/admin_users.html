@@ -33,7 +33,7 @@
     <table class="grid-table users-table" data-column-order="dt-users-columns">
       <colgroup>
         <col style="width:56px"><col style="width:200px"><col style="width:140px"><col style="width:194px">
-        <col style="width:200px"><col style="width:132px"><col style="width:132px"><col style="width:132px"><col style="width:88px">
+        <col style="width:200px"><col style="width:132px"><col style="width:132px"><col style="width:132px"><col style="width:132px"><col style="width:88px">
       </colgroup>
       <thead>
         <tr>
@@ -45,6 +45,7 @@
           <th class="center">Show Others</th>
           <th class="center">Management Access</th>
           <th class="center">Checklist Audit</th>
+          <th class="center">Approve All Requests</th>
           <th class="center">Active</th>
         </tr>
       </thead>
@@ -85,14 +86,18 @@
             </div>
           </td>
           {# Show Others only does anything for admins; admins always have Management and
-             Checklist Audit — so those show locked for the roles they don't apply to. #}
+             Checklist Audit — so those show locked for the roles they don't apply to.
+             Approve All isn't in the design: the company granted one team lead sign-off on
+             every team's requests (User.can_approve_all_requests). It applies to every
+             role, admins included, so it's never locked. #}
           <td class="btn-cell" data-value="{{ 'On' if u.can_manage_other_returns else 'Off' }}">{{ switch("show_others-" ~ u.id, u.can_manage_other_returns, "Show others' returned requests in this admin's queue", locked=not is_admin_row) }}</td>
           <td class="btn-cell" data-value="{{ 'On' if is_admin_row or u.can_access_management else 'Off' }}">{{ switch("management-" ~ u.id, is_admin_row or u.can_access_management, "Management access" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
           <td class="btn-cell" data-value="{{ 'On' if is_admin_row or u.can_view_checklist_audit else 'Off' }}">{{ switch("audit-" ~ u.id, is_admin_row or u.can_view_checklist_audit, "Checklist audit" ~ (" — always, as an admin" if is_admin_row else ""), locked=is_admin_row) }}</td>
+          <td class="btn-cell" data-value="{{ 'On' if u.can_approve_all_requests else 'Off' }}">{{ switch("approve_all-" ~ u.id, u.can_approve_all_requests, "Approve or reject every team's requests") }}</td>
           <td class="btn-cell" data-value="{{ 'On' if u.password_hash else 'Off' }}">{{ switch("active-" ~ u.id, u.password_hash, "Login access", locked=(u.id == current_user.id)) }}{% if u.id == current_user.id and u.password_hash %}<input type="hidden" name="active-{{ u.id }}" value="on">{% endif %}</td>
         </tr>
         {% endfor %}
-        <tr class="grid-empty" id="users-empty" hidden><td colspan="9">No users</td></tr>
+        <tr class="grid-empty" id="users-empty" hidden><td colspan="10">No users</td></tr>
       </tbody>
     </table>
     </div>

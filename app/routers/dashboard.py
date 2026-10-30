@@ -984,7 +984,8 @@ def _require_can_approve(current_user: User, deployment_request: DeploymentReque
     if not can_approve_deployment_request(current_user, deployment_request):
         raise HTTPException(
             status_code=403,
-            detail="Only the requester's own team lead (or an admin) can approve/reject this request",
+            detail="Only the requester's own team lead, an admin, or a user granted "
+            "approval on all requests can approve/reject this request",
         )
 
 

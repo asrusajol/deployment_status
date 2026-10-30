@@ -1933,13 +1933,15 @@ def test_approve_rejects_deploy_team_lead_who_is_not_the_requesters_own_lead(web
     assert request.status == RequestStatus.pending_approval
 
 
-def test_approve_allows_admin_regardless_of_team(web):
+def test_approve_allows_admin_with_approve_all_switch_regardless_of_team(web):
+    # Admins approve other teams' requests only with User.can_approve_all_requests —
+    # tests/test_approve_all_requests.py covers the admin without it.
     client, session = web
     request = _seed_pending_request(session)
     make_user(
         session, id=5, name="Root Admin", role=UserRole.admin, username="root",
         password=DEFAULT_TEST_PASSWORD, machine_group_id=None,
-    )
+    ).can_approve_all_requests = True
     session.commit()
     login_as(client, "root")
 

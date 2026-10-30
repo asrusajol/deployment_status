@@ -108,8 +108,8 @@ def _is_deploy_team_member(user: User, settings: Settings) -> bool:
 
 
 def can_approve_deployment_request(current_user: User, deployment_request) -> bool:
-    """Whether current_user may approve/reject this specific request: an admin, or a
-    team_lead who belongs to the *requester's own team* — not the deploy team
+    """Whether current_user may approve/reject this specific request: a team_lead or
+    admin who belongs to the *requester's own team* — not the deploy team
     (MG-00013/"Team Rajib", see require_deploy_team_member below). Those are two
     different axes on purpose: Team Rajib is who actually executes every deployment
     regardless of who requested it, but each team's own lead is who signs off on their
@@ -122,10 +122,16 @@ def can_approve_deployment_request(current_user: User, deployment_request) -> bo
     team lead correctly promoted to `team_lead` whose own Team.leader_user_id was still
     NULL. Matching on machine_group_id directly is self-healing across re-syncs instead
     of depending on that one field having been populated in the right order.
+
+    User.can_approve_all_requests lifts the same-team rule: the company gave a
+    particular team lead sign-off on every team's requests. It's granted per user on
+    /admin/users rather than inherited from a role — and it governs admins too, who
+    without it sign off on their own team's requests only (the user asked for the switch
+    to be editable on admin rows; migration c6f2a9d4e1b7 kept existing admins switched on).
     """
-    if current_user.role == UserRole.admin:
+    if current_user.can_approve_all_requests:
         return True
-    if current_user.role != UserRole.team_lead:
+    if current_user.role not in (UserRole.team_lead, UserRole.admin):
         return False
     requester = deployment_request.requester
     if requester is None or requester.machine_group_id is None:

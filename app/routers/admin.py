@@ -89,6 +89,7 @@ async def save_users(request: Request, db: Session = Depends(get_db), admin: Use
 
     for user, role, active, password, username in plans:
         user.role = role
+        user.can_approve_all_requests = form.get(f"approve_all-{user.id}") is not None
         if role == UserRole.admin:
             user.can_manage_other_returns = form.get(f"show_others-{user.id}") is not None
         else:
