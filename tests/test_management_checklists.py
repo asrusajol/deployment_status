@@ -24,7 +24,7 @@ def _item(session, *, label, types=(DUMP,), position=1, is_active=True):
 
 def _group(page, key):
     """One type's list (key = RequestType value), or "unassigned"."""
-    match = re.search(rf'<ol class="checklist-list" data-group="{key}"[^>]*>.*?</ol>', page, re.S)
+    match = re.search(rf'<table class="grid-table checklist-table" data-group="{key}"[^>]*>.*?</table>', page, re.S)
     assert match, f"no group {key}"
     return match.group(0)
 
@@ -33,15 +33,14 @@ def _row(page, item_id, group=None):
     """One term's <li>, optionally within one group — scoped so assertions can't match
     another term's controls."""
     scope = _group(page, group) if group else page
-    match = re.search(rf'<li class="checklist-term[^"]*" data-item-id="{item_id}".*?</li>', scope, re.S)
+    match = re.search(rf'<tr class="checklist-term[^"]*" data-item-id="{item_id}".*?</tr>', scope, re.S)
     assert match, f"no row for item {item_id}"
     return match.group(0)
 
 
-def _retired_fold(page):
-    match = re.search(r'<details class="checklist-retired">.*?</details>', page, re.S)
-    assert match, "retired fold missing"
-    return match.group(0)
+def _applies(row, request_type, yes):
+    """The design's Yes / No cell for one request type."""
+    return f'data-applies="{request_type.value}" data-yes="{1 if yes else 0}"' in row
 
 
 def _add_form(page):
@@ -70,14 +69,7 @@ def test_user_without_management_access_gets_403(web):
     assert client.post("/management/checklists", data={"request_types": "standard", "label": "x"}).status_code == 403
 
 
-def test_hub_links_to_checklists_for_management_user(web):
-    client, session = web
-    _seed_users(session)
-    login_as(client, "mgr")
-    assert 'href="/management/checklists"' in client.get("/management").text
-
-
-def test_management_user_cannot_edit_move_or_retire(web):
+def test_management_user_cannot_edit_or_retire(web):
     client, session = web
     _seed_users(session)
     first = _item(session, label="Close cronjobs", position=1)
@@ -85,7 +77,6 @@ def test_management_user_cannot_edit_move_or_retire(web):
     login_as(client, "mgr")
 
     assert _edit(client, first, "changed", (LOCAL,)).status_code == 403
-    assert client.post(f"/management/checklists/{first.id}/move", data={"direction": "down", "request_type": "db_dump_restore"}).status_code == 403
     assert client.post(f"/management/checklists/{first.id}/deactivate").status_code == 403
     session.expire_all()
     assert session.get(ChecklistItem, first.id).label == "Close cronjobs"
@@ -100,7 +91,7 @@ def test_management_user_sees_no_admin_controls(web):
 
     row = _row(client.get("/management/checklists").text, item.id)
 
-    assert "/edit" not in row and "/move" not in row and "/deactivate" not in row
+    assert "/edit" not in row and "/deactivate" not in row
 
 
 # --- listing ------------------------------------------------------------------------
@@ -115,25 +106,26 @@ def test_term_shows_under_every_type_it_is_assigned_to_with_all_its_chips(web):
 
     for group in ("db_dump_restore", "test_local"):
         row = _row(page, shared.id, group)
-        assert "badge-type-db_dump_restore" in row and "badge-type-test_local" in row
+        assert _applies(row, DUMP, True) and _applies(row, LOCAL, True) and _applies(row, STD, False)
     assert f'data-item-id="{shared.id}"' not in _group(page, "standard")
 
 
-
-
-def test_retired_terms_are_folded_away(web):
+def test_retired_terms_sit_behind_the_retire_switch(web):
+    """The design's Active / Retire segmented button: retired rows are marked and
+    hidden until Retire is picked; they keep only Restore."""
     client, session = web
     _seed_users(session)
     active = _item(session, label="Close cronjobs", position=1)
     retired = _item(session, label="Old step", position=2, is_active=False)
-    login_as(client, "mgr")
+    login_as(client, "root")
 
     page = client.get("/management/checklists").text
 
-    fold = _retired_fold(page)
-    assert f'data-item-id="{retired.id}"' in fold
-    assert f'data-item-id="{active.id}"' not in fold
-    assert "Retired (1)" in fold
+    retired_row = _row(_group(page, "all"), retired.id)
+    assert re.search(r'<tr class="checklist-term is-retired" data-item-id="\d+" data-retired hidden', retired_row)
+    assert "/activate" in retired_row and "/deactivate" not in retired_row
+    assert "data-retired" not in _row(page, active.id)
+    assert 'data-checklist-state="retired"' in page
 
 
 def test_add_form_offers_a_checkbox_per_type(web):
@@ -156,7 +148,8 @@ def test_edit_form_hidden_until_opened_with_current_types_ticked(web):
     row = _row(client.get("/management/checklists").text, item.id)
     form = re.search(r'<form[^>]*action="/management/checklists/\d+/edit".*?</form>', row, re.S).group(0)
 
-    assert re.search(r'<form[^>]*\bhidden\b', form)
+    dialog = re.search(r'<dialog[^>]*class="dialog checklist-edit-dialog"[^>]*>', row).group(0)
+    assert not re.search(r'\bopen\b', dialog)
     assert re.search(r'value="db_dump_restore"[^>]*\bchecked\b', form)
     assert not re.search(r'value="test_local"[^>]*\bchecked\b', form)
     assert "data-edit-toggle" in row
@@ -320,44 +313,71 @@ def test_edit_rejects_unknown_type(web):
     assert _types(session, item) == {DUMP: 1}
 
 
-# --- move / retire ------------------------------------------------------------------
+# --- retire ------------------------------------------------------------------
 
-def test_admin_moves_term_within_one_type_only(web):
+# --- sort order (the design's Sort Order, kept per type) -------------------------------
+
+def _sort(client, item, position, request_type="db_dump_restore", **extra):
+    data = {"label": item.label, "position": position, "position_type": request_type, **extra}
+    return client.post(f"/management/checklists/{item.id}/edit", data=data, follow_redirects=False)
+
+
+def test_admin_sets_a_terms_sort_order_within_one_type_only(web):
     client, session = web
     _seed_users(session)
-    a = _item(session, label="A", types=(DUMP, LOCAL), position=1)
-    b = _item(session, label="B", types=(DUMP, LOCAL), position=2)
+    a = _item(session, label="A", types=(DUMP,), position=1)
+    b = _item(session, label="B", types=(DUMP,), position=2)
+    c = _item(session, label="C", types=(DUMP, LOCAL), position=3)
     login_as(client, "root")
 
-    client.post(f"/management/checklists/{b.id}/move", data={"direction": "up", "request_type": "db_dump_restore"})
+    assert _sort(client, c, "1").status_code == 303
 
-    assert _types(session, a) == {DUMP: 2, LOCAL: 1}
-    assert _types(session, b) == {DUMP: 1, LOCAL: 2}
+    assert (_types(session, c), _types(session, a), _types(session, b)) == ({DUMP: 1, LOCAL: 3}, {DUMP: 2}, {DUMP: 3})
 
 
-def test_move_past_the_end_is_a_no_op(web):
+def test_sort_order_past_the_end_puts_the_term_last(web):
     client, session = web
     _seed_users(session)
-    a = _item(session, label="A")
+    a = _item(session, label="A", types=(DUMP,), position=1)
+    b = _item(session, label="B", types=(DUMP,), position=2)
     login_as(client, "root")
 
-    response = client.post(f"/management/checklists/{a.id}/move", data={"direction": "up", "request_type": "db_dump_restore"},
-                           follow_redirects=False)
+    _sort(client, a, "99")
 
-    assert response.status_code == 303
+    assert (_types(session, a), _types(session, b)) == ({DUMP: 2}, {DUMP: 1})
+
+
+def test_sort_order_counts_active_terms_only(web):
+    client, session = web
+    _seed_users(session)
+    old = _item(session, label="Old", types=(DUMP,), position=1, is_active=False)
+    a = _item(session, label="A", types=(DUMP,), position=2)
+    b = _item(session, label="B", types=(DUMP,), position=3)
+    login_as(client, "root")
+
+    _sort(client, b, "1")
+
+    assert (_types(session, b), _types(session, a), _types(session, old)) == ({DUMP: 1}, {DUMP: 2}, {DUMP: 3})
+
+
+@pytest.mark.parametrize("position,request_type", [("0", "db_dump_restore"), ("two", "db_dump_restore"), ("1", "test_local"), ("1", "nope")])
+def test_sort_order_rejects_bad_input(web, position, request_type):
+    client, session = web
+    _seed_users(session)
+    a = _item(session, label="A", types=(DUMP,))
+    login_as(client, "root")
+
+    assert _sort(client, a, position, request_type).status_code == 400
     assert _types(session, a) == {DUMP: 1}
 
 
-@pytest.mark.parametrize("data", [
-    {"direction": "sideways", "request_type": "db_dump_restore"},
-    {"direction": "up", "request_type": "test_local"},  # not assigned there
-])
-def test_move_rejects_bad_input(web, data):
+def test_management_user_cannot_set_sort_order(web):
     client, session = web
     _seed_users(session)
-    a = _item(session, label="A")
-    login_as(client, "root")
-    assert client.post(f"/management/checklists/{a.id}/move", data=data).status_code == 400
+    a = _item(session, label="A", types=(DUMP,))
+    login_as(client, "mgr")
+
+    assert _sort(client, a, "1").status_code == 403
 
 
 def test_admin_retires_and_restores_term(web):
@@ -369,7 +389,7 @@ def test_admin_retires_and_restores_term(web):
     client.post(f"/management/checklists/{item.id}/deactivate")
     session.expire_all()
     assert session.get(ChecklistItem, item.id).is_active is False
-    assert f'data-item-id="{item.id}"' in _retired_fold(client.get("/management/checklists").text)
+    assert "data-retired" in _row(_group(client.get("/management/checklists").text, "all"), item.id)
 
     client.post(f"/management/checklists/{item.id}/activate")
     session.expire_all()
@@ -397,10 +417,6 @@ def test_link_rows_have_no_orphans_after_unassign(web):
     assert session.query(ChecklistItemType).count() == 0
 
 
-
-
-
-
 def test_all_view_lists_each_term_once_with_all_its_types(web):
     # Regression: the All view repeated a shared term under every type it belongs to,
     # separated by per-type header rows — cluttered, and the same term twice.
@@ -415,14 +431,14 @@ def test_all_view_lists_each_term_once_with_all_its_types(web):
     assert all_view.count(f'data-item-id="{shared.id}"') == 1
     assert all_view.count(f'data-item-id="{only_dump.id}"') == 1
     row = _row(all_view, shared.id)
-    assert "badge-type-standard" in row and "badge-type-db_dump_restore" in row
+    assert _applies(row, STD, True) and _applies(row, DUMP, True) and _applies(row, LOCAL, False)
     assert "checklist-group-head" not in all_view
-    # Order is per type, so ↑↓ belong to a type's own view, not the mixed list.
-    assert "/move" not in all_view
+    # Order is per type, so Sort Order belongs to a type's own tab, not the mixed list.
+    assert 'name="position"' not in all_view
     assert "data-edit-toggle" in row
 
 
-def test_type_view_shows_only_that_types_terms_in_its_order_with_move_controls(web):
+def test_type_view_shows_only_that_types_terms_in_its_order_with_sort_order(web):
     client, session = web
     _seed_users(session)
     first = _item(session, label="A", types=(DUMP,), position=2)
@@ -433,10 +449,12 @@ def test_type_view_shows_only_that_types_terms_in_its_order_with_move_controls(w
     page = client.get("/management/checklists").text
     dump_view = _group(page, "db_dump_restore")
 
-    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore" hidden>', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore" data-column-order="dt-checklist-columns" hidden>', page)
     assert dump_view.index(f'data-item-id="{second.id}"') < dump_view.index(f'data-item-id="{first.id}"')
     assert "Only local" not in dump_view
-    assert "/move" in _row(dump_view, first.id)
+    row = _row(dump_view, first.id)
+    assert 'data-sort-order="2"' in row
+    assert 'name="position" value="2"' in row and 'name="position_type" value="db_dump_restore"' in row
 
 
 def test_empty_type_view_says_start_is_one_click(web):
@@ -474,9 +492,9 @@ def test_page_opens_on_the_view_named_in_the_url(web):
 
     page = client.get("/management/checklists?view=db_dump_restore").text
 
-    assert re.search(r'<ol class="checklist-list" data-group="db_dump_restore">', page)
-    assert re.search(r'<ol class="checklist-list" data-group="all" hidden>', page)
-    assert re.search(r'class="filter-chip is-active" data-checklist-filter="db_dump_restore"', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="db_dump_restore" data-column-order="dt-checklist-columns">', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="all" data-column-order="dt-checklist-columns" hidden>', page)
+    assert re.search(r'class="tab on" data-checklist-filter="db_dump_restore"', page)
 
 
 def test_unknown_view_falls_back_to_all(web):
@@ -486,16 +504,15 @@ def test_unknown_view_falls_back_to_all(web):
 
     page = client.get("/management/checklists?view=nope").text
 
-    assert re.search(r'<ol class="checklist-list" data-group="all">', page)
+    assert re.search(r'<table class="grid-table checklist-table" data-group="all" data-column-order="dt-checklist-columns">', page)
 
 
 @pytest.mark.parametrize("action,data", [
-    ("move", {"direction": "down", "request_type": "db_dump_restore"}),
     ("deactivate", {}),
     ("edit", {"label": "Stop cron", "request_types": "db_dump_restore", "types_submitted": "1"}),
 ])
 def test_actions_return_to_the_view_they_were_made_from(web, action, data):
-    # Regression: every save/move/retire redirected to the bare page, dropping back to All.
+    # Regression: every save/retire redirected to the bare page, dropping back to All.
     client, session = web
     _seed_users(session)
     item = _item(session, label="Close cronjobs", types=(DUMP,))
@@ -569,8 +586,10 @@ def test_rows_show_when_each_term_is_due_and_forms_offer_the_choice(web):
 
     page = client.get("/management/checklists").text
 
-    assert "Before start" in _row(page, before.id)
-    assert "Before Mark Deployed" in _row(page, after.id)
+    # The design's two switches: Before Start on for one, Before Mark Deployed for the other.
+    assert 'data-due-switch="before_start" aria-checked="true"' in _row(page, before.id)
+    assert 'data-due-switch="before_complete" aria-checked="false"' in _row(page, before.id)
+    assert 'data-due-switch="before_complete" aria-checked="true"' in _row(page, after.id)
     assert 'name="due" value="before_complete"' in _add_form(page)
     edit = re.search(r'<form[^>]*action="/management/checklists/\d+/edit".*?</form>', _row(page, after.id), re.S).group(0)
     assert re.search(r'name="due" value="before_complete"[^>]*\bchecked\b', edit)

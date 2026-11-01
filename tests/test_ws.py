@@ -33,7 +33,7 @@ def test_requests_ws_receives_ping_on_approve(web):
     make_user(session, id=1, name="Rajib Ahamad", username="rajib", password=DEFAULT_TEST_PASSWORD)
     make_user(
         session, id=2, name="Root Admin", role=UserRole.admin, username="root", password=DEFAULT_TEST_PASSWORD
-    )
+    ).can_approve_all_requests = True   # admins approve other teams' requests only with the switch
     session.add(
         DeploymentRequest(
             task_id="PR-WS-1",

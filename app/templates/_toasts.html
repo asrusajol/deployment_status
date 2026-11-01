@@ -1,0 +1,31 @@
+{# The design's toast: confirmations queued by app/toast.py before the redirect, shown
+   one at a time for 2.4s. window.dtToast(text) raises one from a page script (copy). #}
+<div class="toast-host" aria-live="polite">
+  {% for message in take_toasts(request) %}<div class="toast" role="status" data-toast>{{ message }}</div>{% endfor %}
+</div>
+<script>
+  (function () {
+    var host = document.querySelector(".toast-host");
+    var queue = Array.prototype.slice.call(host.querySelectorAll("[data-toast]"));
+    queue.forEach(function (el) { el.hidden = true; });
+    var showing = false;
+    function next() {
+      var el = queue.shift();
+      if (!el) { showing = false; return; }
+      showing = true;
+      el.hidden = false;
+      setTimeout(function () { el.remove(); next(); }, 2400);
+    }
+    window.dtToast = function (text) {
+      var el = document.createElement("div");
+      el.className = "toast";
+      el.setAttribute("role", "status");
+      el.textContent = text;
+      el.hidden = true;
+      host.appendChild(el);
+      queue.push(el);
+      if (!showing) next();
+    };
+    next();
+  })();
+</script>

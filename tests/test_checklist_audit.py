@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from app.models.checklist import ChecklistConfirmation
 from app.models.deployment_request import DeploymentRequest, RequestStatus, RequestType
-from app.models.user import User, UserRole
+from app.models.user import UserRole
 from tests.conftest import DEFAULT_TEST_PASSWORD, login_as, make_checklist_item, make_user
 
 # Differs from the term's current label on purpose: proves the dialog shows the snapshot,
@@ -61,30 +61,6 @@ def test_admin_always_sees_audit(web):
     login_as(client, "root")
 
     assert f'data-checklist-log="{request.id}"' in client.get("/requests").text
-
-
-def test_admin_toggles_audit_access(web):
-    client, session = web
-    _seed(session)
-    login_as(client, "root")
-
-    client.post("/admin/users/2/set-checklist-audit-access", data={"can_view_checklist_audit": "on"})
-    session.expire_all()
-    assert session.get(User, 2).can_view_checklist_audit is True
-
-    client.post("/admin/users/2/set-checklist-audit-access", data={})
-    session.expire_all()
-    assert session.get(User, 2).can_view_checklist_audit is False
-
-
-def test_non_admin_cannot_toggle_audit_access(web):
-    client, session = web
-    _seed(session, dev_audit=True)
-    login_as(client, "devone")
-
-    assert client.post("/admin/users/2/set-checklist-audit-access", data={}).status_code == 403
-    session.expire_all()
-    assert session.get(User, 2).can_view_checklist_audit is True
 
 
 def test_audit_button_lives_in_the_action_cell_not_the_status_cell(web):

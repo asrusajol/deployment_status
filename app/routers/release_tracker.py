@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import can_edit_client_version_status, require_login
 from app.database import get_db
+from app.models.client import Client
 from app.models.client_version_status import ClientVersionStatus
 from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import User
@@ -23,10 +24,12 @@ from app.services.release_tracker import (
     release_tracker_rows,
 )
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 
 def _parse_release_tracker_filters(client_id: str | None) -> int | None:
@@ -153,4 +156,6 @@ def release_tracker_edit(
         )
 
     db.commit()
+    client = db.get(Client, row.client_id)
+    toast.toast(request, f"Versions for {client.name if client else 'the client'} saved")
     return RedirectResponse(url="/release-tracker", status_code=303)

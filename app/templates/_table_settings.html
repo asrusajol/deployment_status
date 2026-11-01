@@ -1,0 +1,18 @@
+{# The reference's table settings (the gear): show / hide columns — the list is built by
+   grid.js from the table's own headers — then Clear filters, Clear sort and Reset
+   table layout. `key` is the table's data-column-order. #}
+{% from "_icons.html" import icon %}
+{% macro table_settings(key, menu_id=none, button_id=none, reset_id=none) -%}
+  <div class="table-settings">
+    <button type="button" class="btn btn-lite btn-icon" data-grid-gear="{{ key }}"{% if button_id %} id="{{ button_id }}"{% endif %} title="Table settings (show / hide columns)" aria-haspopup="true" aria-expanded="false">{{ icon("settings") }}<span class="sr-only">Table settings</span></button>
+    <div class="col-menu" data-grid-menu="{{ key }}"{% if menu_id %} id="{{ menu_id }}"{% endif %} hidden>
+      <div class="menu-title">Show / hide columns</div>
+      <div class="menu-count" data-grid-count>{{ caller() if caller else "" }}</div>
+      <div data-grid-columns></div>
+      <div class="menu-sep"></div>
+      <button type="button" class="menu-item" data-grid-clear-filters disabled>{{ icon("clearFilter", 14) }}<span>Clear filters</span></button>
+      <button type="button" class="menu-item" data-grid-clear-sort disabled>{{ icon("decline", 14) }}Clear sort</button>
+      <button type="button" class="menu-item" data-grid-reset{% if reset_id %} id="{{ reset_id }}"{% endif %}>{{ icon("clearFilter", 14) }}Reset table layout</button>
+    </div>
+  </div>
+{%- endmacro %}

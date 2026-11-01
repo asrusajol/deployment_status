@@ -1,7 +1,7 @@
-"""Management tab: a hub for management tools, gated by require_management.
+"""Management: the checklist terms, gated by require_management.
 
-Users (/admin/users) stays admin-only and keeps its URL; the hub only links to it.
-Checklists: anyone with Management access can view and add terms; editing, reordering
+Settings in the nav holds Users (/admin/users, admin-only) and this page. Anyone with
+Management access can view and add terms; editing (wording, types, when, sort order)
 and retiring are admin-only (require_admin). See
 docs/superpowers/specs/2026-09-30-request-checklists-design.md.
 """
@@ -21,10 +21,12 @@ from app.models.deployment_request import RequestType
 from app.models.user import User, UserRole
 from app.routers.dashboard import REQUEST_TYPE_LABELS
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter(prefix="/management")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 CHECKLISTS_URL = "/management/checklists"
 VIEWS = ("all", *(t.value for t in RequestType))
@@ -43,12 +45,12 @@ def _back(view: str | None) -> RedirectResponse:
 
 
 @router.get("")
-def management_hub(request: Request, current_user: User = Depends(require_management)):
-    return templates.TemplateResponse(
-        request,
-        "management.html",
-        {"current_user": current_user, "is_admin": current_user.role == UserRole.admin},
-    )
+def management_hub(current_user: User = Depends(require_management)):
+    """The old Management hub. Settings now opens in the nav (Users, Management
+    Checklist), so the URL — still in bookmarks — goes to the first one this user
+    can open."""
+    url = "/admin/users" if current_user.role == UserRole.admin else CHECKLISTS_URL
+    return RedirectResponse(url=url, status_code=303)
 
 
 def _clean_label(label: str) -> str:
@@ -156,6 +158,7 @@ def list_checklists(
 
 @router.post("/checklists")
 def add_checklist_item(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_management),
     label: str = Form(""),
@@ -175,11 +178,13 @@ def add_checklist_item(
     item.types = [ChecklistItemType(request_type=t, position=_next_position(db, t)) for t in types]
     db.add(item)
     db.commit()
+    toast.toast(request, "Checklist item added")
     return _back(view)
 
 
 @router.post("/checklists/{item_id}/edit")
 def edit_checklist_item(
+    request: Request,
     item_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
@@ -190,6 +195,10 @@ def edit_checklist_item(
     types_submitted: str | None = Form(None),
     # Before start / Before Mark Deployed; left as it is when absent.
     due: str | None = Form(None),
+    # The design's Sort Order, which here is the term's place in one type's list (order
+    # is per type); set from that type's tab. Left alone when absent.
+    position: str | None = Form(None),
+    position_type: str | None = Form(None),
     view: str | None = Form(None),
 ):
     # Safe to reword or reassign: ChecklistConfirmation snapshots the label, and each
@@ -205,61 +214,62 @@ def edit_checklist_item(
     item.types = kept + added
     item.label = new_label
     item.due = _parse_due(due, item.due)
+    if position not in (None, ""):
+        _place(db, item, position, position_type)
     _touch(item, current_user)
     db.commit()
+    toast.toast(request, "Checklist item updated")
     return _back(view)
 
 
-@router.post("/checklists/{item_id}/move")
-def move_checklist_item(
-    item_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
-    direction: str = Form(...),
-    request_type: str = Form(...),
-    view: str | None = Form(None),
-):
-    if direction not in ("up", "down"):
-        raise HTTPException(status_code=400, detail="direction must be up or down")
-    item = _get_item_or_404(db, item_id)
-    (parsed_type,) = _parse_types([request_type])
-    link = next((t for t in item.types if t.request_type == parsed_type), None)
+def _place(db: Session, item: ChecklistItem, position: str, position_type: str | None) -> None:
+    """Puts the term at `position` (1 = first; past the end = last) in one type's list,
+    renumbering that type 1..n. Only that type moves — the others keep their order."""
+    if not position.strip().isdigit() or int(position) < 1:
+        raise HTTPException(status_code=400, detail="Sort order must be a whole number from 1.")
+    (request_type,) = _parse_types([position_type or ""])
+    link = next((t for t in item.types if t.request_type == request_type), None)
     if link is None:
         raise HTTPException(status_code=400, detail="That term isn't assigned to this request type.")
-    same_type = db.query(ChecklistItemType).filter(
-        ChecklistItemType.request_type == parsed_type, ChecklistItemType.item_id != item.id
+    db.flush()
+    others = (
+        db.query(ChecklistItemType)
+        .join(ChecklistItemType.item)
+        .filter(ChecklistItemType.request_type == request_type, ChecklistItemType.item_id != item.id)
+        .order_by(ChecklistItemType.position, ChecklistItemType.item_id)
+        .all()
     )
-    if direction == "up":
-        neighbour = same_type.filter(ChecklistItemType.position < link.position).order_by(ChecklistItemType.position.desc()).first()
-    else:
-        neighbour = same_type.filter(ChecklistItemType.position > link.position).order_by(ChecklistItemType.position.asc()).first()
-    if neighbour is not None:
-        link.position, neighbour.position = neighbour.position, link.position
-        _touch(item, current_user)
-        db.commit()
-    return _back(view)
+    # The number is the one the tab shows — counted over active terms only, so retired
+    # ones (still holding positions) go after them rather than shifting the count.
+    active = [t for t in others if t.item.is_active]
+    active.insert(min(int(position), len(active) + 1) - 1, link)
+    for number, row in enumerate(active + [t for t in others if not t.item.is_active], start=1):
+        row.position = number
 
 
-def _set_active(db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:
+def _set_active(request: Request, db: Session, item_id: int, user: User, active: bool, view: str | None) -> RedirectResponse:
     item = _get_item_or_404(db, item_id)
     item.is_active = active
     _touch(item, user)
     db.commit()
+    toast.toast(request, f'"{item.label}" restored' if active else "Item moved to Retire")
     return _back(view)
 
 
 @router.post("/checklists/{item_id}/deactivate")
 def deactivate_checklist_item(
+    request: Request,
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
     view: str | None = Form(None),
 ):
     # Retire, never delete: confirmation rows reference this term.
-    return _set_active(db, item_id, current_user, False, view)
+    return _set_active(request, db, item_id, current_user, False, view)
 
 
 @router.post("/checklists/{item_id}/activate")
 def activate_checklist_item(
+    request: Request,
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin),
     view: str | None = Form(None),
 ):
-    return _set_active(db, item_id, current_user, True, view)
+    return _set_active(request, db, item_id, current_user, True, view)

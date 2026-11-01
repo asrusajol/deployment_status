@@ -20,10 +20,12 @@ from app.models.client_system_url import ClientSystemUrl
 from app.models.deployment_request import DeploymentEnvironment
 from app.models.user import User
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 
 @router.get("/clients")

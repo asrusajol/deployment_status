@@ -23,10 +23,12 @@ from app.services.seeder_collection import (
     update_seeder_command,
 )
 from app.static_version import STATIC_VERSION
+from app import toast
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["take_toasts"] = toast.take
 
 
 def _get_seeder_command_or_404(db: Session, seeder_id: int) -> SeederCommand:
@@ -128,6 +130,7 @@ def seeder_collection_create(
         )
 
     db.commit()
+    toast.toast(request, f"Seeder for {client_name_for(db, client_id) or 'the client'} added")
     return RedirectResponse(url="/seeder-collection", status_code=303)
 
 
@@ -172,16 +175,20 @@ def seeder_collection_edit(
         updated_by=current_user.id,
     )
     db.commit()
+    toast.toast(request, f"Seeder for {row.client.name if row.client else 'the client'} saved")
     return RedirectResponse(url="/seeder-collection", status_code=303)
 
 
 @router.post("/seeder-collection/{seeder_id}/delete")
 def seeder_collection_delete(
+    request: Request,
     seeder_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_devops),
 ):
     row = _get_seeder_command_or_404(db, seeder_id)
+    client_name = row.client.name if row.client else "the client"
     delete_seeder_command(db, row)
     db.commit()
+    toast.toast(request, f"Seeder for {client_name} deleted")
     return RedirectResponse(url="/seeder-collection", status_code=303)
