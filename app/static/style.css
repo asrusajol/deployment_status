@@ -2388,6 +2388,22 @@ body.app-body .page > .card.card-fill { flex: 1 1 auto; min-height: 260px; }
 .kpi-value { font-size: 32px; line-height: 36px; font-weight: 700; color: var(--sapTitleColor); }
 .kpi-of { font-size: 16px; font-weight: 600; color: var(--sapContent_LabelColor); }
 .kpi-foot { font-size: 12px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Black only: the Shopfloor Suite's tinted stat tiles — the whole card washed in its
+   signal colour under a matching hairline, with the label and number in that colour.
+   Standard/Schertech keep the V12.1 cards (top stripe, neutral text); Black has no
+   V12.1 reference, so this is ours. Icon and subtitle stay — they carry information
+   (oldest waiting, missing URLs) the suite's tiles don't have. */
+[data-theme="black"] .kpi {
+  background: color-mix(in srgb, var(--tone) 8%, var(--sapBaseColor));
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow: none;
+}
+[data-theme="black"] .kpi:hover {
+  border-color: var(--tone);
+  box-shadow: 0 0 0 1px var(--tone);
+}
+[data-theme="black"] .kpi-label { color: var(--tone); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+[data-theme="black"] .kpi-value { color: var(--tone); }
 
 .dgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .dgrid .span-2 { grid-column: span 2; }
