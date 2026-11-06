@@ -2,6 +2,8 @@
 {%- from "_icons.html" import icon -%}
 {%- set theme = request.state.theme | default("standard") -%}
 {%- set schertech = theme == "schertech" -%}
+{#- Both have a dark shell bar, so the blue logo would vanish on it. -#}
+{%- set dark_shell = theme in ("schertech", "black") -%}
 {%- set theme_options = request.state.theme_options | default([("standard", "Standard (Morning Horizon)")]) -%}
 {%- set theme_label = (theme_options | selectattr(0, "equalto", theme) | map(attribute=1) | first) | default("Standard (Morning Horizon)") -%}
 {%- set path = request.url.path -%}
@@ -33,7 +35,7 @@
         <button type="button" class="shell-hamburger" id="nav-toggle" title="Menu" aria-label="Menu" aria-controls="sidenav">{{ icon("menu") }}</button>
       {% endif %}
       <a class="shell-logo" href="/dashboard">
-        <img class="shell-logo-img" src="/static/img/logo-{{ 'white' if schertech else 'blue' }}.svg" alt="Schertech">
+        <img class="shell-logo-img" src="/static/img/logo-{{ 'white' if dark_shell else 'blue' }}.svg" alt="Schertech">
       </a>
     </div>
     <a class="shell-title" href="/dashboard">

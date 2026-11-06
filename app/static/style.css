@@ -1,11 +1,12 @@
 /* ---------------------------------------------------------------------------
    Design system: the company standard — "Deployment Tracker V12.1", built from the
-   Figma files and handed over as Deployment_Tracker.html. Two themes, both
+   Figma files and handed over as Deployment_Tracker.html. Three themes, all
    maintained, chosen per browser (app/theme.py, cookie `dt-theme`) and rendered
-   server-side as <html data-theme="standard|schertech">:
+   server-side as <html data-theme="standard|schertech|black">:
 
      standard  — SAP Morning Horizon: white shell, blue #0064D9 accents
      schertech — blue #005981 shell and nav, orange #FFA600 accents
+     black     — SAP Horizon Dark, as the Shopfloor Suite runs it
 
    Every colour lives in the two token blocks below. Rules further down use only
    var(--…) — a value written into a rule instead of a token is how this codebase
@@ -136,6 +137,7 @@
   /* Theme-menu swatches: each shows its own theme's colour whichever theme is active. */
   --swatchStandard: #0070F2;
   --swatchSchertech: #005981;
+  --swatchBlack: #1D232A;
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -181,6 +183,100 @@
   --sapButton_Lite_TextColor: #005981;
   --switchOnBg: #005981;
   --sapButton_Selected_BorderColor: #005981;
+}
+
+/* Black — SAP Horizon Dark (sap_horizon_dark), the theme the Shopfloor Suite at
+   aps.schertech.com runs; values read from its computed --sap* variables. Structure
+   is Standard's (Horizon), so this block only recolours. Status tags follow the
+   suite's grids: a dark tint fill under a bright border and text. */
+:root[data-theme="black"] {
+  color-scheme: dark;  /* native date pickers, selects and scrollbars go dark too */
+
+  --sapBackgroundColor: #12171C;
+  --sapBaseColor: #1D232A;
+  --sapTitleColor: #EAECEE;
+  --sapTextColor: #EAECEE;
+  --sapContent_LabelColor: #8396A8;
+  --sapContent_NonInteractiveIconColor: #A9B4BE;
+  --sapHoverColor: #222B35;
+  --sapSelectedBorder: #4DB1FF;
+  --sapSelectedBackground: #1D2D3E;
+  --sapContent_Selected_Hover_Background: #002B4D;
+  --sapContent_Shadow0: 0 0 2px 0 rgba(255, 255, 255, 0.6), 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+  --sapContent_Shadow2: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 10px 30px 0 rgba(0, 0, 0, 0.6);
+  --sapContent_Shadow3: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 20px 80px 0 rgba(0, 0, 0, 0.6);
+  --sapBlockLayer: rgba(0, 0, 0, 0.6);
+  --sapBrandColor: #4DB1FF;   /* Horizon Dark's link/selected blue; #0070F2 is for fills */
+  --sapContent_IconColor: #EAECEE;
+  --sapNegativeText: #FA6161;
+  --btnNegLiteBg: #350000;
+  --switchOnBg: #4DB1FF;
+  --switchOffBg: #A9B4BE;
+  --switchKnobBg: #1D232A;
+  --dialogDivider: #2E3742;
+  --toastBg: rgba(234, 236, 238, 0.92);
+  --toastText: #12171C;
+  --sapButton_Selected_BorderColor: #4DB1FF;
+  --warningIconColor: #FFDF72;
+  --sapList_Background: #1D232A;
+  --sapGroup_TitleBackground: #1D232A;
+  --sapGroup_TitleBorderColor: #768EA5;
+
+  --sapShellColor: #1D232A;
+  --sapShell_TextColor: #EAECEE;
+  --shellLinkColor: #4DB1FF;
+  --shellHover: rgba(255, 255, 255, 0.08);
+  --sapShell_Shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.8), inset 0 -1px 0 0 rgba(255, 255, 255, 0.2);
+
+  --navBg: #1D232A;
+  --navText: #EAECEE;
+  --navIcon: #EAECEE;
+  --navHover: #222B35;
+  --navSelectedBg: #1D2D3E;
+  --navSelectedBorder: #4DB1FF;
+  --navDot: #4DB1FF;
+  --navDivider: #2E3742;
+
+  --sapButton_Emphasized_Background: #0070F2;
+  --sapButton_Emphasized_TextColor: #FFFFFF;
+  --sapButton_Background: #1C242C;
+  --sapButton_BorderColor: #3A4A5A;
+  --sapButton_TextColor: #4DB1FF;
+  --sapButton_Lite_TextColor: #4DB1FF;
+
+  --sapField_Background: #161C22;
+  --sapField_BorderColor: #A9B4BE;
+  --sapField_PlaceholderTextColor: #8396A8;
+  --sapField_TextColor: #FFFFFF;
+  --sapField_Shadow: inset 0 0 0 1px rgba(169, 180, 190, 0.25);
+  --sapField_ReadOnly_Background: #242E38;
+
+  --sapList_HeaderBackground: #1D232A;
+  --sapList_HeaderTextColor: #EAECEE;
+  --sapList_BorderColor: #2E3742;
+  --sapScrollBar_FaceColor: #647891;
+  --sapScrollBar_TrackColor: #1D232A;
+
+  --typeTestLocal: #FFDF72;
+  --typeStandard: #4DB1FF;
+  --typeDatabase: #FA6161;
+
+  --stPositiveBg: #11331A; --stPositiveBd: #97DD40; --stPositiveText: #97DD40;
+  --stInfoBg: #00144A;     --stInfoBd: #4DB1FF;     --stInfoText: #4DB1FF;
+  --stCriticalBg: #382700; --stCriticalBd: #F7BF00; --stCriticalText: #FFDF72;
+  --stNeutralBg: #242E38;  --stNeutralBd: #A9B4BE;  --stNeutralText: #EAECEE;
+  --stNegativeBg: #350000; --stNegativeBd: #FA6161; --stNegativeText: #FA6161;
+
+  /* Test stays amber, Live stays violet (Horizon Dark's indication colour 7), so
+     Live never reads as the red of a failure — same rule as Standard. */
+  --sysTestBg: #382700; --sysTestBd: #F7BF00; --sysTestText: #FFDF72;
+  --sysLiveBg: #2A1E47; --sysLiveBd: #D3B6FF; --sysLiveText: #D3B6FF;
+
+  --relTest: #11331A; --relLive: #2A1E47; --relMain: #002B4D; --relHeadText: #EAECEE;
+
+  /* The signal colours are light in a dark theme, so text on a filled one is dark. */
+  --on-accent: #12171C;
+  --shadow-pin: -6px 0 8px -6px rgba(0, 0, 0, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -339,6 +435,7 @@ a { color: inherit; }
 .pop-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: var(--sapField_Shadow); flex-shrink: 0; }
 .pop-dot-standard { background: var(--swatchStandard); }
 .pop-dot-schertech { background: var(--swatchSchertech); }
+.pop-dot-black { background: var(--swatchBlack); }
 .pop-check { margin-left: auto; color: var(--sapBrandColor); }
 
 /* --- Layout: side navigation + content ------------------------------------- */
@@ -1199,10 +1296,18 @@ code {
   font-size: 0.85rem;
 }
 
+/* `.form button` gives every button in a form the emphasized brand fill, and this
+   one sits inside the request form — so "Remove" rendered red-on-blue in every theme
+   (found in the Black theme's QA). Reset it to a negative lite button. */
 .selected-tasks li .link-button {
+  margin-top: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
   color: var(--red);
   flex-shrink: 0;
 }
+.selected-tasks li .link-button:hover { background: var(--btnNegLiteBg); filter: none; text-decoration: none; }
 
 /* /clients page — one client's Test or Live URL list (app/templates/clients.html),
    same "chip row" look as .selected-tasks above, plus the small "add another URL"
@@ -1357,7 +1462,9 @@ code {
 .inline-form button:hover,
 .actions-inner > button:hover { filter: brightness(0.92); }
 .inline-form button.approve, .inline-form button.deploy,
-.actions-inner > button.approve, .actions-inner > button.deploy { background: var(--green); }
+.actions-inner > button.approve, .actions-inner > button.deploy { background: var(--green); color: var(--on-accent); }
+/* --on-accent, not the emphasized-button white: Black's green is light, and white on
+   it is unreadable. Standard/Schertech's --on-accent is white, so they're unchanged. */
 /* Teal, not green — matches the "in flight" signal color (status), since starting a
    deployment isn't a completion the way approving/marking-deployed are. */
 .inline-form button.start,
@@ -2281,6 +2388,22 @@ body.app-body .page > .card.card-fill { flex: 1 1 auto; min-height: 260px; }
 .kpi-value { font-size: 32px; line-height: 36px; font-weight: 700; color: var(--sapTitleColor); }
 .kpi-of { font-size: 16px; font-weight: 600; color: var(--sapContent_LabelColor); }
 .kpi-foot { font-size: 12px; color: var(--sapContent_LabelColor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Black only: the Shopfloor Suite's tinted stat tiles — the whole card washed in its
+   signal colour under a matching hairline, with the label and number in that colour.
+   Standard/Schertech keep the V12.1 cards (top stripe, neutral text); Black has no
+   V12.1 reference, so this is ours. Icon and subtitle stay — they carry information
+   (oldest waiting, missing URLs) the suite's tiles don't have. */
+[data-theme="black"] .kpi {
+  background: color-mix(in srgb, var(--tone) 8%, var(--sapBaseColor));
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow: none;
+}
+[data-theme="black"] .kpi:hover {
+  border-color: var(--tone);
+  box-shadow: 0 0 0 1px var(--tone);
+}
+[data-theme="black"] .kpi-label { color: var(--tone); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+[data-theme="black"] .kpi-value { color: var(--tone); }
 
 .dgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .dgrid .span-2 { grid-column: span 2; }
