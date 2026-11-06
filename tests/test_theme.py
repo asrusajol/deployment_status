@@ -123,3 +123,41 @@ def test_reference_fonts_are_served(client):
         response = client.get(f"/static/fonts/{name}.woff2")
         assert response.status_code == 200, name
         assert response.content[:4] == b"wOF2", name
+
+
+# --- Black: SAP Horizon Dark, as the Shopfloor Suite (aps.schertech.com) runs it ---
+
+def test_cookie_selects_black(client):
+    client.cookies.set(THEME_COOKIE, "black")
+    assert _html_theme(client.get("/login").text) == "black"
+
+
+def test_query_param_applies_black(client):
+    response = client.get("/login?theme=black")
+    assert _html_theme(response.text) == "black"
+    assert response.cookies.get(THEME_COOKIE) == "black"
+
+
+def test_theme_menu_offers_black(web):
+    test_client = _logged_in(web)
+    text = test_client.get("/dashboard").text
+    assert re.search(r'href="[^"]*\btheme=black"', text)
+    assert 'pop-dot-black' in text
+
+
+def test_black_shell_uses_white_logo_and_text_title(web):
+    # Dark shell, so the white logo; otherwise Horizon's structure, like Standard.
+    test_client = _logged_in(web)
+    test_client.cookies.set(THEME_COOKIE, "black")
+    text = test_client.get("/dashboard").text
+    assert "/static/img/logo-white.svg" in text
+    assert "/static/img/logo-blue.svg" not in text
+    assert "/static/img/wordmark.svg" not in text
+    assert 'class="shell-title-text"' in text
+
+
+def test_black_login_uses_white_logo(client):
+    client.cookies.set(THEME_COOKIE, "black")
+    text = client.get("/login").text
+    assert "/static/img/logo-white.svg" in text
+    assert "/static/img/logo-blue.svg" not in text

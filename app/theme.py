@@ -1,4 +1,4 @@
-"""The two company themes from the design reference (Deployment Tracker V12.1).
+"""The company themes from the design reference (Deployment Tracker V12.1).
 
 The choice is per browser, kept in a cookie rather than on the User row: it needs no
 migration, and it also applies to /login, where nobody is known yet. The cookie name
@@ -14,4 +14,7 @@ DEFAULT_THEME = "standard"
 THEMES = {
     "standard": "Standard (Morning Horizon)",
     "schertech": "Schertech",
+    # SAP Horizon Dark — the theme the Shopfloor Suite (aps.schertech.com) runs, so
+    # the tracker can sit next to it without a white flash between apps.
+    "black": "Black (Horizon Dark)",
 }
